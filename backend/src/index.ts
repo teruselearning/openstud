@@ -82,8 +82,9 @@ app.post('/api/login', async (req: any, res: any) => {
         JWT_SECRET, 
         { expiresIn: '30d' }
     );
-    // Note: allowedProjectIds is the Prisma field name for the text[] column allowed_project_ids
-    const safeUser = { ...user, allowedProjectIds: user.allowedProjectIds };
+    // Note: allowed_project_ids is the db column, but Prisma might have mapped it or not.
+    // We try to access it safely.
+    const safeUser = { ...user, allowedProjectIds: user.allowed_project_ids || user.allowedProjectIds };
     res.json({ token, user: safeUser });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -98,7 +99,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       orgs, projects, users, species, individuals, 
       events, loans, partnerships, config, languages
     ] = await Promise.all([
-      prisma.organization.findMany({ where: { isDeleted: false } }).catch(() => []),
+      prisma.organization.findMany({ where: { is_deleted: false } }).catch(() => []),
       prisma.project.findMany().catch(() => []),
       prisma.user.findMany().catch(() => []),
       prisma.species.findMany().catch(() => []),
@@ -107,109 +108,108 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       prisma.breedingLoan.findMany().catch(() => []),
       prisma.partnership.findMany().catch(() => []),
       prisma.appConfig.findUnique({ where: { id: 'global-settings' } }).catch(() => null),
-      prisma.language?.findMany({ where: { isDeleted: false } }).catch(() => []) 
+      prisma.language?.findMany({ where: { is_deleted: false } }).catch(() => []) 
     ]);
 
-    // Note: Prisma Client normalizes snake_case columns to camelCase fields by default.
-    // e.g. founded_year -> foundedYear
+    // MAP DB SNAKE_CASE TO FRONTEND CAMELCASE
     res.json({
       success: true,
       data: {
         partners: orgs.map((o: any) => ({
             ...o,
-            foundedYear: o.foundedYear,
-            isOrgPublic: o.isOrgPublic,
-            isSpeciesPublic: o.isSpeciesPublic,
-            obscureLocation: o.obscureLocation,
-            hideName: o.hideName,
-            allowBreedingRequests: o.allowBreedingRequests,
-            breedingRequestContactId: o.breedingRequestContactId,
-            showNativeStatus: o.showNativeStatus,
-            dashboardBlock: o.dashboardBlock,
-            deleted: o.isDeleted
+            foundedYear: o.founded_year,
+            isOrgPublic: o.is_org_public,
+            isSpeciesPublic: o.is_species_public,
+            obscureLocation: o.obscure_location,
+            hideName: o.hide_name,
+            allowBreedingRequests: o.allow_breeding_requests,
+            breedingRequestContactId: o.breeding_request_contact_id,
+            showNativeStatus: o.show_native_status,
+            dashboardBlock: o.dashboard_block,
+            deleted: o.is_deleted
         })),
-        projects: projects.map((p: any) => ({ ...p, orgId: p.orgId })),
+        projects: projects.map((p: any) => ({ ...p, orgId: p.org_id })),
         users: users.map((u: any) => ({ 
             ...u, 
-            avatarUrl: u.avatarUrl, 
-            allowedProjectIds: u.allowedProjectIds 
+            avatarUrl: u.avatar_url, 
+            allowedProjectIds: u.allowed_project_ids 
         })),
         species: species.map((s: any) => ({
             ...s,
-            projectId: s.projectId,
-            commonName: s.commonName,
-            scientificName: s.scientificName,
-            plantClassification: s.plantClassification,
-            conservationStatus: s.conservationStatus,
-            sexualMaturityAgeYears: s.sexualMaturityAgeYears,
-            averageAdultWeightKg: s.averageAdultWeightKg,
-            lifeExpectancyYears: s.lifeExpectancyYears,
-            breedingSeasonStart: s.breedingSeasonStart,
-            breedingSeasonEnd: s.breedingSeasonEnd,
-            imageUrl: s.imageUrl,
-            nativeStatusCountry: s.nativeStatusCountry,
-            nativeStatusLocal: s.nativeStatusLocal
+            projectId: s.project_id,
+            commonName: s.common_name,
+            scientificName: s.scientific_name,
+            plantClassification: s.plant_classification,
+            conservationStatus: s.conservation_status,
+            sexualMaturityAgeYears: s.sexual_maturity_age_years,
+            averageAdultWeightKg: s.average_adult_weight_kg,
+            lifeExpectancyYears: s.life_expectancy_years,
+            breedingSeasonStart: s.breeding_season_start,
+            breedingSeasonEnd: s.breeding_season_end,
+            imageUrl: s.image_url,
+            nativeStatusCountry: s.native_status_country,
+            nativeStatusLocal: s.native_status_local
         })),
         individuals: individuals.map((i: any) => ({
             ...i,
-            projectId: i.projectId,
-            speciesId: i.speciesId,
-            studbookId: i.studbookId,
-            birthDate: i.birthDate,
-            weightKg: i.weightKg,
-            sireId: i.sireId,
-            damId: i.damId,
-            imageUrl: i.imageUrl,
-            dnaSequence: i.dnaSequence,
-            sourceDetails: i.sourceDetails,
-            isDeceased: i.isDeceased,
-            deathDate: i.deathDate,
-            loanStatus: i.loanStatus,
-            transferredToOrgId: i.transferredToOrgId,
-            transferDate: i.transferDate,
-            transferNote: i.transferNote,
-            weightHistory: i.weightHistory,
-            growthHistory: i.growthHistory,
-            healthHistory: i.healthHistory
+            projectId: i.project_id,
+            speciesId: i.species_id,
+            studbookId: i.studbook_id,
+            birthDate: i.birth_date,
+            weightKg: i.weight_kg,
+            sireId: i.sire_id,
+            damId: i.dam_id,
+            imageUrl: i.image_url,
+            dnaSequence: i.dna_sequence,
+            sourceDetails: i.source_details,
+            isDeceased: i.is_deceased,
+            deathDate: i.death_date,
+            loanStatus: i.loan_status,
+            transferredToOrgId: i.transferred_to_org_id,
+            transferDate: i.transfer_date,
+            transferNote: i.transfer_note,
+            weightHistory: i.weight_history,
+            growthHistory: i.growth_history,
+            healthHistory: i.health_history
         })),
         breedingEvents: events.map((e: any) => ({
             ...e,
-            speciesId: e.speciesId,
-            sireId: e.sireId,
-            damId: e.damId,
-            offspringCount: e.offspringCount,
-            successfulBirths: e.successfulBirths,
+            speciesId: e.species_id,
+            sireId: e.sire_id,
+            damId: e.dam_id,
+            offspringCount: e.offspring_count,
+            successfulBirths: e.successful_births,
             losses: e.losses,
             notes: e.notes,
-            offspringIds: e.offspringIds
+            offspringIds: e.offspring_ids
         })),
         breedingLoans: loans.map((l: any) => ({
             ...l,
-            partnerOrgId: l.partnerOrgId,
-            proposerOrgId: l.proposerOrgId,
+            partnerOrgId: l.partner_org_id,
+            proposerOrgId: l.proposer_org_id,
             role: l.role,
-            startDate: l.startDate,
-            endDate: l.endDate || null,
+            startDate: l.start_date,
+            endDate: l.end_date,
             status: l.status,
-            individualIds: l.individualIds || [],
+            individualIds: l.individual_ids || [],
             terms: l.terms,
-            notificationRecipientId: l.notificationRecipientId || null,
-            changeRequest: l.changeRequest || null
+            notificationRecipientId: l.notification_recipient_id || null,
+            changeRequest: l.change_request || null
         })),
         partnerships: partnerships.map((p: any) => ({
             ...p,
-            orgId1: p.orgId1,
-            orgId2: p.orgId2,
-            establishedDate: p.establishedDate
+            orgId1: p.org_id_1,
+            orgId2: p.org_id_2,
+            establishedDate: p.established_date
         })),
         settings: config ? config.settings : {},
         languages: (languages || []).map((l: any) => ({
             code: l.code,
             name: l.name,
             translations: l.translations,
-            isDefault: l.isDefault,
-            manualOverrides: l.manualOverrides,
-            deleted: l.isDeleted
+            isDefault: l.is_default,
+            manualOverrides: l.manual_overrides,
+            deleted: l.is_deleted
         }))
       }
     });
@@ -276,7 +276,7 @@ app.patch('/rest/v1/organizations', async (req: any, res: any) => {
         if (id) {
             await prisma.organization.update({
                 where: { id },
-                data: { isDeleted: true }
+                data: { is_deleted: true }
             });
             return res.json({ success: true });
         }
@@ -293,7 +293,7 @@ app.patch('/rest/v1/languages', async (req: any, res: any) => {
         if (code && prisma.language) {
             await prisma.language.update({
                 where: { code },
-                data: { isDeleted: true }
+                data: { is_deleted: true }
             });
             return res.json({ success: true });
         } else if (!prisma.language) {

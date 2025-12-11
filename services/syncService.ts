@@ -53,33 +53,33 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
 };
 
 // --- Mappers (Frontend -> Backend/DB) ---
-// Note: We map to camelCase here because Prisma Client typically uses camelCase field names 
-// even if the underlying database columns are snake_case.
+// Note: We map to snake_case here because the Prisma Client generated from the 
+// specific SQL schema in this environment expects snake_case field names.
 const mapOrgToDb = (o: Organization) => ({
   id: o.id,
   name: o.name,
   location: o.location,
   latitude: o.latitude ?? null,
   longitude: o.longitude ?? null,
-  foundedYear: o.foundedYear,
+  founded_year: o.foundedYear,
   description: o.description,
   focus: o.focus,
-  isOrgPublic: o.isOrgPublic,
-  isSpeciesPublic: o.isSpeciesPublic,
-  obscureLocation: o.obscureLocation,
-  hideName: o.hideName ?? false,
-  allowBreedingRequests: o.allowBreedingRequests,
-  breedingRequestContactId: o.breedingRequestContactId || null,
-  showNativeStatus: o.showNativeStatus ?? true,
-  dashboardBlock: o.dashboardBlock || null,
-  isDeleted: o.deleted || false
+  is_org_public: o.isOrgPublic,
+  is_species_public: o.isSpeciesPublic,
+  obscure_location: o.obscureLocation,
+  hide_name: o.hideName ?? false,
+  allow_breeding_requests: o.allowBreedingRequests,
+  breeding_request_contact_id: o.breedingRequestContactId || null,
+  show_native_status: o.showNativeStatus ?? true,
+  dashboard_block: o.dashboardBlock || null,
+  is_deleted: o.deleted || false
 });
 
 const mapProjectToDb = (p: Project) => ({
   id: p.id,
   name: p.name,
   description: p.description || null,
-  orgId: p.orgId || null
+  org_id: p.orgId || null
 });
 
 const mapUserToDb = (u: User) => ({
@@ -89,99 +89,99 @@ const mapUserToDb = (u: User) => ({
   role: u.role,
   status: u.status,
   password: u.password || null,
-  avatarUrl: u.avatarUrl || null,
-  allowedProjectIds: u.allowedProjectIds || []
+  avatar_url: u.avatarUrl || null,
+  allowed_project_ids: u.allowedProjectIds || []
 });
 
 const mapSpeciesToDb = (s: Species) => ({
   id: s.id,
-  projectId: s.projectId,
-  commonName: s.commonName,
-  scientificName: s.scientificName,
+  project_id: s.projectId,
+  common_name: s.commonName,
+  scientific_name: s.scientificName,
   type: s.type,
-  plantClassification: s.plantClassification || null,
-  conservationStatus: s.conservationStatus,
-  sexualMaturityAgeYears: s.sexualMaturityAgeYears,
-  averageAdultWeightKg: s.averageAdultWeightKg,
-  lifeExpectancyYears: s.lifeExpectancyYears,
-  breedingSeasonStart: s.breedingSeasonStart || null,
-  breedingSeasonEnd: s.breedingSeasonEnd || null,
-  imageUrl: s.imageUrl || null,
-  nativeStatusCountry: s.nativeStatusCountry || null,
-  nativeStatusLocal: s.nativeStatusLocal || null
+  plant_classification: s.plantClassification || null,
+  conservation_status: s.conservationStatus,
+  sexual_maturity_age_years: s.sexualMaturityAgeYears,
+  average_adult_weight_kg: s.averageAdultWeightKg,
+  life_expectancy_years: s.lifeExpectancyYears,
+  breeding_season_start: s.breedingSeasonStart || null,
+  breeding_season_end: s.breedingSeasonEnd || null,
+  image_url: s.imageUrl || null,
+  native_status_country: s.nativeStatusCountry || null,
+  native_status_local: s.nativeStatusLocal || null
 });
 
 const mapIndToDb = (i: Individual) => ({
   id: i.id,
-  projectId: i.projectId,
-  speciesId: i.speciesId,
-  studbookId: i.studbookId,
+  project_id: i.projectId,
+  species_id: i.speciesId,
+  studbook_id: i.studbookId,
   name: i.name,
   sex: i.sex,
-  birthDate: i.birthDate || null,
-  weightKg: i.weightKg,
-  sireId: i.sireId || null,
-  damId: i.damId || null,
-  imageUrl: i.imageUrl || null,
-  dnaSequence: i.dnaSequence || null,
+  birth_date: i.birthDate || null,
+  weight_kg: i.weightKg,
+  sire_id: i.sireId || null,
+  dam_id: i.damId || null,
+  image_url: i.imageUrl || null,
+  dna_sequence: i.dnaSequence || null,
   notes: i.notes || null,
   source: i.source || null,
-  sourceDetails: i.sourceDetails || null,
+  source_details: i.sourceDetails || null,
   latitude: i.latitude ?? null,
   longitude: i.longitude ?? null,
-  isDeceased: i.isDeceased ?? false,
-  deathDate: i.deathDate || null,
-  loanStatus: i.loanStatus || null,
-  transferredToOrgId: i.transferredToOrgId || null,
-  transferDate: i.transferDate || null,
-  transferNote: i.transferNote || null,
-  weightHistory: i.weightHistory || [],
-  growthHistory: i.growthHistory || [],
-  healthHistory: i.healthHistory || []
+  is_deceased: i.isDeceased ?? false,
+  death_date: i.deathDate || null,
+  loan_status: i.loanStatus || null,
+  transferred_to_org_id: i.transferredToOrgId || null,
+  transfer_date: i.transferDate || null,
+  transfer_note: i.transferNote || null,
+  weight_history: i.weightHistory || [],
+  growth_history: i.growthHistory || [],
+  health_history: i.healthHistory || []
 });
 
 const mapEventToDb = (e: BreedingEvent) => ({
   id: e.id,
-  speciesId: e.speciesId,
-  sireId: e.sireId || null,
-  damId: e.damId || null,
+  species_id: e.speciesId,
+  sire_id: e.sireId || null,
+  dam_id: e.damId || null,
   date: e.date,
-  offspringCount: e.offspringCount,
-  successfulBirths: e.successfulBirths,
+  offspring_count: e.offspringCount,
+  successful_births: e.successfulBirths,
   losses: e.losses,
   notes: e.notes,
-  offspringIds: e.offspringIds || []
+  offspring_ids: e.offspringIds || []
 });
 
 const mapLoanToDb = (l: BreedingLoan) => ({
   id: l.id,
-  partnerOrgId: l.partnerOrgId,
-  proposerOrgId: l.proposerOrgId,
+  partner_org_id: l.partnerOrgId,
+  proposer_org_id: l.proposerOrgId,
   role: l.role,
-  startDate: l.startDate,
-  endDate: l.endDate || null,
+  start_date: l.startDate,
+  end_date: l.endDate || null,
   status: l.status,
-  individualIds: l.individualIds || [],
+  individual_ids: l.individualIds || [],
   terms: l.terms,
-  notificationRecipientId: l.notificationRecipientId || null,
-  changeRequest: l.changeRequest || null
+  notification_recipient_id: l.notificationRecipientId || null,
+  change_request: l.changeRequest || null
 });
 
 const mapPartnershipToDb = (p: Partnership) => ({
   id: p.id,
-  orgId1: p.orgId1,
-  orgId2: p.orgId2,
+  org_id_1: p.orgId1,
+  org_id_2: p.orgId2,
   status: p.status,
-  establishedDate: p.establishedDate
+  established_date: p.establishedDate
 });
 
 const mapLanguageToDb = (l: LanguageConfig) => ({
   code: l.code,
   name: l.name,
   translations: l.translations,
-  isDefault: l.isDefault,
-  manualOverrides: l.manualOverrides || [],
-  isDeleted: l.deleted || false
+  is_default: l.isDefault,
+  manual_overrides: l.manualOverrides || [],
+  is_deleted: l.deleted || false
 });
 
 // --- Push Methods (Upserts) ---
@@ -206,7 +206,7 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
   // Pass 1: Create/Update without parents to avoid FK issues
   const pass1Data = individuals.map(i => {
     const dbObj = mapIndToDb(i);
-    return { ...dbObj, sireId: null, damId: null };
+    return { ...dbObj, sire_id: null, dam_id: null };
   });
   await apiRequest('/rest/v1/individuals', 'POST', pass1Data);
 
