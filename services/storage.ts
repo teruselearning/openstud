@@ -64,8 +64,7 @@ export const saveSystemSettings = (s: SystemSettings, skipSync = false) => {
   set(KEYS.SETTINGS, s);
   if (!skipSync) {
     syncPushSettings(s).catch(err => {
-      console.error("Sync Error (Settings):", err);
-      // alert(`Sync Error (Settings): ${err.message}`); // Suppress for settings to avoid noise
+      // console.error("Sync Error (Settings):", err); // Suppressed to avoid noise
     });
   }
 };
@@ -76,7 +75,8 @@ export const getLanguages = (): LanguageConfig[] => {
   if (stored.length === 0) {
     // Seed initial languages if none exist
     set(KEYS.LANGUAGES, SEED_LANGUAGES);
-    syncPushLanguages(SEED_LANGUAGES).catch(console.error);
+    // Quietly attempt sync, don't spam console if offline
+    syncPushLanguages(SEED_LANGUAGES).catch(() => {});
     return SEED_LANGUAGES;
   }
   // Filter out soft deleted languages locally
@@ -87,7 +87,10 @@ export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
   set(KEYS.LANGUAGES, langs);
   if (!skipSync) {
     syncPushLanguages(langs).catch(err => {
-      console.error("Sync Error (Languages):", err);
+      // Only log if it's NOT a connectivity error (which is expected in offline mode)
+      if (!err.message.includes('Failed to fetch') && !err.message.includes('Network request failed')) {
+         console.error("Sync Error (Languages):", err);
+      }
     });
   }
 };
@@ -165,10 +168,10 @@ const createMockProjects = (): Project[] => [
 ];
 
 const createMockUsers = (): User[] => [
-  // Hash for 'password': 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
-  { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8', allowedProjectIds: [] },
-  { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8', allowedProjectIds: ['p-1'] },
-  { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8', allowedProjectIds: [] }
+  // Password hashes will be calculated dynamically in regenerateDemoData
+  { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] },
+  { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: '', allowedProjectIds: ['p-1'] },
+  { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] }
 ];
 
 // --- Exported Accessors ---
@@ -226,8 +229,7 @@ export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
   if (!skipSync) {
     syncPushOrg(o).catch(err => {
-      console.error("Sync Error (Org):", err);
-      // alert(`Sync Error (Org): ${err.message}`);
+      // console.error("Sync Error (Org):", err);
     });
   }
 };
@@ -237,8 +239,7 @@ export const saveProjects = (p: Project[], skipSync = false) => {
   set(KEYS.PROJECTS, p);
   if (!skipSync) {
     syncPushProjects(p).catch(err => {
-      console.error("Sync Error (Projects):", err);
-      // alert(`Sync Error (Projects): ${err.message}`);
+      // console.error("Sync Error (Projects):", err);
     });
   }
 };
@@ -250,8 +251,7 @@ export const saveUsers = (u: User[], skipSync = false) => {
   set(KEYS.USERS, u);
   if (!skipSync) {
     syncPushUsers(u).catch(err => {
-      console.error("Sync Error (Users):", err);
-      // alert(`Sync Error (Users): ${err.message}`);
+      // console.error("Sync Error (Users):", err);
     });
   }
 };
@@ -261,8 +261,7 @@ export const saveSpecies = (s: Species[], skipSync = false) => {
   set(KEYS.SPECIES, s);
   if (!skipSync) {
     syncPushSpecies(s).catch(err => {
-      console.error("Sync Error (Species):", err);
-      // alert(`Sync Error (Species): ${err.message}`);
+      // console.error("Sync Error (Species):", err);
     });
   }
 };
@@ -272,8 +271,7 @@ export const saveIndividuals = (i: Individual[], skipSync = false) => {
   set(KEYS.INDIVIDUALS, i);
   if (!skipSync) {
     syncPushIndividuals(i).catch(err => {
-      console.error("Sync Error (Individuals):", err);
-      // alert(`Sync Error (Individuals): ${err.message}`);
+      // console.error("Sync Error (Individuals):", err);
     });
   }
 };
@@ -283,8 +281,7 @@ export const saveBreedingEvents = (b: BreedingEvent[], skipSync = false) => {
   set(KEYS.BREEDING, b);
   if (!skipSync) {
     syncPushBreedingEvents(b).catch(err => {
-      console.error("Sync Error (Events):", err);
-      // alert(`Sync Error (Events): ${err.message}`);
+      // console.error("Sync Error (Events):", err);
     });
   }
 };
@@ -294,8 +291,7 @@ export const saveBreedingLoans = (l: BreedingLoan[], skipSync = false) => {
   set(KEYS.BREEDING_LOANS, l);
   if (!skipSync) {
     syncPushBreedingLoans(l).catch(err => {
-      console.error("Sync Error (Loans):", err);
-      // alert(`Sync Error (Loans): ${err.message}`);
+      // console.error("Sync Error (Loans):", err);
     });
   }
 };
@@ -305,8 +301,7 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
   set(KEYS.PARTNERSHIPS, p);
   if (!skipSync) {
     syncPushPartnerships(p).catch(err => {
-      console.error("Sync Error (Partnerships):", err);
-      // alert(`Sync Error (Partnerships): ${err.message}`);
+      // console.error("Sync Error (Partnerships):", err);
     });
   }
 };
@@ -575,7 +570,10 @@ export const regenerateDemoData = async () => {
     // Attempt sync to prevent FK errors for projects if user edits demo data later
     try { await syncPushOrg(mockOrg); } catch(e) { console.warn("Demo Org Sync Skipped", e); }
 
-    saveUsers(createMockUsers(), true);
+    // Generate hashed passwords dynamically
+    const defaultHash = await hashPassword('password');
+    const mockUsers = createMockUsers().map(u => ({ ...u, password: defaultHash }));
+    saveUsers(mockUsers, true);
 
     // 2. Projects
     let projects = createMockProjects();

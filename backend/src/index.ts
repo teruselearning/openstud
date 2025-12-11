@@ -9,8 +9,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // --- CRASH PREVENTION ---
-// These handlers prevent the server from crashing due to unhandled errors, 
-// allowing "Failed to fetch" issues to be debugged via server logs instead of a hard crash.
 process.on('uncaughtException', (err) => {
   console.error('CRITICAL ERROR (Uncaught Exception):', err);
 });
@@ -21,19 +19,19 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const prisma = new PrismaClient();
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
+
+// Enable permissive CORS for dev (Must be first middleware)
+app.use(cors({ origin: '*' }) as any);
 
 // Increase payload size limit for base64 images
 app.use(express.json({ limit: '50mb' }) as any);
 app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 
-// Enable permissive CORS for dev
-app.use(cors({ origin: '*' }) as any);
-
 app.use(morgan('dev') as any);
 
-// --- Helper: JSON Serializer for SQLite ---
+// --- Helper: JSON Parsing for SQLite Compatibility (GET) ---
 const safeParse = (val: any) => {
   if (typeof val === 'string') {
     try {
@@ -41,13 +39,6 @@ const safeParse = (val: any) => {
     } catch {
       return val;
     }
-  }
-  return val;
-};
-
-const safeStringify = (val: any) => {
-  if (typeof val === 'object' && val !== null) {
-    return JSON.stringify(val);
   }
   return val;
 };
@@ -91,7 +82,8 @@ app.post('/api/login', async (req: any, res: any) => {
         JWT_SECRET, 
         { expiresIn: '30d' }
     );
-    const safeUser = { ...user, allowed_project_ids: safeParse(user.allowed_project_ids) };
+    // Note: allowedProjectIds is the Prisma field name for the text[] column allowed_project_ids
+    const safeUser = { ...user, allowedProjectIds: user.allowedProjectIds };
     res.json({ token, user: safeUser });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -106,7 +98,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       orgs, projects, users, species, individuals, 
       events, loans, partnerships, config, languages
     ] = await Promise.all([
-      prisma.organization.findMany({ where: { is_deleted: false } }).catch(() => []),
+      prisma.organization.findMany({ where: { isDeleted: false } }).catch(() => []),
       prisma.project.findMany().catch(() => []),
       prisma.user.findMany().catch(() => []),
       prisma.species.findMany().catch(() => []),
@@ -115,107 +107,109 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       prisma.breedingLoan.findMany().catch(() => []),
       prisma.partnership.findMany().catch(() => []),
       prisma.appConfig.findUnique({ where: { id: 'global-settings' } }).catch(() => null),
-      prisma.language?.findMany({ where: { is_deleted: false } }).catch(() => []) // Optional chaining for languages
+      prisma.language?.findMany({ where: { isDeleted: false } }).catch(() => []) 
     ]);
 
+    // Note: Prisma Client normalizes snake_case columns to camelCase fields by default.
+    // e.g. founded_year -> foundedYear
     res.json({
       success: true,
       data: {
         partners: orgs.map((o: any) => ({
             ...o,
-            foundedYear: o.founded_year,
-            isOrgPublic: o.is_org_public,
-            isSpeciesPublic: o.is_species_public,
-            obscureLocation: o.obscure_location,
-            hideName: o.hide_name,
-            allowBreedingRequests: o.allow_breeding_requests,
-            breedingRequestContactId: o.breeding_request_contact_id,
-            showNativeStatus: o.show_native_status,
-            dashboardBlock: safeParse(o.dashboard_block),
-            deleted: o.is_deleted
+            foundedYear: o.foundedYear,
+            isOrgPublic: o.isOrgPublic,
+            isSpeciesPublic: o.isSpeciesPublic,
+            obscureLocation: o.obscureLocation,
+            hideName: o.hideName,
+            allowBreedingRequests: o.allowBreedingRequests,
+            breedingRequestContactId: o.breedingRequestContactId,
+            showNativeStatus: o.showNativeStatus,
+            dashboardBlock: o.dashboardBlock,
+            deleted: o.isDeleted
         })),
-        projects: projects.map((p: any) => ({ ...p, orgId: p.org_id })),
+        projects: projects.map((p: any) => ({ ...p, orgId: p.orgId })),
         users: users.map((u: any) => ({ 
             ...u, 
-            avatarUrl: u.avatar_url, 
-            allowedProjectIds: safeParse(u.allowed_project_ids) 
+            avatarUrl: u.avatarUrl, 
+            allowedProjectIds: u.allowedProjectIds 
         })),
         species: species.map((s: any) => ({
             ...s,
-            projectId: s.project_id,
-            commonName: s.common_name,
-            scientificName: s.scientific_name,
-            plantClassification: s.plant_classification,
-            conservationStatus: s.conservation_status,
-            sexualMaturityAgeYears: s.sexual_maturity_age_years,
-            averageAdultWeightKg: s.average_adult_weight_kg,
-            lifeExpectancyYears: s.life_expectancy_years,
-            breedingSeasonStart: s.breeding_season_start,
-            breedingSeasonEnd: s.breeding_season_end,
-            imageUrl: s.image_url,
-            nativeStatusCountry: s.native_status_country,
-            nativeStatusLocal: s.native_status_local
+            projectId: s.projectId,
+            commonName: s.commonName,
+            scientificName: s.scientificName,
+            plantClassification: s.plantClassification,
+            conservationStatus: s.conservationStatus,
+            sexualMaturityAgeYears: s.sexualMaturityAgeYears,
+            averageAdultWeightKg: s.averageAdultWeightKg,
+            lifeExpectancyYears: s.lifeExpectancyYears,
+            breedingSeasonStart: s.breedingSeasonStart,
+            breedingSeasonEnd: s.breedingSeasonEnd,
+            imageUrl: s.imageUrl,
+            nativeStatusCountry: s.nativeStatusCountry,
+            nativeStatusLocal: s.nativeStatusLocal
         })),
         individuals: individuals.map((i: any) => ({
             ...i,
-            projectId: i.project_id,
-            speciesId: i.species_id,
-            studbookId: i.studbook_id,
-            birthDate: i.birth_date,
-            weightKg: i.weight_kg,
-            sireId: i.sire_id,
-            damId: i.dam_id,
-            imageUrl: i.image_url,
-            dnaSequence: i.dna_sequence,
-            sourceDetails: i.source_details,
-            isDeceased: i.is_deceased,
-            deathDate: i.death_date,
-            loanStatus: i.loan_status,
-            transferredToOrgId: i.transferred_to_org_id,
-            transferDate: i.transfer_date,
-            transferNote: i.transfer_note,
-            weightHistory: safeParse(i.weight_history),
-            growthHistory: safeParse(i.growth_history),
-            healthHistory: safeParse(i.health_history)
+            projectId: i.projectId,
+            speciesId: i.speciesId,
+            studbookId: i.studbookId,
+            birthDate: i.birthDate,
+            weightKg: i.weightKg,
+            sireId: i.sireId,
+            damId: i.damId,
+            imageUrl: i.imageUrl,
+            dnaSequence: i.dnaSequence,
+            sourceDetails: i.sourceDetails,
+            isDeceased: i.isDeceased,
+            deathDate: i.deathDate,
+            loanStatus: i.loanStatus,
+            transferredToOrgId: i.transferredToOrgId,
+            transferDate: i.transferDate,
+            transferNote: i.transferNote,
+            weightHistory: i.weightHistory,
+            growthHistory: i.growthHistory,
+            healthHistory: i.healthHistory
         })),
         breedingEvents: events.map((e: any) => ({
             ...e,
-            speciesId: e.species_id,
-            sireId: e.sire_id,
-            damId: e.dam_id,
-            offspringCount: e.offspring_count,
-            successfulBirths: e.successful_births,
+            speciesId: e.speciesId,
+            sireId: e.sireId,
+            damId: e.damId,
+            offspringCount: e.offspringCount,
+            successfulBirths: e.successfulBirths,
             losses: e.losses,
             notes: e.notes,
-            offspringIds: safeParse(e.offspring_ids)
+            offspringIds: e.offspringIds
         })),
         breedingLoans: loans.map((l: any) => ({
             ...l,
-            partnerOrgId: l.partner_org_id,
-            proposerOrgId: l.proposer_org_id,
+            partnerOrgId: l.partnerOrgId,
+            proposerOrgId: l.proposerOrgId,
             role: l.role,
-            start_date: l.start_date,
-            end_date: l.end_date || null,
+            startDate: l.startDate,
+            endDate: l.endDate || null,
             status: l.status,
-            individualIds: safeParse(l.individual_ids) || [],
+            individualIds: l.individualIds || [],
             terms: l.terms,
-            notificationRecipientId: l.notification_recipient_id || null,
-            changeRequest: safeParse(l.change_request) || null
+            notificationRecipientId: l.notificationRecipientId || null,
+            changeRequest: l.changeRequest || null
         })),
         partnerships: partnerships.map((p: any) => ({
             ...p,
-            orgId1: p.org_id_1,
-            orgId2: p.org_id_2,
-            establishedDate: p.established_date
+            orgId1: p.orgId1,
+            orgId2: p.orgId2,
+            establishedDate: p.establishedDate
         })),
-        settings: config ? safeParse(config.settings) : {},
+        settings: config ? config.settings : {},
         languages: (languages || []).map((l: any) => ({
             code: l.code,
             name: l.name,
-            translations: safeParse(l.translations),
-            isDefault: l.is_default,
-            manualOverrides: safeParse(l.manual_overrides),
-            deleted: l.is_deleted
+            translations: l.translations,
+            isDefault: l.isDefault,
+            manualOverrides: l.manualOverrides,
+            deleted: l.isDeleted
         }))
       }
     });
@@ -225,7 +219,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
   }
 });
 
-// Helper for Upserts with Manual Serializer
+// Helper for Upserts
 const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
     try {
         const rawData = req.body;
@@ -255,26 +249,13 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
 };
 
 // Prep functions
-const prepOrg = (o: any) => ({ ...o, dashboard_block: safeStringify(o.dashboard_block) });
-const prepUser = (u: any) => ({ ...u, allowed_project_ids: safeStringify(u.allowed_project_ids) });
-const prepInd = (i: any) => ({ 
-    ...i, 
-    weight_history: safeStringify(i.weight_history),
-    growth_history: safeStringify(i.growth_history),
-    health_history: safeStringify(i.health_history)
-});
-const prepEvent = (e: any) => ({ ...e, offspring_ids: safeStringify(e.offspring_ids) });
-const prepLoan = (l: any) => ({ 
-    ...l, 
-    individual_ids: safeStringify(l.individual_ids),
-    change_request: safeStringify(l.change_request)
-});
-const prepConfig = (c: any) => ({ ...c, settings: safeStringify(c.settings) });
-const prepLang = (l: any) => ({
-    ...l,
-    translations: safeStringify(l.translations),
-    manual_overrides: safeStringify(l.manual_overrides)
-});
+const prepOrg = (o: any) => o;
+const prepUser = (u: any) => u;
+const prepInd = (i: any) => i;
+const prepEvent = (e: any) => e;
+const prepLoan = (l: any) => l;
+const prepConfig = (c: any) => c;
+const prepLang = (l: any) => l;
 
 // Define routes
 app.post('/rest/v1/organizations', createUpsertHandler(prisma.organization, prepOrg));
@@ -295,7 +276,7 @@ app.patch('/rest/v1/organizations', async (req: any, res: any) => {
         if (id) {
             await prisma.organization.update({
                 where: { id },
-                data: { is_deleted: true }
+                data: { isDeleted: true }
             });
             return res.json({ success: true });
         }
@@ -308,12 +289,15 @@ app.patch('/rest/v1/organizations', async (req: any, res: any) => {
 app.patch('/rest/v1/languages', async (req: any, res: any) => {
     try {
         const code = (req.query.code as string)?.replace('eq.', '');
-        if (code) {
+        // Safeguard against undefined prisma.language (if client not regenerated)
+        if (code && prisma.language) {
             await prisma.language.update({
                 where: { code },
-                data: { is_deleted: true }
+                data: { isDeleted: true }
             });
             return res.json({ success: true });
+        } else if (!prisma.language) {
+            return res.status(500).json({ error: "Language table not initialized." });
         }
         res.status(400).json({ error: "Missing Code" });
     } catch(e:any) {
@@ -321,6 +305,7 @@ app.patch('/rest/v1/languages', async (req: any, res: any) => {
     }
 });
 
+// Bind to default to allow Node to handle dual-stack
 app.listen(PORT, () => {
-  console.log(`OpenStudbook Backend running on http://localhost:${PORT}`);
+  console.log(`OpenStudbook Backend running on port ${PORT}`);
 });
