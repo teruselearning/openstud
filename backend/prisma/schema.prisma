@@ -108,7 +108,7 @@ model Individual {
   transfer_date         String?  @db.VarChar(50)
   transfer_note         String?  @db.Text
   
-  // JSON columns for history arrays
+  // JSON columns for history arrays --
   weight_history        Json?
   growth_history        Json?
   health_history        Json?
