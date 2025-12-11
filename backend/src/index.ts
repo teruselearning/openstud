@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
@@ -236,7 +236,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectId: s.project_id,
             commonName: s.common_name,
             scientificName: s.scientific_name,
-            plantClassification: s.plant_classification,
+            type: s.type,
+            plant_classification: s.plant_classification,
             conservationStatus: s.conservation_status,
             sexualMaturityAgeYears: s.sexual_maturity_age_years,
             averageAdultWeightKg: s.average_adult_weight_kg,
@@ -288,10 +289,10 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             startDate: l.start_date,
             endDate: l.end_date,
             status: l.status,
-            individualIds: l.individual_ids || [],
+            individual_ids: l.individual_ids || [],
             terms: l.terms,
-            notificationRecipientId: l.notification_recipient_id || null,
-            changeRequest: l.change_request || null
+            notification_recipient_id: l.notification_recipient_id || null,
+            change_request: l.change_request || null
         })),
         partnerships: partnerships.map((p: any) => ({
             ...p,
@@ -304,8 +305,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             code: l.code,
             name: l.name,
             translations: l.translations,
-            isDefault: l.is_default,
-            manualOverrides: l.manual_overrides,
+            is_default: l.is_default,
+            manual_overrides: l.manual_overrides,
             deleted: l.is_deleted
         }))
       }
