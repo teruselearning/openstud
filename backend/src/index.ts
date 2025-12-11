@@ -82,8 +82,7 @@ app.post('/api/login', async (req: any, res: any) => {
         JWT_SECRET, 
         { expiresIn: '30d' }
     );
-    // Note: allowed_project_ids is the db column, but Prisma might have mapped it or not.
-    // We try to access it safely.
+    // Note: allowed_project_ids is the db column
     const safeUser = { ...user, allowedProjectIds: user.allowed_project_ids || user.allowedProjectIds };
     res.json({ token, user: safeUser });
   } catch (e: any) {

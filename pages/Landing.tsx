@@ -138,7 +138,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     // 3. If user doesn't exist (fresh load + no DB connection), regenerate local demo data
     if (!user) {
       console.log("Demo user not found. Regenerating demo data locally...");
-      regenerateDemoData(); 
+      await regenerateDemoData(); 
       user = await login('sarah@wild.org', 'password');
     }
 

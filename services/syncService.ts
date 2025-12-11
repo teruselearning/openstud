@@ -36,7 +36,7 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
     return data;
   } catch (error: any) {
     if (retries > 0 && (error.message.includes('Failed to fetch') || error.message.includes('Network request failed'))) {
-       // console.warn(`API Request Failed. Retrying... (${retries} attempts left)`); // Suppress warning to avoid console noise
+       // console.warn(`API Request Failed. Retrying... (${retries} attempts left)`); // Suppressed to avoid console noise
        await new Promise(resolve => setTimeout(resolve, backoff));
        return apiRequest(endpoint, method, body, retries - 1, backoff * 2);
     }
@@ -53,7 +53,7 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
 };
 
 // --- Mappers (Frontend -> Backend/DB) ---
-// Note: We map to snake_case here because the Prisma Client generated from the 
+// We map to snake_case here because the Prisma Client generated from the 
 // specific SQL schema in this environment expects snake_case field names.
 const mapOrgToDb = (o: Organization) => ({
   id: o.id,
