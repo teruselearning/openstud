@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useContext } from 'react';
-import { getSpecies, saveSpecies, exportSpeciesData, importSpeciesData, generatePattern, getOrg } from '../services/storage';
+import { getSpecies, saveSpecies, exportSpeciesData, importSpeciesData, generatePattern, getOrg, getSystemSettings } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, NativeStatus, Organization } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Image as ImageIcon, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink } from 'lucide-react';
@@ -69,6 +69,14 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
   const handleAutoFill = async () => {
     if (!formData.commonName) return;
+    
+    const settings = getSystemSettings();
+    // Check if key exists in settings or env
+    if (!settings.geminiApiKey && !process.env.API_KEY) {
+       alert("Gemini API Key missing.\n\nPlease ask a Super Admin to configure the AI integration in the Settings menu.");
+       return;
+    }
+
     setLoadingAI(true);
     
     // Get Org Location for Native Status Context
@@ -78,6 +86,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     setLoadingAI(false);
     if (data) {
       setFormData(prev => ({ ...prev, ...data }));
+    } else {
+      alert("Could not fetch data. Please check the spelling or the API key configuration.");
     }
   };
 
@@ -126,7 +136,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       sexualMaturityAgeYears: 0, 
       averageAdultWeightKg: 0, 
       lifeExpectancyYears: 0, 
-      breedingSeasonStart: 0,
+      breedingSeasonStart: 0, 
       breedingSeasonEnd: 0,
       imageUrl: '',
       nativeStatusCountry: 'Unknown',

@@ -7,30 +7,30 @@ import {
   Settings, 
   Menu, 
   X, 
-  Dna,
-  HeartHandshake,
-  Globe2,
-  LogOut,
-  EyeOff,
-  Bell,
-  Briefcase,
-  Plus,
-  FolderOpen,
-  Map,
-  RefreshCw,
-  AlertCircle,
-  Database,
-  Copy,
-  Info,
-  Globe,
-  Shield,
-  User as UserIcon,
-  Camera,
-  CheckCircle2,
-  Mail,
-  Lock,
-  Save,
-  Loader2
+  Dna, 
+  HeartHandshake, 
+  Globe2, 
+  LogOut, 
+  EyeOff, 
+  Bell, 
+  Briefcase, 
+  Plus, 
+  FolderOpen, 
+  Map, 
+  RefreshCw, 
+  AlertCircle, 
+  Database, 
+  Copy, 
+  Info, 
+  Globe, 
+  Shield, 
+  User as UserIcon, 
+  Camera, 
+  CheckCircle2, 
+  Mail, 
+  Lock, 
+  Save, 
+  Loader2 
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -49,6 +49,49 @@ import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig }
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 import { SUPABASE_SCHEMA_SQL } from './services/schemaTemplate';
 import { hashPassword } from './services/crypto';
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error?: Error}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">
+          <AlertCircle size={48} className="text-red-500 mb-4" />
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Something went wrong.</h2>
+          <p className="text-slate-600 mb-6 max-w-md">
+             We couldn't load this section. This might be due to a temporary glitch or missing data.
+          </p>
+          {this.state.error && (
+             <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">
+                {this.state.error.toString()}
+             </div>
+          )}
+          <button 
+            onClick={() => window.location.reload()}
+            className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 font-medium transition-colors shadow-sm flex items-center gap-2"
+          >
+            <RefreshCw size={18} /> Reload Application
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // Language Context
 interface LanguageContextType {
@@ -726,23 +769,25 @@ const App: React.FC = () => {
             </header>
 
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <Routes>
-                <Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} />
-                <Route path="/network" element={<Network />} />
-                <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} />
-                <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} />
-                <Route path="/individuals/:id" element={<IndividualDetail />} />
-                {showPlantMap && (
-                   <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />
-                )}
-                {showBreeding && (
-                  <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />
-                )}
-                <Route path="/settings" element={<OrgSettings />} />
-                <Route path="/notifications" element={<Notifications />} />
-                <Route path="/super-admin" element={isSuperAdmin ? <SuperAdminPage /> : <Navigate to="/" replace />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} />
+                  <Route path="/network" element={<Network />} />
+                  <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} />
+                  <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} />
+                  <Route path="/individuals/:id" element={<IndividualDetail />} />
+                  {showPlantMap && (
+                     <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />
+                  )}
+                  {showBreeding && (
+                    <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />
+                  )}
+                  <Route path="/settings" element={<OrgSettings />} />
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/super-admin" element={isSuperAdmin ? <SuperAdminPage /> : <Navigate to="/" replace />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </ErrorBoundary>
             </div>
           </main>
         </div>

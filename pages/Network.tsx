@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getNetworkPartners, getOrg, getSpecies, sendMockNotification, getPartnerships, generatePartnerInvite, redeemPartnerInvite, getSession } from '../services/storage';
 import { ExternalPartner, Organization, Species, Partnership, Sex, UserRole } from '../types';
-import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock } from 'lucide-react';
+import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock, AlertTriangle } from 'lucide-react';
 
 declare const L: any; // Leaflet global
 
@@ -50,21 +50,25 @@ const Network: React.FC = () => {
   const [redeemResult, setRedeemResult] = useState<{success: boolean, message: string} | null>(null);
 
   useEffect(() => {
-    setPartners(getNetworkPartners());
+    setPartners(getNetworkPartners() || []);
     setMyOrg(getOrg());
-    setSpeciesList(getSpecies());
-    setPartnerships(getPartnerships());
+    setSpeciesList(getSpecies() || []);
+    setPartnerships(getPartnerships() || []);
   }, []);
 
   // Filter partners based on criteria
   const filteredPartners = partners.filter(p => {
+    if (!p) return false;
     // Must be visible organization
     if (!p.isOrgPublic) return false; 
     
+    // Safety check for speciesIds
+    const pSpeciesIds = p.speciesIds || [];
+
     // 1. Dropdown Filter (Specific Species ID)
     if (selectedSpeciesId) {
       if (!p.isSpeciesPublic) return false;
-      if (!p.speciesIds.includes(selectedSpeciesId)) return false;
+      if (!pSpeciesIds.includes(selectedSpeciesId)) return false;
     }
 
     // 2. Text Search (Name, Location, Species Names)
@@ -72,14 +76,14 @@ const Network: React.FC = () => {
       const query = searchQuery.toLowerCase();
       
       // Important: If hidden, name search should NOT work for privacy
-      const nameMatch = !p.hideName && p.name.toLowerCase().includes(query);
-      const locMatch = p.location.toLowerCase().includes(query);
+      const nameMatch = !p.hideName && (p.name || '').toLowerCase().includes(query);
+      const locMatch = (p.location || '').toLowerCase().includes(query);
       
       let speciesMatch = false;
       if (p.isSpeciesPublic) {
         // Find common names of species this partner has
         const partnerSpeciesNames = speciesList
-          .filter(s => p.speciesIds.includes(s.id))
+          .filter(s => pSpeciesIds.includes(s.id))
           .map(s => s.commonName.toLowerCase());
         
         // Check if any species name matches query
@@ -105,6 +109,10 @@ const Network: React.FC = () => {
   useEffect(() => {
     if (viewMode !== 'map') return;
     if (!mapRef.current) return;
+    if (typeof L === 'undefined') {
+       console.warn("Leaflet library not loaded yet.");
+       return;
+    }
     
     const targetLat = myOrg?.latitude || 39.8283; // Default US center
     const targetLng = myOrg?.longitude || -98.5795;
@@ -112,17 +120,21 @@ const Network: React.FC = () => {
 
     // Init map if not exists
     if (!leafletMap.current) {
-      const map = L.map(mapRef.current).setView([targetLat, targetLng], targetZoom);
-      leafletMap.current = map;
+      try {
+        const map = L.map(mapRef.current).setView([targetLat, targetLng], targetZoom);
+        leafletMap.current = map;
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-      }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
 
-      // Fix for gray areas/rendering issues on load
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 200);
+        // Fix for gray areas/rendering issues on load
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 200);
+      } catch (e) {
+        console.error("Error initializing map:", e);
+      }
     } else {
       // Map exists, ensure it is centered on My Org if available (and not just defaulting)
       if (myOrg && myOrg.latitude && myOrg.longitude) {
@@ -137,6 +149,8 @@ const Network: React.FC = () => {
   // Update Markers
   useEffect(() => {
     if (viewMode !== 'map' || !leafletMap.current) return;
+    if (typeof L === 'undefined') return;
+
     const map = leafletMap.current;
 
     // Clear existing markers
@@ -144,7 +158,7 @@ const Network: React.FC = () => {
     markersRef.current = [];
 
     // Add My Org Marker
-    if (myOrg && myOrg.latitude && myOrg.longitude) {
+    if (myOrg && myOrg.latitude !== undefined && myOrg.longitude !== undefined) {
       const myName = myOrg.hideName ? "Anonymous Organization" : myOrg.name;
       const myMarker = L.marker([myOrg.latitude, myOrg.longitude])
         .bindPopup(`<b>${myName}</b><br>You are here.`)
@@ -160,6 +174,8 @@ const Network: React.FC = () => {
       let lat = p.latitude;
       let lng = p.longitude;
       
+      if (lat === undefined || lng === undefined || lat === null || lng === null) return;
+
       // If obscured, round coordinates to 1 decimal place (approx 10km grid)
       if (p.obscureLocation) {
         lat = Math.round(lat * 10) / 10;
@@ -169,6 +185,7 @@ const Network: React.FC = () => {
       const isMyPartner = myPartners.some(mp => mp.id === p.id);
       const color = isMyPartner ? "#9333ea" : (p.obscureLocation ? "#f59e0b" : "#3b82f6");
       const displayName = p.hideName ? "Anonymous Partner" : p.name;
+      const pSpeciesIds = p.speciesIds || [];
 
       let marker;
       if (p.obscureLocation) {
@@ -191,9 +208,9 @@ const Network: React.FC = () => {
                ${displayName} 
                ${p.obscureLocation ? '<span title="Approximate Location" class="text-xs bg-amber-100 text-amber-800 px-1 rounded border border-amber-200">Approx</span>' : ''}
             </h3>
-            <p class="text-slate-500">${p.location}</p>
+            <p class="text-slate-500">${p.location || 'Unknown Location'}</p>
             ${isMyPartner ? '<p class="text-purple-600 font-bold text-xs mt-1">Partnership Active</p>' : ''}
-            ${(p.isSpeciesPublic && p.speciesIds.length > 0) ? `<p class="text-emerald-600 font-medium mt-1">Has ${p.speciesIds.length} species</p>` : ''}
+            ${(p.isSpeciesPublic && pSpeciesIds.length > 0) ? `<p class="text-emerald-600 font-medium mt-1">Has ${pSpeciesIds.length} species</p>` : ''}
             <button id="view-profile-${p.id}" class="mt-2 w-full bg-slate-800 text-white px-2 py-1 rounded text-xs font-medium hover:bg-slate-700">View Profile</button>
           </div>
       `;
@@ -218,6 +235,8 @@ const Network: React.FC = () => {
     }
 
   }, [filteredPartners, myOrg, searchQuery, viewMode, myPartners]);
+
+  // ... (Rest of component remains largely the same, mostly safety checks updated above)
 
   const handleOpenContact = (partner: ExternalPartner) => {
     setContactPartner(partner);
@@ -344,7 +363,14 @@ const Network: React.FC = () => {
          {viewMode === 'map' && (
             <>
                <div className="flex-1 relative z-0 h-full min-h-[400px]">
-                  <div id="network-map" ref={mapRef} className="h-full w-full"></div>
+                  {typeof L !== 'undefined' ? (
+                     <div id="network-map" ref={mapRef} className="h-full w-full"></div>
+                  ) : (
+                     <div className="h-full w-full flex items-center justify-center bg-slate-50 text-slate-400">
+                        <MapPin size={32} className="mb-2 opacity-50"/>
+                        <p>Map loading unavailable.</p>
+                     </div>
+                  )}
                   <button 
                     onClick={handleLocateMe}
                     className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200"
@@ -365,6 +391,8 @@ const Network: React.FC = () => {
                        filteredPartners.map(p => {
                          const isMyPartner = myPartners.some(mp => mp.id === p.id);
                          const displayName = p.hideName ? "Anonymous Partner" : p.name;
+                         const pSpeciesIds = p.speciesIds || [];
+                         
                          return (
                            <div key={p.id} className="p-4 hover:bg-white transition-colors cursor-pointer group">
                               <div className="flex justify-between items-start mb-1">
@@ -379,16 +407,16 @@ const Network: React.FC = () => {
                                  )}
                               </div>
                               <div className="flex items-center text-slate-500 text-xs mb-2">
-                                <MapPin size={12} className="mr-1" /> {p.location}
+                                <MapPin size={12} className="mr-1" /> {p.location || 'Unknown'}
                               </div>
-                              {p.isSpeciesPublic && p.speciesIds.length > 0 ? (
+                              {p.isSpeciesPublic && pSpeciesIds.length > 0 ? (
                                 <div className="flex flex-wrap gap-1 mb-2">
-                                   {p.speciesIds.slice(0, 4).map(sid => {
+                                   {pSpeciesIds.slice(0, 4).map(sid => {
                                       const sp = speciesList.find(s => s.id === sid);
                                       return sp ? <span key={sid} className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">{sp.commonName}</span> : null;
                                    })}
-                                   {p.speciesIds.length > 4 && (
-                                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">+{p.speciesIds.length - 4} more</span>
+                                   {pSpeciesIds.length > 4 && (
+                                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">+{pSpeciesIds.length - 4} more</span>
                                    )}
                                 </div>
                               ) : (
@@ -404,7 +432,7 @@ const Network: React.FC = () => {
                                  {p.allowBreedingRequests && (
                                     <button 
                                        onClick={(e) => { e.stopPropagation(); handleOpenContact(p); }}
-                                       className={`flex-1 text-purple-700 border border-purple-100 text-xs py-1.5 rounded font-medium flex items-center justify-center gap-1 transition-colors ${isDemoOrg ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-purple-50 hover:bg-purple-100'}`}
+                                       className={`flex-1 text-purple-700 border border-purple-100 text-xs py-1.5 rounded font-medium flex items-center justify-center gap-1 transition-colors ${isDemoOrg ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-purple-50 hover:bg-purple-100'}`}
                                        disabled={isDemoOrg}
                                        title={isDemoOrg ? "Contact disabled in Demo Mode" : "Contact Partner"}
                                     >
@@ -486,7 +514,7 @@ const Network: React.FC = () => {
                               <div className="flex justify-between items-start mb-4">
                                  <div>
                                     <h3 className="font-bold text-lg text-slate-900">{p.name}</h3>
-                                    <p className="text-slate-500 text-sm flex items-center gap-1"><MapPin size={14}/> {p.location}</p>
+                                    <p className="text-slate-500 text-sm flex items-center gap-1"><MapPin size={14}/> {p.location || 'Unknown'}</p>
                                  </div>
                                  <div className="bg-purple-100 text-purple-700 p-2 rounded-lg">
                                     <Handshake size={20} />
@@ -496,11 +524,11 @@ const Network: React.FC = () => {
                               <div className="space-y-3 mb-6">
                                  <div className="flex justify-between text-sm">
                                     <span className="text-slate-500">Connected Since</span>
-                                    <span className="font-medium text-slate-900">{partnership?.establishedDate}</span>
+                                    <span className="font-medium text-slate-900">{partnership?.establishedDate || 'N/A'}</span>
                                  </div>
                                  <div className="flex justify-between text-sm">
                                     <span className="text-slate-500">Shared Species</span>
-                                    <span className="font-medium text-slate-900">{p.speciesIds.length}</span>
+                                    <span className="font-medium text-slate-900">{(p.speciesIds || []).length}</span>
                                  </div>
                               </div>
 
@@ -573,7 +601,7 @@ const Network: React.FC = () => {
                         <Building2 className="text-slate-400"/> {selectedPartnerForSummary.name}
                      </h2>
                      <p className="text-slate-500 flex items-center gap-1 mt-1">
-                        <MapPin size={14}/> {selectedPartnerForSummary.location}
+                        <MapPin size={14}/> {selectedPartnerForSummary.location || 'Unknown Location'}
                         {selectedPartnerForSummary.obscureLocation && <span className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded ml-2">Approximate Location</span>}
                      </p>
                   </div>
@@ -603,8 +631,8 @@ const Network: React.FC = () => {
                   {summaryTab === 'population' && (
                      <div className="grid gap-4">
                         {selectedPartnerForSummary.isSpeciesPublic ? (
-                           selectedPartnerForSummary.speciesIds.length > 0 ? (
-                              selectedPartnerForSummary.speciesIds.map(sid => {
+                           (selectedPartnerForSummary.speciesIds || []).length > 0 ? (
+                              (selectedPartnerForSummary.speciesIds || []).map(sid => {
                                  const sp = speciesList.find(s => s.id === sid);
                                  const counts = selectedPartnerForSummary.populationCounts?.[sid] || "Unknown";
                                  if(!sp) return null;
@@ -648,7 +676,7 @@ const Network: React.FC = () => {
                            </div>
                         ) : (
                            <div className="space-y-6">
-                              {selectedPartnerForSummary.speciesIds.map(sid => {
+                              {(selectedPartnerForSummary.speciesIds || []).map(sid => {
                                  const sp = speciesList.find(s => s.id === sid);
                                  if(!sp) return null;
                                  const mockInds = generateMockPartnerIndividuals(sid, selectedPartnerForSummary.populationCounts?.[sid] || "0.0.0");
