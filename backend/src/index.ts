@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -5,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import bcrypt from 'bcrypt';
 
 dotenv.config();
 
@@ -69,24 +71,120 @@ app.get('/', (req: any, res: any) => {
   res.send('OpenStudbook Backend is running');
 });
 
-// --- Auth Routes ---
+// --- Secure Auth Routes ---
+
+// 1. LOGIN
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
+  
   try {
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || user.password !== password) { 
+    
+    if (!user) {
+       // Mitigation for timing attacks: verify a dummy hash if user not found
+       await bcrypt.compare(password, '$2b$10$abcdefghijklmnopqrstuv'); 
        return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    const passwordValid = await bcrypt.compare(password, user.password);
+    
+    if (!passwordValid) {
+       return res.status(401).json({ error: "Invalid credentials" });
+    }
+
     const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role }, 
         JWT_SECRET, 
         { expiresIn: '30d' }
     );
-    // Note: allowed_project_ids is the db column
-    const safeUser = { ...user, allowedProjectIds: user.allowed_project_ids || user.allowedProjectIds };
+
+    // Map DB fields to Frontend fields
+    const safeUser = { 
+        ...user, 
+        allowedProjectIds: user.allowed_project_ids || [],
+        avatarUrl: user.avatar_url
+    };
+    
     res.json({ token, user: safeUser });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    console.error("Login Error:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// 2. REGISTER
+app.post('/api/register', async (req: any, res: any) => {
+  const { orgName, userName, email, focus, password } = req.body;
+
+  if (!email || !password || !orgName) {
+      return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+        return res.status(409).json({ error: "Email already registered" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const orgId = `org-${Date.now()}`;
+    const projectId = `p-${Date.now()}`;
+    const userId = `u-${Date.now()}`;
+
+    // Transaction: Create Org -> Project -> User
+    const [newOrg, newProject, newUser] = await prisma.$transaction([
+      prisma.organization.create({
+        data: {
+          id: orgId,
+          name: orgName,
+          focus: focus || 'Animals',
+          founded_year: new Date().getFullYear(),
+          location: 'Unknown',
+          description: '',
+          is_org_public: false,
+          is_species_public: false,
+          obscure_location: false,
+          allow_breeding_requests: false
+        }
+      }),
+      prisma.project.create({
+        data: {
+          id: projectId,
+          name: 'Main Project',
+          description: 'Default project',
+          org_id: orgId
+        }
+      }),
+      prisma.user.create({
+        data: {
+          id: userId,
+          name: userName,
+          email: email,
+          password: hashedPassword,
+          role: 'Admin', // Default role for creator
+          status: 'Active',
+          allowed_project_ids: [] // Empty = All Access
+        }
+      })
+    ]);
+
+    const token = jwt.sign(
+        { id: newUser.id, email: newUser.email, role: newUser.role }, 
+        JWT_SECRET, 
+        { expiresIn: '30d' }
+    );
+
+    const safeUser = { 
+        ...newUser, 
+        allowedProjectIds: newUser.allowed_project_ids || [],
+        avatarUrl: newUser.avatar_url
+    };
+
+    res.json({ token, user: safeUser, org: newOrg });
+
+  } catch (e: any) {
+    console.error("Registration Error:", e);
+    res.status(500).json({ error: e.message || "Registration failed" });
   }
 });
 

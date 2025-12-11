@@ -4,6 +4,9 @@ import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
 import { hashPassword } from './crypto';
 
+// API Configuration
+const API_BASE_URL = 'http://localhost:3001';
+
 // Re-export sync functions for external usage (e.g. SuperAdmin seeding)
 export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage };
 
@@ -22,6 +25,7 @@ const KEYS = {
   PARTNERS: `${STORAGE_PREFIX}partners`,
   INVITE_CODES: `${STORAGE_PREFIX}invite_codes`,
   SESSION: `${STORAGE_PREFIX}session`,
+  TOKEN: `${STORAGE_PREFIX}token`, // New JWT Token key
   NOTIFICATIONS: `${STORAGE_PREFIX}notifications`,
   SETTINGS: `${STORAGE_PREFIX}settings`,
   LANGUAGES: `${STORAGE_PREFIX}languages`,
@@ -181,6 +185,7 @@ export const saveSession = (u: User) => set(KEYS.SESSION, u);
 export const logout = () => {
    if (typeof window === 'undefined') return;
    localStorage.removeItem(KEYS.SESSION);
+   localStorage.removeItem(KEYS.TOKEN);
    localStorage.removeItem(KEYS.IMPERSONATING);
    localStorage.removeItem(KEYS.BACKUP);
 };
@@ -348,67 +353,75 @@ export const redeemPartnerInvite = (code: string): { success: boolean, partner?:
    return { success: true, partner, message: `Connected with ${partner.name}!` };
 };
 
-export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<User> => {
-  const newOrgId = `org-${Date.now()}`;
-  const newOrg = { ...createEmptyOrg(), id: newOrgId, name: orgName, focus };
-  
-  // 1. Save Org Local
-  set(KEYS.ORG, newOrg);
-  
-  // 2. Push Org Remote (Await to prevent FK errors in subsequent steps)
-  // We use syncPushOrg directly and await it to ensure the organization exists 
-  // in the DB before we try to create a project linked to it.
-  try {
-    await syncPushOrg(newOrg);
-  } catch (e) {
-    console.error("Registration Sync Warning (Org):", e);
-    // Continue execution so user isn't blocked locally, but warn in console
-  }
-  
-  // 3. Create default project for new org
-  const defaultProject: Project = {
-     id: `p-${Date.now()}`,
-     name: 'Main Project',
-     description: 'Default project',
-     orgId: newOrgId
-  };
-  
-  // 4. Save Project (Local + Sync)
-  saveProjects([defaultProject]);
-  saveCurrentProjectId(defaultProject.id);
-  
-  const hashedPassword = await hashPassword(password);
-  
-  // Get default language from storage/config
-  const languages = getLanguages();
-  const defaultLang = languages.find(l => l.isDefault)?.code || 'en-GB';
+// --- AUTHENTICATION (SERVER SIDE MIGRATION) ---
 
-  // FIX: Generate Unique ID to prevent conflict with 'u-admin' in demo data
-  const newUser: User = { 
-    id: `u-${Date.now()}-${Math.floor(Math.random() * 1000)}`, 
-    name: userName, 
-    email, 
-    role: UserRole.ADMIN, 
-    status: UserStatus.ACTIVE, 
-    password: hashedPassword, 
-    preferredLanguage: defaultLang
-  };
-  saveUsers([newUser]); 
-  return newUser;
+export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<User> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgName, userName, email, focus, password })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "Registration failed");
+    }
+
+    const { token, user, org } = await response.json();
+    
+    // Store Auth
+    localStorage.setItem(KEYS.TOKEN, token);
+    
+    // Update Local State with Server Response
+    saveOrg(org, true); // Skip sync because server already has it
+    saveUsers([user], true);
+    
+    // Ensure a default project is set locally if server returns one? 
+    // The server creates a default project but we might need to fetch it.
+    // For now, we rely on the subsequent "Sync" pull on page load to get the project list.
+    
+    return user;
+  } catch (error: any) {
+    console.error("Server Registration Failed:", error);
+    throw error;
+  }
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
-  const users = getUsers();
-  const hashedPassword = await hashPassword(pass);
-  
-  const user = users.find(u => u.email === email);
-  
-  if (user) {
-     if (user.password === hashedPassword) {
+  // 1. Try Server Auth First
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+
+    if (response.ok) {
+      const { token, user } = await response.json();
+      localStorage.setItem(KEYS.TOKEN, token);
+      return user;
+    }
+  } catch (e) {
+    console.warn("Server Login Failed / Offline:", e);
+  }
+
+  // 2. Fallback: Local Demo Auth (Only if email matches specific demo user)
+  // This ensures the "Explore Demo" button still works even if the backend is down or not configured.
+  if (email === 'sarah@wild.org') {
+     const users = getUsers();
+     const user = users.find(u => u.email === email);
+     
+     // Note: For demo user, we check the hashed password stored locally.
+     // In a real scenario, we wouldn't have the hash locally for a new login, 
+     // but for the persistent demo state, it exists.
+     const hashedPassword = await hashPassword(pass);
+     if (user && user.password === hashedPassword) {
+        console.log("Logged in via Local Demo Fallback");
         return user;
      }
   }
-  
+
   return null;
 };
 

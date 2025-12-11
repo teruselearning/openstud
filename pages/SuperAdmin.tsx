@@ -4,7 +4,7 @@ import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, sa
 import { checkSupabaseConnection, isSupabaseConfigured, saveSupabaseConfig, getSupabaseConfig } from '../services/supabase';
 import { SUPABASE_SCHEMA_SQL } from '../services/schemaTemplate';
 import { translateDictionary } from '../services/geminiService';
-import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle } from 'lucide-react';
+import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
@@ -133,7 +133,7 @@ const SuperAdmin: React.FC = () => {
       landingPageConfig: { ...landingConfig, features: features },
       aboutPage: pagesConfig.about,
       privacyPage: pagesConfig.privacy,
-      termsPage: pagesConfig.terms
+      terms: pagesConfig.terms
     };
     saveSystemSettings(updated);
     setSettingsSaved(true);
@@ -223,7 +223,7 @@ const SuperAdmin: React.FC = () => {
   };
 
   const handleAddFeature = () => {
-     const newFeat: LandingFeature = { id: `f-${Date.now()}`, title: 'New Feature', description: '...', icon: 'HelpCircle' };
+     const newFeat: LandingFeature = { id: `f-${Date.now()}`, title: 'New Feature', description: 'Description here...', icon: 'HelpCircle' };
      setFeatures([...features, newFeat]);
      setEditingFeature(newFeat);
      setShowFeatureForm(true);
@@ -235,6 +235,13 @@ const SuperAdmin: React.FC = () => {
      setFeatures(updated);
      setShowFeatureForm(false);
      setEditingFeature(null);
+  };
+
+  const handleDeleteFeature = (id: string) => {
+     if(window.confirm("Remove this feature tile?")) {
+        const updated = features.filter(f => f.id !== id);
+        setFeatures(updated);
+     }
   };
 
   const handleAddLanguage = async () => {
@@ -620,6 +627,40 @@ const SuperAdmin: React.FC = () => {
                          />
                       </div>
                    </div>
+
+                   {/* FEATURE TILES MANAGEMENT */}
+                   <div className="border-t border-slate-100 pt-6">
+                      <div className="flex justify-between items-center mb-4">
+                         <h4 className="text-md font-bold text-slate-800 flex items-center gap-2"><Layout size={18}/> Feature Tiles</h4>
+                         <button 
+                           onClick={handleAddFeature}
+                           className="text-sm bg-purple-50 text-purple-700 hover:bg-purple-100 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"
+                         >
+                           <Plus size={16} /> Add Tile
+                         </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         {features.length === 0 && <p className="text-sm text-slate-400 italic p-4 border border-dashed rounded-lg text-center col-span-full">No feature tiles configured. Default tiles will be shown.</p>}
+                         {features.map((feature, idx) => (
+                            <div key={feature.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg relative group">
+                               <div className="flex items-start gap-3">
+                                  <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-slate-500 border border-slate-100 shadow-sm font-mono text-xs">
+                                     {feature.icon}
+                                  </div>
+                                  <div className="flex-1">
+                                     <h5 className="font-bold text-slate-900 text-sm">{feature.title}</h5>
+                                     <p className="text-xs text-slate-500 mt-1 line-clamp-2">{feature.description}</p>
+                                  </div>
+                               </div>
+                               <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => { setEditingFeature(feature); setShowFeatureForm(true); }} className="p-1 bg-white hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded border border-slate-200 shadow-sm"><PenLine size={12}/></button>
+                                  <button onClick={() => handleDeleteFeature(feature.id)} className="p-1 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 rounded border border-slate-200 shadow-sm"><X size={12}/></button>
+                               </div>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
                    
                    <div className="border-t border-slate-100 pt-6">
                       <label className="text-sm font-bold text-slate-700 mb-2 block">Custom Content (Below Features)</label>
@@ -791,25 +832,51 @@ const SuperAdmin: React.FC = () => {
       {/* Feature Edit Modal */}
       {showFeatureForm && editingFeature && (
          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-               <h3 className="text-lg font-bold text-slate-900 mb-4">Edit Feature Card</h3>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
+               <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-900">Edit Feature Card</h3>
+                  <button onClick={() => setShowFeatureForm(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+               </div>
+               
                <div className="space-y-4">
                   <div>
-                     <label className="text-sm font-medium text-slate-700">Title</label>
-                     <input className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={editingFeature.title} onChange={e => setEditingFeature({...editingFeature, title: e.target.value})} />
+                     <label className="text-sm font-medium text-slate-700 block mb-1">Title</label>
+                     <input 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" 
+                        value={editingFeature.title} 
+                        onChange={e => setEditingFeature({...editingFeature, title: e.target.value})} 
+                        placeholder="Feature Title"
+                     />
                   </div>
                   <div>
-                     <label className="text-sm font-medium text-slate-700">Description</label>
-                     <textarea className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" rows={3} value={editingFeature.description} onChange={e => setEditingFeature({...editingFeature, description: e.target.value})} />
+                     <label className="text-sm font-medium text-slate-700 block mb-1">Description</label>
+                     <textarea 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" 
+                        rows={3} 
+                        value={editingFeature.description} 
+                        onChange={e => setEditingFeature({...editingFeature, description: e.target.value})} 
+                        placeholder="Short description..."
+                     />
                   </div>
                   <div>
-                     <label className="text-sm font-medium text-slate-700">Icon (Lucide Name)</label>
-                     <input className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={editingFeature.icon} onChange={e => setEditingFeature({...editingFeature, icon: e.target.value})} placeholder="e.g. Shield, Globe, Users" />
+                     <div className="flex justify-between items-center mb-1">
+                        <label className="text-sm font-medium text-slate-700">Icon Name</label>
+                        <a href="https://lucide.dev/icons" target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                           Browse Icons <ExternalLink size={10}/>
+                        </a>
+                     </div>
+                     <input 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none" 
+                        value={editingFeature.icon} 
+                        onChange={e => setEditingFeature({...editingFeature, icon: e.target.value})} 
+                        placeholder="e.g. Shield, Globe, Users" 
+                     />
+                     <p className="text-xs text-slate-500 mt-1">Must match a valid Lucide React icon name.</p>
                   </div>
                </div>
-               <div className="flex justify-end gap-2 mt-6">
+               <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
                   <button onClick={() => setShowFeatureForm(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-                  <button onClick={handleUpdateFeature} className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">Update</button>
+                  <button onClick={handleUpdateFeature} className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 font-medium">Update</button>
                </div>
             </div>
          </div>

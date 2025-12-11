@@ -30,7 +30,8 @@ import {
   Mail, 
   Lock, 
   Save, 
-  Loader2 
+  Loader2,
+  Check
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -49,6 +50,8 @@ import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig }
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 import { SUPABASE_SCHEMA_SQL } from './services/schemaTemplate';
 import { hashPassword } from './services/crypto';
+
+// --- Components ---
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error?: Error}> {
@@ -92,6 +95,27 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
     return this.props.children;
   }
 }
+
+// Toast Component
+const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed bottom-6 right-6 z-[9999] px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-300 ${type === 'success' ? 'bg-slate-900 text-white' : 'bg-red-600 text-white'}`}>
+      {type === 'success' ? <CheckCircle2 size={24} className="text-emerald-400" /> : <AlertCircle size={24} className="text-white" />}
+      <div>
+        <p className="font-bold text-sm">{type === 'success' ? 'Success' : 'Error'}</p>
+        <p className="text-sm opacity-90">{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 p-1 hover:bg-white/20 rounded-full transition-colors">
+        <X size={16} />
+      </button>
+    </div>
+  );
+};
 
 // Language Context
 interface LanguageContextType {
@@ -266,6 +290,9 @@ const App: React.FC = () => {
   const [syncError, setSyncError] = useState<string|null>(null);
   const [showDbSetup, setShowDbSetup] = useState(false);
   
+  // Toast State
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  
   // Demo Mode Exit Flow
   const [initialLandingView, setInitialLandingView] = useState<ViewMode>('landing');
   
@@ -313,6 +340,10 @@ const App: React.FC = () => {
        setCurrentLangCode(defaultLang);
     }
   }, []);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+  };
 
   const refreshTranslations = () => {
      setLanguages(getLanguages());
@@ -382,10 +413,7 @@ const App: React.FC = () => {
         const result = await fetchRemoteData();
         if (result.success && result.data) {
            const { data } = result;
-           
-           // SMART SYNC LOGIC:
-           // If backend returns EMPTY data but we have LOCAL data (e.g. from Demo regeneration),
-           // DO NOT overwrite local with empty. Instead, push local to backend.
+           // ... (sync logic unchanged) ...
            const localUsers = getUsers();
            const remoteUsers = data.users || [];
            
@@ -399,10 +427,8 @@ const App: React.FC = () => {
               await syncPushBreedingEvents(getBreedingEvents());
               await syncPushBreedingLoans(getBreedingLoans());
               await syncPushPartnerships(getPartnerships());
-              await saveLanguages(getLanguages(), false); // Push langs
-              // Do not update local state from the empty remote response
+              await saveLanguages(getLanguages(), false); 
            } else {
-              // Standard Sync: Remote wins (or merge logic in future)
               if (data.org) saveOrg(data.org, true);
               if (data.settings) {
                   saveSystemSettings(data.settings, true);
@@ -428,9 +454,7 @@ const App: React.FC = () => {
            
            console.log("Data Sync Complete");
         } else if (!result.success) {
-           // Backend error (e.g. tables missing)
            setSyncError(result.message || "Unknown sync error");
-           // Only show full blocking error if we have NO local data to work with
            const localOrg = getOrg();
            if (!localOrg.id && (result.message.includes('permission denied') || result.message.includes('relation') || result.message.includes('42P01') || result.message.includes('42501'))) {
               setShowDbSetup(true);
@@ -556,6 +580,7 @@ const App: React.FC = () => {
     setShowAddProjectModal(false);
     setNewProjectName('');
     setNewProjectDesc('');
+    showToast("Project created successfully!", "success");
   };
 
   const handleManualSync = async () => {
@@ -591,9 +616,9 @@ const App: React.FC = () => {
         setProfileForm({ ...profileForm, email: pendingEmail });
         setIsVerifyingEmail(false);
         setPendingEmail('');
-        alert("Email verified and updated in form. Click Save to persist changes.");
+        showToast("Email verified and updated in form.", "success");
      } else {
-        alert("Invalid code.");
+        showToast("Invalid code.", "error");
      }
   };
 
@@ -601,7 +626,7 @@ const App: React.FC = () => {
      e.preventDefault();
      if (!user) return;
      if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) {
-        alert("Passwords do not match.");
+        showToast("Passwords do not match.", "error");
         return;
      }
 
@@ -628,7 +653,7 @@ const App: React.FC = () => {
      syncPushUsers([updatedUser]);
      
      setShowProfileModal(false);
-     alert("Profile updated successfully.");
+     showToast("Profile updated successfully.", "success");
   };
 
   if (isLoading) return null;
@@ -686,6 +711,7 @@ const App: React.FC = () => {
           />
           
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
+            {/* ... Existing Banner & Header Code ... */}
             {impersonating && (
               <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md">
                 <div className="flex items-center gap-2">
@@ -791,6 +817,9 @@ const App: React.FC = () => {
             </div>
           </main>
         </div>
+
+        {/* Global Toast Container */}
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
         {/* ... Modals (AddProject, DBSetup, Profile) ... */}
         {showAddProjectModal && (
@@ -993,7 +1022,10 @@ const App: React.FC = () => {
                           value={SUPABASE_SCHEMA_SQL}
                        />
                        <button 
-                          onClick={() => navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL)}
+                          onClick={() => {
+                             navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+                             showToast("SQL copied to clipboard!", "success");
+                          }}
                           className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg backdrop-blur transition-colors"
                           title="Copy to Clipboard"
                        >
