@@ -1,4 +1,4 @@
-import express, { Request as ExpressRequest, Response as ExpressResponse, NextFunction, RequestHandler } from 'express';
+import express from 'express';
 import cors from 'cors';
 // @ts-ignore
 import { PrismaClient } from '@prisma/client';
@@ -14,27 +14,46 @@ const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
 // Increase payload size limit for base64 images
-app.use(express.json({ limit: '50mb' }) as RequestHandler);
-app.use(express.urlencoded({ limit: '50mb', extended: true }) as RequestHandler);
-app.use(cors());
-app.use(morgan('dev') as RequestHandler);
+app.use(express.json({ limit: '50mb' }) as any);
+app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
+
+// Enable permissive CORS for dev
+app.use(cors({ origin: '*' }) as any);
+
+app.use(morgan('dev') as any);
+
+// --- Helper: JSON Serializer for SQLite ---
+// SQLite doesn't strictly support JSON types in all Prisma versions or configurations.
+// We safely parse strings back to JSON for GET, and stringify JSON for POST/PUT.
+
+const safeParse = (val: any) => {
+  if (typeof val === 'string') {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+};
+
+const safeStringify = (val: any) => {
+  if (typeof val === 'object' && val !== null) {
+    return JSON.stringify(val);
+  }
+  return val;
+};
 
 // --- Middleware ---
 
-interface AuthRequest extends ExpressRequest {
+interface AuthRequest extends express.Request {
   user?: any;
 }
 
-const authenticate = (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => {
+const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
-    // For the initial migration/sync phase, if no token is provided, 
-    // we might want to allow it OR strictly enforce it. 
-    // The frontend currently doesn't send Bearer tokens in syncService.ts.
-    // TODO: Update Frontend syncService.ts to send headers.
-    // For now, we will proceed but log a warning, or require a specific header.
-    // return res.status(401).json({ error: "No token provided" });
-    return next(); // Bypassing auth for easier migration testing
+    return next(); // Bypassing auth for easier migration/demo testing
   }
 
   const token = authHeader.split(' ')[1];
@@ -47,17 +66,19 @@ const authenticate = (req: ExpressRequest, res: ExpressResponse, next: NextFunct
   }
 };
 
+// --- Health Check ---
+app.get('/', (req: any, res: any) => {
+  res.send('OpenStudbook Backend is running');
+});
+
 // --- Auth Routes ---
 
-app.post('/api/login', async (req: ExpressRequest, res: ExpressResponse) => {
+app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
   
   try {
     const user = await prisma.user.findUnique({ where: { email } });
     
-    // NOTE: In a real app, you must compare hashed passwords using bcrypt.
-    // The current frontend sends a pre-hashed SHA-256 string as the 'password'.
-    // We compare that hash directly with the stored hash.
     if (!user || user.password !== password) { 
        return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -68,7 +89,9 @@ app.post('/api/login', async (req: ExpressRequest, res: ExpressResponse) => {
         { expiresIn: '30d' }
     );
     
-    res.json({ token, user });
+    // Parse allowed_project_ids before returning
+    const safeUser = { ...user, allowed_project_ids: safeParse(user.allowed_project_ids) };
+    res.json({ token, user: safeUser });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -77,7 +100,7 @@ app.post('/api/login', async (req: ExpressRequest, res: ExpressResponse) => {
 // --- Synchronization Endpoints ---
 
 // GET /api/sync - Returns all data for the frontend to cache
-app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/api/sync', authenticate, async (req: any, res: any) => {
   try {
     const [
       orgs, projects, users, species, individuals, 
@@ -95,13 +118,9 @@ app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressRespo
       prisma.language.findMany({ where: { is_deleted: false } })
     ]);
 
-    // Format matches frontend expectations from fetchRemoteData
     res.json({
       success: true,
       data: {
-        // In a real multi-tenant app, we would filter 'org' by the logged-in user's org.
-        // Here we return all (assuming single instance or super admin view for sync).
-        // The frontend filters "My Org" vs "Partners" client-side.
         partners: orgs.map((o: any) => ({
             ...o,
             foundedYear: o.founded_year,
@@ -112,10 +131,15 @@ app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressRespo
             allowBreedingRequests: o.allow_breeding_requests,
             breedingRequestContactId: o.breeding_request_contact_id,
             showNativeStatus: o.show_native_status,
+            dashboardBlock: safeParse(o.dashboard_block),
             deleted: o.is_deleted
         })),
         projects: projects.map((p: any) => ({ ...p, orgId: p.org_id })),
-        users: users.map((u: any) => ({ ...u, avatarUrl: u.avatar_url, allowedProjectIds: u.allowed_project_ids })),
+        users: users.map((u: any) => ({ 
+            ...u, 
+            avatarUrl: u.avatar_url, 
+            allowedProjectIds: safeParse(u.allowed_project_ids) 
+        })),
         species: species.map((s: any) => ({
             ...s,
             projectId: s.project_id,
@@ -150,9 +174,9 @@ app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressRespo
             transferredToOrgId: i.transferred_to_org_id,
             transferDate: i.transfer_date,
             transferNote: i.transfer_note,
-            weightHistory: i.weight_history,
-            growthHistory: i.growth_history,
-            healthHistory: i.health_history
+            weightHistory: safeParse(i.weight_history),
+            growthHistory: safeParse(i.growth_history),
+            healthHistory: safeParse(i.health_history)
         })),
         breedingEvents: events.map((e: any) => ({
             ...e,
@@ -163,17 +187,20 @@ app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressRespo
             successfulBirths: e.successful_births,
             losses: e.losses,
             notes: e.notes,
-            offspringIds: e.offspring_ids
+            offspringIds: safeParse(e.offspring_ids)
         })),
         breedingLoans: loans.map((l: any) => ({
             ...l,
             partnerOrgId: l.partner_org_id,
             proposerOrgId: l.proposer_org_id,
-            startDate: l.start_date,
-            endDate: l.end_date,
-            individualIds: l.individual_ids,
-            notificationRecipientId: l.notification_recipient_id,
-            changeRequest: l.change_request
+            role: l.role,
+            start_date: l.start_date,
+            end_date: l.end_date || null,
+            status: l.status,
+            individualIds: safeParse(l.individual_ids) || [],
+            terms: l.terms,
+            notificationRecipientId: l.notification_recipient_id || null,
+            changeRequest: safeParse(l.change_request) || null
         })),
         partnerships: partnerships.map((p: any) => ({
             ...p,
@@ -181,13 +208,13 @@ app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressRespo
             orgId2: p.org_id_2,
             establishedDate: p.established_date
         })),
-        settings: config?.settings,
+        settings: config ? safeParse(config.settings) : {},
         languages: languages.map((l: any) => ({
             code: l.code,
             name: l.name,
-            translations: l.translations,
+            translations: safeParse(l.translations),
             isDefault: l.is_default,
-            manualOverrides: l.manual_overrides,
+            manualOverrides: safeParse(l.manual_overrides),
             deleted: l.is_deleted
         }))
       }
@@ -198,34 +225,17 @@ app.get('/api/sync', authenticate, async (req: ExpressRequest, res: ExpressRespo
   }
 });
 
-// Helper for Upserts
-const createUpsertHandler = (table: any, mapper: (body: any) => any) => async (req: ExpressRequest, res: ExpressResponse) => {
+// Helper for Upserts with Manual Serializer
+const createUpsertHandler = (table: any, prepareBody: (body: any) => any) => async (req: any, res: any) => {
     try {
-        const data = req.body;
+        const rawData = req.body;
         // Handle array or single object
-        const items = Array.isArray(data) ? data : [data];
+        const items = Array.isArray(rawData) ? rawData : [rawData];
         
-        for (const item of items) {
-            // Check if item has ID, if so upsert
-            // The frontend mappers (in syncService.ts) send data with DB column names if using Supabase client,
-            // but since we are replacing the client, the frontend might be sending frontend keys.
-            // *Critial Assumption*: The frontend syncService.ts maps to snake_case before sending.
-            // Based on the user prompt's `syncService.ts`, the frontend creates objects like:
-            // { id:..., name:..., location:..., is_org_public:... }
-            // So we can pass them directly to Prisma if keys match.
-            
-            // However, Prisma generated types usually use camelCase for fields in JavaScript
-            // but map to snake_case in DB.
-            // We need to ensure the incoming body matches the Prisma Client Model field names.
-            
-            // Since `syncService.ts` manually mapped keys to snake_case (e.g. `is_org_public`), 
-            // but Prisma expects `is_org_public` defined in schema as `is_org_public Boolean ...`?
-            // Wait, in schema.prisma above I defined: `is_org_public Boolean @default(false)`
-            // Prisma Client JS will expose this as `is_org_public`.
-            // So if `syncService.ts` sends snake_case, we are good.
-            
+        for (const rawItem of items) {
+            const item = prepareBody(rawItem);
             await table.upsert({
-                where: { id: item.id || item.code }, // Code for languages
+                where: { id: item.id || item.code },
                 update: item,
                 create: item
             });
@@ -237,24 +247,44 @@ const createUpsertHandler = (table: any, mapper: (body: any) => any) => async (r
     }
 };
 
-// Define routes using the generic handler
-// Note: We use the exact paths the frontend calls
-app.post('/rest/v1/organizations', createUpsertHandler(prisma.organization, (x: any) => x));
-app.post('/rest/v1/projects', createUpsertHandler(prisma.project, (x: any) => x));
-app.post('/rest/v1/users', createUpsertHandler(prisma.user, (x: any) => x));
-app.post('/rest/v1/species', createUpsertHandler(prisma.species, (x: any) => x));
-app.post('/rest/v1/individuals', createUpsertHandler(prisma.individual, (x: any) => x));
-app.post('/rest/v1/breeding_events', createUpsertHandler(prisma.breedingEvent, (x: any) => x));
-app.post('/rest/v1/breeding_loans', createUpsertHandler(prisma.breedingLoan, (x: any) => x));
-app.post('/rest/v1/partnerships', createUpsertHandler(prisma.partnership, (x: any) => x));
-app.post('/rest/v1/app_config', createUpsertHandler(prisma.appConfig, (x: any) => x));
-app.post('/rest/v1/languages', createUpsertHandler(prisma.language, (x: any) => x));
+// Prep functions to handle JSON stringification
+const prepOrg = (o: any) => ({ ...o, dashboard_block: safeStringify(o.dashboard_block) });
+const prepUser = (u: any) => ({ ...u, allowed_project_ids: safeStringify(u.allowed_project_ids) });
+const prepInd = (i: any) => ({ 
+    ...i, 
+    weight_history: safeStringify(i.weight_history),
+    growth_history: safeStringify(i.growth_history),
+    health_history: safeStringify(i.health_history)
+});
+const prepEvent = (e: any) => ({ ...e, offspring_ids: safeStringify(e.offspring_ids) });
+const prepLoan = (l: any) => ({ 
+    ...l, 
+    individual_ids: safeStringify(l.individual_ids),
+    change_request: safeStringify(l.change_request)
+});
+const prepConfig = (c: any) => ({ ...c, settings: safeStringify(c.settings) });
+const prepLang = (l: any) => ({
+    ...l,
+    translations: safeStringify(l.translations),
+    manual_overrides: safeStringify(l.manual_overrides)
+});
 
-// Soft Delete Endpoints (triggered via PATCH or POST depending on Supabase client usage, 
-// but typically Supabase client sends `UPDATE` which maps to PATCH in REST)
-app.patch('/rest/v1/organizations', async (req: ExpressRequest, res: ExpressResponse) => {
+// Define routes
+app.post('/rest/v1/organizations', createUpsertHandler(prisma.organization, prepOrg));
+app.post('/rest/v1/projects', createUpsertHandler(prisma.project, (x: any) => x));
+app.post('/rest/v1/users', createUpsertHandler(prisma.user, prepUser));
+app.post('/rest/v1/species', createUpsertHandler(prisma.species, (x: any) => x));
+app.post('/rest/v1/individuals', createUpsertHandler(prisma.individual, prepInd));
+app.post('/rest/v1/breeding_events', createUpsertHandler(prisma.breedingEvent, prepEvent));
+app.post('/rest/v1/breeding_loans', createUpsertHandler(prisma.breedingLoan, prepLoan));
+app.post('/rest/v1/partnerships', createUpsertHandler(prisma.partnership, (x: any) => x));
+app.post('/rest/v1/app_config', createUpsertHandler(prisma.appConfig, prepConfig));
+app.post('/rest/v1/languages', createUpsertHandler(prisma.language, prepLang));
+
+// Soft Delete
+app.patch('/rest/v1/organizations', async (req: any, res: any) => {
     try {
-        const id = req.query.id?.toString().replace('eq.', '');
+        const id = (req.query.id as string)?.replace('eq.', '');
         if (id) {
             await prisma.organization.update({
                 where: { id },
@@ -268,9 +298,9 @@ app.patch('/rest/v1/organizations', async (req: ExpressRequest, res: ExpressResp
     }
 });
 
-app.patch('/rest/v1/languages', async (req: ExpressRequest, res: ExpressResponse) => {
+app.patch('/rest/v1/languages', async (req: any, res: any) => {
     try {
-        const code = req.query.code?.toString().replace('eq.', '');
+        const code = (req.query.code as string)?.replace('eq.', '');
         if (code) {
             await prisma.language.update({
                 where: { code },

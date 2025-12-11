@@ -22,7 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-backend/.env
-backend/package-lock.json
-package-lock.json
-backend/prisma/schema.prisma
