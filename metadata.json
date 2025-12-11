@@ -1,0 +1,8 @@
+{
+  "name": "OpenStudbook - migrating from supabase",
+  "description": "An open-source captive breeding management platform for zoos and conservation organizations. Manage species, individuals, genetics, and users with AI-assisted data entry.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
