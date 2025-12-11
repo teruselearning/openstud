@@ -1,3 +1,4 @@
+
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
 import { getOrg } from './storage'; 
 
@@ -5,8 +6,8 @@ import { getOrg } from './storage';
 // Use 127.0.0.1 instead of localhost to prevent node v17+ IPv6 resolution issues
 const API_BASE_URL = 'http://127.0.0.1:3001';
 
-// Helper for Fetch Wrapper
-const apiRequest = async (endpoint: string, method: string, body?: any) => {
+// Helper for Fetch Wrapper with Retry
+const apiRequest = async (endpoint: string, method: string, body?: any, retries = 3, backoff = 300) => {
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -23,7 +24,8 @@ const apiRequest = async (endpoint: string, method: string, body?: any) => {
     // Handle non-JSON responses (e.g., server crash HTML)
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
-       throw new Error(`Server returned non-JSON response: ${response.statusText}`);
+       const text = await response.text();
+       throw new Error(`Server returned non-JSON response: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -33,6 +35,12 @@ const apiRequest = async (endpoint: string, method: string, body?: any) => {
     }
     return data;
   } catch (error: any) {
+    if (retries > 0 && (error.message.includes('Failed to fetch') || error.message.includes('Network request failed'))) {
+       console.warn(`API Request Failed. Retrying... (${retries} attempts left)`);
+       await new Promise(resolve => setTimeout(resolve, backoff));
+       return apiRequest(endpoint, method, body, retries - 1, backoff * 2);
+    }
+    
     console.error(`API Error [${method} ${endpoint}]:`, error);
     // Don't throw for GET requests to allow UI to degrade gracefully to local-only mode
     if (method === 'GET') {

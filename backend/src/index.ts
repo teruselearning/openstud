@@ -8,6 +8,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// --- CRASH PREVENTION ---
+// These handlers prevent the server from crashing due to unhandled errors, 
+// allowing "Failed to fetch" issues to be debugged via server logs instead of a hard crash.
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL ERROR (Uncaught Exception):', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL ERROR (Unhandled Rejection):', reason);
+});
+
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,9 +34,6 @@ app.use(cors({ origin: '*' }) as any);
 app.use(morgan('dev') as any);
 
 // --- Helper: JSON Serializer for SQLite ---
-// SQLite doesn't strictly support JSON types in all Prisma versions or configurations.
-// We safely parse strings back to JSON for GET, and stringify JSON for POST/PUT.
-
 const safeParse = (val: any) => {
   if (typeof val === 'string') {
     try {
@@ -45,7 +53,6 @@ const safeStringify = (val: any) => {
 };
 
 // --- Middleware ---
-
 interface AuthRequest extends express.Request {
   user?: any;
 }
@@ -53,7 +60,7 @@ interface AuthRequest extends express.Request {
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
-    return next(); // Bypassing auth for easier migration/demo testing
+    return next();
   }
 
   const token = authHeader.split(' ')[1];
@@ -72,24 +79,18 @@ app.get('/', (req: any, res: any) => {
 });
 
 // --- Auth Routes ---
-
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
-  
   try {
     const user = await prisma.user.findUnique({ where: { email } });
-    
     if (!user || user.password !== password) { 
        return res.status(401).json({ error: "Invalid credentials" });
     }
-
     const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role }, 
         JWT_SECRET, 
         { expiresIn: '30d' }
     );
-    
-    // Parse allowed_project_ids before returning
     const safeUser = { ...user, allowed_project_ids: safeParse(user.allowed_project_ids) };
     res.json({ token, user: safeUser });
   } catch (e: any) {
@@ -98,24 +99,23 @@ app.post('/api/login', async (req: any, res: any) => {
 });
 
 // --- Synchronization Endpoints ---
-
-// GET /api/sync - Returns all data for the frontend to cache
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
   try {
+    // Wrap database calls in a try/catch to handle potential missing table errors gracefully
     const [
       orgs, projects, users, species, individuals, 
       events, loans, partnerships, config, languages
     ] = await Promise.all([
-      prisma.organization.findMany({ where: { is_deleted: false } }),
-      prisma.project.findMany(),
-      prisma.user.findMany(),
-      prisma.species.findMany(),
-      prisma.individual.findMany(),
-      prisma.breedingEvent.findMany(),
-      prisma.breedingLoan.findMany(),
-      prisma.partnership.findMany(),
-      prisma.appConfig.findUnique({ where: { id: 'global-settings' } }),
-      prisma.language.findMany({ where: { is_deleted: false } })
+      prisma.organization.findMany({ where: { is_deleted: false } }).catch(() => []),
+      prisma.project.findMany().catch(() => []),
+      prisma.user.findMany().catch(() => []),
+      prisma.species.findMany().catch(() => []),
+      prisma.individual.findMany().catch(() => []),
+      prisma.breedingEvent.findMany().catch(() => []),
+      prisma.breedingLoan.findMany().catch(() => []),
+      prisma.partnership.findMany().catch(() => []),
+      prisma.appConfig.findUnique({ where: { id: 'global-settings' } }).catch(() => null),
+      prisma.language?.findMany({ where: { is_deleted: false } }).catch(() => []) // Optional chaining for languages
     ]);
 
     res.json({
@@ -209,7 +209,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             establishedDate: p.established_date
         })),
         settings: config ? safeParse(config.settings) : {},
-        languages: languages.map((l: any) => ({
+        languages: (languages || []).map((l: any) => ({
             code: l.code,
             name: l.name,
             translations: safeParse(l.translations),
@@ -220,34 +220,41 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       }
     });
   } catch (e: any) {
-    console.error(e);
+    console.error("Sync Error:", e);
     res.status(500).json({ success: false, message: e.message });
   }
 });
 
 // Helper for Upserts with Manual Serializer
-const createUpsertHandler = (table: any, prepareBody: (body: any) => any) => async (req: any, res: any) => {
+const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
     try {
         const rawData = req.body;
-        // Handle array or single object
         const items = Array.isArray(rawData) ? rawData : [rawData];
         
+        if (!table) {
+            console.error(`Database Table Missing. ID Field: ${idField}. Run 'npx prisma generate' or check schema.`);
+            return res.status(500).json({ success: false, message: `Database table not initialized for ${idField}.` });
+        }
+
         for (const rawItem of items) {
             const item = prepareBody(rawItem);
+            const whereClause: any = {};
+            whereClause[idField] = item[idField];
+
             await table.upsert({
-                where: { id: item.id || item.code },
+                where: whereClause,
                 update: item,
                 create: item
             });
         }
         res.json({ success: true });
     } catch (e: any) {
-        console.error(`Upsert Error:`, e);
+        console.error(`Upsert Error (${idField}):`, e);
         res.status(500).json({ success: false, message: e.message });
     }
 };
 
-// Prep functions to handle JSON stringification
+// Prep functions
 const prepOrg = (o: any) => ({ ...o, dashboard_block: safeStringify(o.dashboard_block) });
 const prepUser = (u: any) => ({ ...u, allowed_project_ids: safeStringify(u.allowed_project_ids) });
 const prepInd = (i: any) => ({ 
@@ -279,7 +286,7 @@ app.post('/rest/v1/breeding_events', createUpsertHandler(prisma.breedingEvent, p
 app.post('/rest/v1/breeding_loans', createUpsertHandler(prisma.breedingLoan, prepLoan));
 app.post('/rest/v1/partnerships', createUpsertHandler(prisma.partnership, (x: any) => x));
 app.post('/rest/v1/app_config', createUpsertHandler(prisma.appConfig, prepConfig));
-app.post('/rest/v1/languages', createUpsertHandler(prisma.language, prepLang));
+app.post('/rest/v1/languages', createUpsertHandler(prisma.language, prepLang, 'code')); 
 
 // Soft Delete
 app.patch('/rest/v1/organizations', async (req: any, res: any) => {
@@ -314,7 +321,6 @@ app.patch('/rest/v1/languages', async (req: any, res: any) => {
     }
 });
 
-// Start Server
 app.listen(PORT, () => {
   console.log(`OpenStudbook Backend running on http://localhost:${PORT}`);
 });
