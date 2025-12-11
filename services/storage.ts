@@ -401,8 +401,11 @@ export const login = async (email: string, pass: string): Promise<User | null> =
     console.warn("Server Login Failed / Offline:", e);
   }
 
-  // 2. Fallback: Local Demo Auth (Only if email matches specific demo user)
-  if (email === 'sarah@wild.org') {
+  // 2. Fallback: Local Demo Auth (For all demo users)
+  // Allows login without backend or bcrypt dependency if offline
+  const demoEmails = ['sarah@wild.org', 'mike@wild.org', 'zoe@openstudbook.org'];
+  
+  if (demoEmails.includes(email)) {
      const users = getUsers();
      const user = users.find(u => u.email === email);
      
