@@ -43,8 +43,8 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode } from './services/storage';
-import { fetchRemoteData, syncPushUsers } from './services/syncService';
+import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners } from './services/storage';
+import { fetchRemoteData } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 import { SUPABASE_SCHEMA_SQL } from './services/schemaTemplate';
@@ -340,23 +340,44 @@ const App: React.FC = () => {
         if (result.success && result.data) {
            const { data } = result;
            
-           if (data.org) saveOrg(data.org, true);
-           if (data.settings) {
-              saveSystemSettings(data.settings, true);
-              setSystemSettings(data.settings); 
+           // SMART SYNC LOGIC:
+           // If backend returns EMPTY data but we have LOCAL data (e.g. from Demo regeneration),
+           // DO NOT overwrite local with empty. Instead, push local to backend.
+           const localUsers = getUsers();
+           const remoteUsers = data.users || [];
+           
+           if (localUsers.length > 0 && remoteUsers.length === 0) {
+              console.log("Smart Sync: Local data detected but Remote is empty. Pushing Local -> Remote.");
+              await syncPushOrg(getOrg());
+              await syncPushUsers(localUsers);
+              await syncPushProjects(getProjects());
+              await syncPushSpecies(getSpecies());
+              await syncPushIndividuals(getIndividuals());
+              await syncPushBreedingEvents(getBreedingEvents());
+              await syncPushBreedingLoans(getBreedingLoans());
+              await syncPushPartnerships(getPartnerships());
+              await saveLanguages(getLanguages(), false); // Push langs
+              // Do not update local state from the empty remote response
+           } else {
+              // Standard Sync: Remote wins (or merge logic in future)
+              if (data.org) saveOrg(data.org, true);
+              if (data.settings) {
+                  saveSystemSettings(data.settings, true);
+                  setSystemSettings(data.settings); 
+              }
+              if (data.languages) {
+                  saveLanguages(data.languages, true);
+                  setLanguages(data.languages);
+              }
+              if (data.projects) saveProjects(data.projects, true);
+              if (data.users) saveUsers(data.users, true);
+              if (data.species) saveSpecies(data.species, true);
+              if (data.individuals) saveIndividuals(data.individuals, true);
+              if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
+              if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
+              if (data.partnerships) savePartnerships(data.partnerships, true);
+              if (data.partners) saveNetworkPartners(data.partners); 
            }
-           if (data.languages) {
-              saveLanguages(data.languages, true);
-              setLanguages(data.languages);
-           }
-           if (data.projects) saveProjects(data.projects, true);
-           if (data.users) saveUsers(data.users, true);
-           if (data.species) saveSpecies(data.species, true);
-           if (data.individuals) saveIndividuals(data.individuals, true);
-           if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
-           if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
-           if (data.partnerships) savePartnerships(data.partnerships, true);
-           if (data.partners) saveNetworkPartners(data.partners); 
 
            setProjects(getProjects());
            const freshOrg = getOrg();
@@ -364,8 +385,11 @@ const App: React.FC = () => {
            
            console.log("Data Sync Complete");
         } else if (!result.success) {
+           // Backend error (e.g. tables missing)
            setSyncError(result.message || "Unknown sync error");
-           if (result.message.includes('permission denied') || result.message.includes('relation') || result.message.includes('42P01') || result.message.includes('42501')) {
+           // Only show full blocking error if we have NO local data to work with
+           const localOrg = getOrg();
+           if (!localOrg.id && (result.message.includes('permission denied') || result.message.includes('relation') || result.message.includes('42P01') || result.message.includes('42501'))) {
               setShowDbSetup(true);
            }
         }

@@ -266,6 +266,15 @@ export const fetchRemoteData = async () => {
 
     const finalPartners = (results.partners || []).filter((p: any) => p.id !== (myOrgData?.id || localOrg.id));
 
+    // Fix potential isDefault vs is_default issue in languages if backend mapping failed
+    if (results.languages) {
+        results.languages = results.languages.map((l: any) => ({
+            ...l,
+            isDefault: l.isDefault ?? l.is_default ?? false,
+            deleted: l.deleted ?? l.is_deleted ?? false
+        }));
+    }
+
     return {
       success: true,
       data: {

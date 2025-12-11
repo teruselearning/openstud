@@ -563,24 +563,16 @@ export const exportDataAsCSV = (): string => {
 
 // --- DEMO RESTORATION FUNCTION ---
 export const regenerateDemoData = async () => {
-    // 1. Org & Users
+    // 1. Prepare Data
     const mockOrg = createMockOrg();
-    saveOrg(mockOrg, true); // Save local
     
-    // Attempt sync to prevent FK errors for projects if user edits demo data later
-    try { await syncPushOrg(mockOrg); } catch(e) { console.warn("Demo Org Sync Skipped", e); }
-
     // Generate hashed passwords dynamically
     const defaultHash = await hashPassword('password');
     const mockUsers = createMockUsers().map(u => ({ ...u, password: defaultHash }));
-    saveUsers(mockUsers, true);
-
-    // 2. Projects
+    
     let projects = createMockProjects();
-    saveProjects(projects, true);
     const projectId = projects[0].id;
 
-    // 3. Species
     const s1: Species = {
        id: 'sp-1', projectId, commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal',
        conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20,
@@ -591,9 +583,8 @@ export const regenerateDemoData = async () => {
        conservationStatus: 'Endangered', sexualMaturityAgeYears: 7, averageAdultWeightKg: 0, lifeExpectancyYears: 40,
        plantClassification: 'Monoecious', breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Titan Arum')
     };
-    saveSpecies([s1, s2], true);
+    const speciesList = [s1, s2];
 
-    // 4. Individuals
     const i1: Individual = {
        id: 'ind-1', projectId, speciesId: s1.id, studbookId: 'SB-1001', name: 'Raja', sex: Sex.MALE, birthDate: '2018-05-15', weightKg: 130,
        notes: 'Dominant male.', imageUrl: generatePattern('Raja'), weightHistory: [], growthHistory: [], healthHistory: [],
@@ -604,17 +595,38 @@ export const regenerateDemoData = async () => {
        notes: 'Good mother.', imageUrl: generatePattern('Ratu'), weightHistory: [], growthHistory: [], healthHistory: [],
        source: 'Captive Bred'
     };
-    saveIndividuals([i1, i2], true);
+    const individualList = [i1, i2];
 
-    // 5. Events
     const ev1: BreedingEvent = {
        id: 'evt-1', speciesId: s1.id, sireId: i1.id, damId: i2.id, date: '2023-06-01', offspringCount: 2, successfulBirths: 2, losses: 0,
        notes: 'First successful clutch.', offspringIds: []
     };
-    saveBreedingEvents([ev1], true);
+    const events = [ev1];
+
+    // 2. Save LOCALLY FIRST (Critical for offline capability)
+    saveOrg(mockOrg, true);
+    saveUsers(mockUsers, true);
+    saveProjects(projects, true);
+    saveSpecies(speciesList, true);
+    saveIndividuals(individualList, true);
+    saveBreedingEvents(events, true);
     
-    // 6. Ensure Languages exist
+    // Ensure Languages exist
     getLanguages();
 
     console.log("Demo Data Restored Locally.");
+
+    // 3. Attempt Sync (Fire and forget, or handle silently)
+    try {
+       await syncPushOrg(mockOrg);
+       await syncPushUsers(mockUsers);
+       await syncPushProjects(projects);
+       await syncPushSpecies(speciesList);
+       await syncPushIndividuals(individualList);
+       await syncPushBreedingEvents(events);
+       console.log("Demo Data Synced to Backend.");
+    } catch(e: any) {
+       // Suppress backend errors during demo init - user can still work locally
+       console.warn("Demo Sync Failed (Backend might be offline or empty):", e.message);
+    }
 };
