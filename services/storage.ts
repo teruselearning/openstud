@@ -2,7 +2,7 @@
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
-import { hashPassword } from './crypto';
+import bcrypt from 'bcryptjs';
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:3001';
@@ -412,13 +412,15 @@ export const login = async (email: string, pass: string): Promise<User | null> =
      const users = getUsers();
      const user = users.find(u => u.email === email);
      
-     // Note: For demo user, we check the hashed password stored locally.
-     // In a real scenario, we wouldn't have the hash locally for a new login, 
-     // but for the persistent demo state, it exists.
-     const hashedPassword = await hashPassword(pass);
-     if (user && user.password === hashedPassword) {
-        console.log("Logged in via Local Demo Fallback");
-        return user;
+     // For legacy demo user in LOCAL storage, we might have a bcrypt hash OR a simple hash.
+     // If backend is unreachable, we can't verify bcrypt easily without a library.
+     // Since we imported bcryptjs, we can try to compare locally.
+     if (user && user.password) {
+        const isValid = bcrypt.compareSync(pass, user.password);
+        if (isValid) {
+           console.log("Logged in via Local Demo Fallback (Bcrypt)");
+           return user;
+        }
      }
   }
 
@@ -579,8 +581,8 @@ export const regenerateDemoData = async () => {
     // 1. Prepare Data
     const mockOrg = createMockOrg();
     
-    // Generate hashed passwords dynamically
-    const defaultHash = await hashPassword('password');
+    // Generate hashed passwords dynamically compatible with Backend bcrypt
+    const defaultHash = bcrypt.hashSync('password', 10);
     const mockUsers = createMockUsers().map(u => ({ ...u, password: defaultHash }));
     
     let projects = createMockProjects();

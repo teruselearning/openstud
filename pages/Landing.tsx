@@ -1,6 +1,6 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { registerOrganization, login, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, regenerateDemoData } from '../services/storage';
 import { fetchRemoteData } from '../services/syncService'; 
@@ -150,6 +150,20 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       setIsLoading(false);
     }
   };
+  
+  const handleResetData = async () => {
+     if(window.confirm("This will reset all demo data to default and update passwords. Continue?")) {
+        setIsLoading(true);
+        try {
+           await regenerateDemoData();
+           alert("Data reset successfully. You can now login with 'password'.");
+        } catch (e: any) {
+           alert("Reset failed: " + e.message);
+        } finally {
+           setIsLoading(false);
+        }
+     }
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -290,8 +304,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         <div className="fixed inset-0 bg-white/90 z-50 flex flex-col items-center justify-center space-y-4 backdrop-blur-sm">
           <Loader2 size={48} className="text-emerald-600 animate-spin" />
           <div className="text-center">
-             <p className="text-xl font-bold text-slate-800">Preparing App...</p>
-             <p className="text-sm text-slate-500 mt-1">Syncing latest data from cloud</p>
+             <p className="text-xl font-bold text-slate-800">Processing...</p>
+             <p className="text-sm text-slate-500 mt-1">Please wait while we update the system</p>
           </div>
         </div>
       )}
@@ -671,8 +685,12 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
              <button onClick={() => setViewMode('terms')} className="hover:text-emerald-600">Terms & Conditions</button>
           )}
         </div>
-        <div>
-          &copy; {new Date().getFullYear()} OpenStudbook Project. Open Source.
+        <div className="flex items-center gap-2 text-xs">
+          <span>&copy; {new Date().getFullYear()} OpenStudbook Project.</span>
+          <span className="text-slate-300">•</span>
+          <button onClick={handleResetData} className="text-slate-400 hover:text-red-500 flex items-center gap-1">
+             <RefreshCw size={10} /> Reset Demo Data
+          </button>
         </div>
       </footer>
     </div>
