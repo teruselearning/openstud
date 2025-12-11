@@ -2,7 +2,7 @@
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from './crypto';
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:3001';
@@ -172,7 +172,6 @@ const createMockProjects = (): Project[] => [
 ];
 
 const createMockUsers = (): User[] => [
-  // Password hashes will be calculated dynamically in regenerateDemoData
   { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] },
   { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: '', allowedProjectIds: ['p-1'] },
   { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] }
@@ -377,10 +376,6 @@ export const registerOrganization = async (orgName: string, userName: string, em
     saveOrg(org, true); // Skip sync because server already has it
     saveUsers([user], true);
     
-    // Ensure a default project is set locally if server returns one? 
-    // The server creates a default project but we might need to fetch it.
-    // For now, we rely on the subsequent "Sync" pull on page load to get the project list.
-    
     return user;
   } catch (error: any) {
     console.error("Server Registration Failed:", error);
@@ -407,20 +402,14 @@ export const login = async (email: string, pass: string): Promise<User | null> =
   }
 
   // 2. Fallback: Local Demo Auth (Only if email matches specific demo user)
-  // This ensures the "Explore Demo" button still works even if the backend is down or not configured.
   if (email === 'sarah@wild.org') {
      const users = getUsers();
      const user = users.find(u => u.email === email);
      
-     // For legacy demo user in LOCAL storage, we might have a bcrypt hash OR a simple hash.
-     // If backend is unreachable, we can't verify bcrypt easily without a library.
-     // Since we imported bcryptjs, we can try to compare locally.
-     if (user && user.password) {
-        const isValid = bcrypt.compareSync(pass, user.password);
-        if (isValid) {
-           console.log("Logged in via Local Demo Fallback (Bcrypt)");
-           return user;
-        }
+     // Specific check for demo user password 'password' without hash lib dependency
+     if (user && pass === 'password') {
+        console.log("Logged in via Local Demo Fallback");
+        return user;
      }
   }
 
@@ -442,9 +431,6 @@ export const deleteOrganization = async (orgId: string) => {
    const partners = get<ExternalPartner[]>(KEYS.PARTNERS, []);
    const updatedPartners = partners.filter(p => p.id !== orgId); // Remove from view
    saveNetworkPartners(updatedPartners);
-
-   // Note: We don't delete local data for "Current Org" usually if it's the one logged in, 
-   // but since Super Admin is deleting 'other' orgs generally, removing from partners list is key.
 };
 
 // ... (MFA, Notifications, Exports, Imports - unchanged) ...
@@ -581,9 +567,11 @@ export const regenerateDemoData = async () => {
     // 1. Prepare Data
     const mockOrg = createMockOrg();
     
-    // Generate hashed passwords dynamically compatible with Backend bcrypt
-    const defaultHash = bcrypt.hashSync('password', 10);
-    const mockUsers = createMockUsers().map(u => ({ ...u, password: defaultHash }));
+    // Store simple hash or placeholder locally
+    // The backend sync will receive this placeholder. Since the backend expects a bcrypt hash, 
+    // a simple string won't work for REAL backend auth, but for demo mode it's irrelevant.
+    // The user will use the "Explore Demo" button which triggers the local bypass logic above.
+    const mockUsers = createMockUsers().map(u => ({ ...u, password: 'demo-local-placeholder' }));
     
     let projects = createMockProjects();
     const projectId = projects[0].id;
