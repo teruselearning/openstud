@@ -26,3 +26,4 @@ backend/.env
 backend/package-lock.json
 package-lock.json
 backend/prisma/schema.prisma
+backend/prisma/schema.prisma

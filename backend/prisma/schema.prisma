@@ -3,182 +3,140 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model Organization {
-  id                        String    @id @db.VarChar(255)
-  name                      String    @db.VarChar(255)
-  location                  String?   @db.VarChar(255)
-  latitude                  Float?
-  longitude                 Float?
-  founded_year              Int?
-  description               String?   @db.Text
-  focus                     String?   @db.VarChar(50)
-  is_org_public             Boolean   @default(false)
-  is_species_public         Boolean   @default(false)
-  obscure_location          Boolean   @default(false)
-  hide_name                 Boolean   @default(false)
-  allow_breeding_requests   Boolean   @default(false)
-  breeding_request_contact_id String? @db.VarChar(255)
-  show_native_status        Boolean   @default(true)
-  dashboard_block           Json?     // Stores { enabled, title, content }
-  is_deleted                Boolean   @default(false)
-
-  projects                  Project[]
-  
-  @@map("organizations")
+  id                          String   @id
+  name                        String?
+  location                    String?
+  latitude                    Float?
+  longitude                   Float?
+  founded_year                Int?
+  description                 String?
+  focus                       String?
+  is_org_public               Boolean?
+  is_species_public           Boolean?
+  obscure_location            Boolean?
+  hide_name                   Boolean?
+  allow_breeding_requests     Boolean?
+  breeding_request_contact_id String?
+  show_native_status          Boolean?
+  dashboard_block             String? // JSON
+  is_deleted                  Boolean  @default(false)
 }
 
 model Project {
-  id          String       @id @db.VarChar(255)
-  org_id      String       @db.VarChar(255)
-  name        String       @db.VarChar(255)
-  description String?      @db.Text
-  
-  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
-  species      Species[]
-  individuals  Individual[]
-
-  @@index([org_id])
-  @@map("projects")
+  id          String  @id
+  org_id      String?
+  name        String?
+  description String?
 }
 
 model User {
-  id                  String  @id @db.VarChar(255)
-  name                String  @db.VarChar(255)
-  email               String  @unique @db.VarChar(255)
-  role                String  @db.VarChar(50)
-  status              String  @db.VarChar(50)
-  password            String? @db.VarChar(255)
-  avatar_url          String? @db.Text
-  allowed_project_ids Json?   // Stored as JSON array ["p-1", "p-2"]
-
-  @@map("users")
+  id                  String  @id
+  name                String?
+  email               String  @unique
+  role                String?
+  status              String?
+  password            String?
+  avatar_url          String?
+  allowed_project_ids String? // JSON Array
 }
 
 model Species {
-  id                        String  @id @db.VarChar(255)
-  project_id                String  @db.VarChar(255)
-  common_name               String  @db.VarChar(255)
-  scientific_name           String  @db.VarChar(255)
-  type                      String  @db.VarChar(50) // Animal/Plant
-  plant_classification      String? @db.VarChar(50)
-  conservation_status       String? @db.VarChar(100)
+  id                        String  @id
+  project_id                String?
+  common_name               String?
+  scientific_name           String?
+  type                      String?
+  plant_classification      String?
+  conservation_status       String?
   sexual_maturity_age_years Float?
   average_adult_weight_kg   Float?
   life_expectancy_years     Float?
   breeding_season_start     Int?
   breeding_season_end       Int?
-  image_url                 String? @db.Text
-  native_status_country     String? @db.VarChar(50)
-  native_status_local       String? @db.VarChar(50)
-
-  project     Project      @relation(fields: [project_id], references: [id], onDelete: Cascade)
-  individuals Individual[]
-  events      BreedingEvent[]
-
-  @@index([project_id])
-  @@map("species")
+  image_url                 String?
+  native_status_country     String?
+  native_status_local       String?
 }
 
 model Individual {
-  id                    String   @id @db.VarChar(255)
-  project_id            String   @db.VarChar(255)
-  species_id            String   @db.VarChar(255)
-  studbook_id           String   @db.VarChar(100)
-  name                  String   @db.VarChar(255)
-  sex                   String   @db.VarChar(20)
-  birth_date            String?  @db.VarChar(50)
+  id                    String   @id
+  project_id            String?
+  species_id            String?
+  studbook_id           String?
+  name                  String?
+  sex                   String?
+  birth_date            String?
   weight_kg             Float?
-  sire_id               String?  @db.VarChar(255)
-  dam_id                String?  @db.VarChar(255)
-  image_url             String?  @db.Text
-  dna_sequence          String?  @db.Text
-  notes                 String?  @db.Text
-  source                String?  @db.VarChar(100)
-  source_details        String?  @db.Text
+  sire_id               String?
+  dam_id                String?
+  image_url             String?
+  dna_sequence          String?
+  notes                 String?
+  source                String?
+  source_details        String?
   latitude              Float?
   longitude             Float?
-  is_deceased           Boolean  @default(false)
-  death_date            String?  @db.VarChar(50)
-  loan_status           String?  @db.VarChar(50)
-  transferred_to_org_id String?  @db.VarChar(255)
-  transfer_date         String?  @db.VarChar(50)
-  transfer_note         String?  @db.Text
-  
-  // JSON columns for history arrays --
-  weight_history        Json?
-  growth_history        Json?
-  health_history        Json?
-
-  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
-  species Species @relation(fields: [species_id], references: [id], onDelete: Cascade)
-
-  @@index([project_id])
-  @@index([species_id])
-  @@map("individuals")
+  is_deceased           Boolean?
+  death_date            String?
+  loan_status           String?
+  transferred_to_org_id String?
+  transfer_date         String?
+  transfer_note         String?
+  weight_history        String? // JSON
+  growth_history        String? // JSON
+  health_history        String? // JSON
 }
 
 model BreedingEvent {
-  id                String   @id @db.VarChar(255)
-  species_id        String   @db.VarChar(255)
-  sire_id           String?  @db.VarChar(255)
-  dam_id            String?  @db.VarChar(255)
-  date              String   @db.VarChar(50)
-  offspring_count   Int      @default(0)
-  successful_births Int      @default(0)
-  losses            Int      @default(0)
-  notes             String?  @db.Text
-  offspring_ids     Json?    // JSON array of ID strings
-
-  species Species @relation(fields: [species_id], references: [id], onDelete: Cascade)
-
-  @@index([species_id])
-  @@map("breeding_events")
+  id                String  @id
+  species_id        String?
+  sire_id           String?
+  dam_id            String?
+  date              String?
+  offspring_count   Int?
+  successful_births Int?
+  losses            Int?
+  notes             String?
+  offspring_ids     String? // JSON Array
 }
 
 model BreedingLoan {
-  id                        String  @id @db.VarChar(255)
-  partner_org_id            String  @db.VarChar(255)
-  proposer_org_id           String  @db.VarChar(255)
-  role                      String  @db.VarChar(50)
-  start_date                String  @db.VarChar(50)
-  end_date                  String? @db.VarChar(50)
-  status                    String  @db.VarChar(50)
-  individual_ids            Json?   // JSON Array
-  terms                     String? @db.Text
-  notification_recipient_id String? @db.VarChar(255)
-  change_request            Json?
-
-  @@map("breeding_loans")
+  id                        String  @id
+  partner_org_id            String?
+  proposer_org_id           String?
+  role                      String?
+  start_date                String?
+  end_date                  String?
+  status                    String?
+  individual_ids            String? // JSON Array
+  terms                     String?
+  notification_recipient_id String?
+  change_request            String? // JSON
 }
 
 model Partnership {
-  id               String @id @db.VarChar(255)
-  org_id_1         String @db.VarChar(255)
-  org_id_2         String @db.VarChar(255)
-  status           String @db.VarChar(50)
-  established_date String @db.VarChar(50)
-
-  @@map("partnerships")
+  id               String  @id
+  org_id_1         String?
+  org_id_2         String?
+  status           String?
+  established_date String?
 }
 
 model AppConfig {
-  id       String @id @db.VarChar(255)
-  settings Json
-
-  @@map("app_config")
+  id       String  @id
+  settings String? // JSON
 }
 
 model Language {
-  code             String  @id @db.VarChar(10)
-  name             String  @db.VarChar(100)
-  translations     Json
-  is_default       Boolean @default(false)
-  manual_overrides Json?
-  is_deleted       Boolean @default(false)
-
-  @@map("languages")
+  code             String  @id
+  name             String?
+  translations     String? // JSON
+  is_default       Boolean?
+  manual_overrides String? // JSON
+  is_deleted       Boolean  @default(false)
 }
