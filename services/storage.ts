@@ -3,6 +3,7 @@ import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, 
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
 import { hashPassword } from './crypto';
+import { sendSystemEmail } from './emailService';
 
 // API Configuration
 const API_BASE_URL = 'http://localhost:3001';
@@ -55,7 +56,24 @@ const set = <T>(key: string, val: T) => {
 };
 
 const getDefaultSystemSettings = (): SystemSettings => ({
-  smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: true,
+  smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
+  emailTemplates: {
+    mfa: {
+      enabled: true,
+      subject: "Your OpenStudbook Verification Code",
+      bodyHtml: "<h3>Verification Required</h3><p>Your security code is: <strong>{{code}}</strong></p><p>This code will expire in 10 minutes.</p>"
+    },
+    invite: {
+      enabled: true,
+      subject: "Invitation to Join OpenStudbook",
+      bodyHtml: "<h3>Hello!</h3><p>You have been invited to join the <strong>{{orgName}}</strong> workspace on OpenStudbook.</p><p>Please ask your administrator for your temporary login credentials.</p>"
+    },
+    notification: {
+      enabled: true,
+      subject: "New Notification: {{title}}",
+      bodyHtml: "<h3>New Activity</h3><p>{{message}}</p><p>Log in to view details.</p>"
+    }
+  },
   themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
   aboutPage: { enabled: true, title: 'About Us', contentHtml: '<p>About content...</p>' },
   privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Privacy content...</p>' },
@@ -450,9 +468,22 @@ export const trustDevice = (userId: string) => {
    localStorage.setItem(KEYS.TRUSTED_DEVICES, JSON.stringify(trusted));
 };
 
-export const sendMfaCode = (email: string, code: string) => {
-   console.log(`[MOCK EMAIL] To: ${email}, Code: ${code}`);
-   alert(`MOCK EMAIL: Your verification code is ${code}`);
+export const sendMfaCode = async (email: string, code: string) => {
+   // Attempt to send real email
+   const sent = await sendSystemEmail(
+      email, 
+      'mfa', 
+      { code }, 
+      "Your OpenStudbook Code", 
+      `Your code is ${code}`
+   );
+
+   if (sent) {
+      console.log(`[SMTP] MFA Code sent to ${email}`);
+   } else {
+      console.log(`[MOCK EMAIL] To: ${email}, Code: ${code}`);
+      alert(`MOCK EMAIL (SMTP Not Configured): Your verification code is ${code}`);
+   }
 };
 
 export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []);
@@ -471,6 +502,8 @@ export const sendMockNotification = (recipientId: string, title: string, message
       type
    };
    saveNotifications([newNotif, ...notifs]);
+   
+   // Try sending email if recipient has an email address (lookup logic omitted for brevity in mock func, usually we'd look up user)
 };
 
 export const exportSpeciesData = (speciesId: string): any => {

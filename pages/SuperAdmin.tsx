@@ -4,15 +4,16 @@ import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, sa
 import { checkSupabaseConnection, isSupabaseConfigured, saveSupabaseConfig, getSupabaseConfig } from '../services/supabase';
 import { SUPABASE_SCHEMA_SQL } from '../services/schemaTemplate';
 import { translateDictionary } from '../services/geminiService';
-import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical } from 'lucide-react';
+import { testSmtpConnection } from '../services/emailService';
+import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex } from '../types';
+import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 
 const SuperAdmin: React.FC = () => {
   const { t, refreshTranslations } = useContext(LanguageContext);
-  const [activeTab, setActiveTab] = useState<'overview' | 'database' | 'settings' | 'content' | 'languages'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'database' | 'settings' | 'content' | 'languages' | 'email'>('overview');
   
   // Data Stats
   const partners = getNetworkPartners();
@@ -39,6 +40,12 @@ const SuperAdmin: React.FC = () => {
      privacy: settings.privacyPage,
      terms: settings.termsPage
   });
+  
+  // Email State
+  const [testEmail, setTestEmail] = useState('');
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('mfa');
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   
   // Language State
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
@@ -71,6 +78,10 @@ const SuperAdmin: React.FC = () => {
     });
     setDbConfig(getSupabaseConfig());
     setLanguages(getLanguages());
+    
+    if (current.emailTemplates) {
+       setEditingTemplate(current.emailTemplates['mfa']);
+    }
   }, []);
 
   const addLog = (msg: string) => setSeedLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
@@ -133,11 +144,44 @@ const SuperAdmin: React.FC = () => {
       landingPageConfig: { ...landingConfig, features: features },
       aboutPage: pagesConfig.about,
       privacyPage: pagesConfig.privacy,
-      terms: pagesConfig.terms
+      terms: pagesConfig.terms,
+      // Ensure current template edit is saved to the main object
+      emailTemplates: {
+         ...settings.emailTemplates,
+         [selectedTemplate]: editingTemplate || settings.emailTemplates?.[selectedTemplate]
+      }
     };
     saveSystemSettings(updated);
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 3000);
+  };
+  
+  const handleTestSmtp = async () => {
+     if(!testEmail) return;
+     setIsTestingSmtp(true);
+     try {
+        // Save settings first to ensure backend uses latest
+        await syncPushSettings(settings);
+        const result = await testSmtpConnection(testEmail);
+        alert(result.message);
+     } catch (e: any) {
+        alert("SMTP Test Failed: " + e.message);
+     } finally {
+        setIsTestingSmtp(false);
+     }
+  };
+  
+  const handleTemplateChange = (type: string) => {
+     // Save current work to local state before switching
+     if (editingTemplate) {
+        setSettings(prev => ({
+           ...prev,
+           emailTemplates: { ...prev.emailTemplates, [selectedTemplate]: editingTemplate }
+        }));
+     }
+     
+     setSelectedTemplate(type);
+     setEditingTemplate(settings.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true });
   };
 
   const handleLoginAs = (orgId: string, orgObj: Organization) => {
@@ -369,6 +413,7 @@ const SuperAdmin: React.FC = () => {
         <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm overflow-x-auto max-w-full">
            <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>{t('systemOverview')}</button>
            <button onClick={() => setActiveTab('database')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-2 ${activeTab === 'database' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Database size={16} /> Database</button>
+           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-2 ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email</button>
            <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-2 ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Settings size={16} /> {t('appSettings')}</button>
            <button onClick={() => setActiveTab('content')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-2 ${activeTab === 'content' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> Content</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap flex items-center gap-2 ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('manageLanguages')}</button>
@@ -556,6 +601,132 @@ const SuperAdmin: React.FC = () => {
                   </div>
                   <button onClick={handleSeedDatabase} disabled={isSeeding} className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed">{isSeeding ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}{isSeeding ? 'Seeding in progress...' : 'Populate / Seed Database'}</button>
                </div>
+            </div>
+         </div>
+      )}
+
+      {/* EMAIL TAB */}
+      {activeTab === 'email' && (
+         <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+               {/* SMTP Config */}
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                     <Mail size={20} className="text-blue-600" /> SMTP Configuration
+                  </h3>
+                  <div className="space-y-4">
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('smtpHost')}</label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpHost} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="smtp.gmail.com" />
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1">{t('port')}</label>
+                           <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPort} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} placeholder="587" />
+                        </div>
+                        <div className="flex items-end">
+                           <label className="flex items-center space-x-2 bg-slate-50 px-3 py-2.5 rounded-lg border border-slate-200 w-full cursor-pointer">
+                              <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" checked={settings.smtpSecure} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} />
+                              <span className="text-sm text-slate-700">{t('secureConnection')}</span>
+                           </label>
+                        </div>
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('username')}</label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpUser} onChange={e => setSettings({...settings, smtpUser: e.target.value})} placeholder="user@example.com" />
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
+                        <input type="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
+                     </div>
+                     
+                     <div className="pt-2 border-t border-slate-100 mt-4">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Test Connection</label>
+                        <div className="flex gap-2">
+                           <input 
+                              className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" 
+                              placeholder="Test Email Address" 
+                              value={testEmail}
+                              onChange={e => setTestEmail(e.target.value)}
+                           />
+                           <button 
+                              onClick={handleTestSmtp} 
+                              disabled={isTestingSmtp || !testEmail} 
+                              className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2"
+                           >
+                              {isTestingSmtp ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} Test
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Email Templates */}
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                     <PenTool size={20} className="text-emerald-600" /> Email Templates
+                  </h3>
+                  
+                  <div className="flex gap-2 mb-4 bg-slate-50 p-1 rounded-lg">
+                     <button onClick={() => handleTemplateChange('mfa')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'mfa' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>MFA Code</button>
+                     <button onClick={() => handleTemplateChange('invite')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'invite' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>User Invite</button>
+                     <button onClick={() => handleTemplateChange('notification')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'notification' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>General</button>
+                  </div>
+
+                  {editingTemplate && (
+                     <div className="space-y-4 flex-1 flex flex-col">
+                        <div className="flex items-center justify-between">
+                           <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
+                              <input 
+                                 type="checkbox" 
+                                 checked={editingTemplate.enabled}
+                                 onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})}
+                                 className="rounded text-emerald-600 focus:ring-emerald-500"
+                              />
+                              Enable Custom Template
+                           </label>
+                           <span className="text-xs text-slate-400">
+                              {selectedTemplate === 'mfa' ? 'Variables: {{code}}' : selectedTemplate === 'invite' ? 'Variables: {{orgName}}' : 'Variables: {{title}}, {{message}}'}
+                           </span>
+                        </div>
+                        
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Subject Line</label>
+                           <input 
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+                              value={editingTemplate.subject}
+                              onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})}
+                              placeholder="Email Subject"
+                              disabled={!editingTemplate.enabled}
+                           />
+                        </div>
+
+                        <div className="flex-1 flex flex-col min-h-[200px]">
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Body (HTML)</label>
+                           {editingTemplate.enabled ? (
+                              <RichTextEditor 
+                                 value={editingTemplate.bodyHtml}
+                                 onChange={val => setEditingTemplate({...editingTemplate, bodyHtml: val})}
+                                 height="100%"
+                              />
+                           ) : (
+                              <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-sm">
+                                 Custom template disabled. System default will be used.
+                              </div>
+                           )}
+                        </div>
+                     </div>
+                  )}
+               </div>
+            </div>
+            
+            <div className="flex justify-end pt-4 border-t border-slate-200">
+               <button 
+                  onClick={handleSaveSettings}
+                  className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2 shadow-sm transition-colors"
+               >
+                  <Save size={18} /> {settingsSaved ? 'Settings Saved!' : 'Save Email Configuration'}
+               </button>
             </div>
          </div>
       )}

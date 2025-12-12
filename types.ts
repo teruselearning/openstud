@@ -1,5 +1,6 @@
 
 
+
 export enum UserRole {
   SUPER_ADMIN = 'Super Admin',
   ADMIN = 'Admin',
@@ -125,6 +126,12 @@ export interface StaticPageConfig {
   contentHtml: string;
 }
 
+export interface EmailTemplate {
+  subject: string;
+  bodyHtml: string;
+  enabled: boolean;
+}
+
 export interface SystemSettings {
   // SMTP
   smtpHost: string;
@@ -132,6 +139,7 @@ export interface SystemSettings {
   smtpUser: string;
   smtpPass: string;
   smtpSecure: boolean;
+  emailTemplates?: Record<string, EmailTemplate>;
   // Theming
   themePrimaryColor: string; // Hex code for primary brand color
   themeSecondaryColor: string; // Hex code for secondary/accent

@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -6,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -63,6 +65,40 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   } catch (e) {
     return res.status(401).json({ error: "Invalid token" });
   }
+};
+
+// --- Email Helper ---
+const createTransporter = async () => {
+  // 1. Try DB Config first
+  const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
+  const settings = config?.settings ? (typeof config.settings === 'string' ? JSON.parse(config.settings) : config.settings) : {};
+  
+  if (settings.smtpHost && settings.smtpUser) {
+    return nodemailer.createTransport({
+      host: settings.smtpHost,
+      port: Number(settings.smtpPort) || 587,
+      secure: settings.smtpSecure || false, // true for 465, false for other ports
+      auth: {
+        user: settings.smtpUser,
+        pass: settings.smtpPass,
+      },
+    });
+  }
+
+  // 2. Fallback to Env Vars
+  if (process.env.SMTP_HOST) {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+
+  return null;
 };
 
 // --- Health Check ---
@@ -184,6 +220,57 @@ app.post('/api/register', async (req: any, res: any) => {
   } catch (e: any) {
     console.error("Registration Error:", e);
     res.status(500).json({ error: e.message || "Registration failed" });
+  }
+});
+
+// --- EMAIL ENDPOINTS ---
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+  const { to } = req.body;
+  try {
+    const transporter = await createTransporter();
+    if (!transporter) {
+      return res.status(400).json({ error: "SMTP not configured in settings or environment." });
+    }
+
+    await transporter.verify();
+    
+    await transporter.sendMail({
+      from: '"OpenStudbook System" <no-reply@openstudbook.org>',
+      to,
+      subject: 'OpenStudbook SMTP Test',
+      text: 'If you are reading this, your SMTP configuration is correct!',
+      html: '<h3>SMTP Configured Successfully</h3><p>Your OpenStudbook instance can now send emails.</p>'
+    });
+
+    res.json({ success: true, message: "Test email sent successfully." });
+  } catch (e: any) {
+    console.error("SMTP Test Error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+  const { to, subject, html } = req.body;
+  if (!to || !subject || !html) return res.status(400).json({ error: "Missing fields" });
+
+  try {
+    const transporter = await createTransporter();
+    if (!transporter) {
+      return res.status(400).json({ error: "SMTP not configured." });
+    }
+
+    await transporter.sendMail({
+      from: '"OpenStudbook" <no-reply@openstudbook.org>',
+      to,
+      subject,
+      html
+    });
+
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("Email Send Error:", e);
+    res.status(500).json({ error: e.message });
   }
 });
 
