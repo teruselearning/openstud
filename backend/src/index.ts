@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -11,11 +10,11 @@ import bcrypt from 'bcryptjs';
 dotenv.config();
 
 // --- CRASH PREVENTION ---
-process.on('uncaughtException', (err) => {
+(process as any).on('uncaughtException', (err: any) => {
   console.error('CRITICAL ERROR (Uncaught Exception):', err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+(process as any).on('unhandledRejection', (reason: any, promise: any) => {
   console.error('CRITICAL ERROR (Unhandled Rejection):', reason);
 });
 

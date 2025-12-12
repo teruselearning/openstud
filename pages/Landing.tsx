@@ -27,6 +27,10 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   // Settings (for ReCAPTCHA & Content)
   const settings = getSystemSettings();
   const landingConfig = settings.landingPageConfig;
+  
+  // Check env var for demo reset button visibility
+  // Safely access env to prevent crash if undefined
+  const showResetButton = (import.meta as any).env?.VITE_SHOW_DEMO_RESET === 'true';
 
   // Registration State
   const [regData, setRegData] = useState({ 
@@ -687,10 +691,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span>&copy; {new Date().getFullYear()} OpenStudbook Project.</span>
-          <span className="text-slate-300">•</span>
-          <button onClick={handleResetData} className="text-slate-400 hover:text-red-500 flex items-center gap-1">
-             <RefreshCw size={10} /> Reset Demo Data
-          </button>
+          {showResetButton && (
+            <>
+              <span className="text-slate-300">•</span>
+              <button onClick={handleResetData} className="text-slate-400 hover:text-red-500 flex items-center gap-1">
+                 <RefreshCw size={10} /> Reset Demo Data
+              </button>
+            </>
+          )}
         </div>
       </footer>
     </div>
