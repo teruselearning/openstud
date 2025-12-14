@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -7,6 +8,11 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -32,6 +38,10 @@ app.use(express.json({ limit: '50mb' }) as any);
 app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 
 app.use(morgan('dev') as any);
+
+// --- STATIC FILES SERVING ---
+// Serve React frontend (dist folder) from the parent directory
+app.use(express.static(path.join(__dirname, '../../dist')));
 
 // --- Helper: JSON Parsing for SQLite Compatibility (GET) ---
 const safeParse = (val: any) => {
@@ -101,7 +111,7 @@ const createTransporter = async () => {
 };
 
 // --- Health Check ---
-app.get('/', (req: any, res: any) => {
+app.get('/api/health', (req: any, res: any) => {
   res.send('OpenStudbook Backend is running');
 });
 
@@ -533,6 +543,11 @@ app.patch('/rest/v1/languages', async (req: any, res: any) => {
     } catch(e:any) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// React Router Catch-All (must be last)
+app.get('*', (req: any, res: any) => {
+  res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 
 // Bind to default to allow Node to handle dual-stack
