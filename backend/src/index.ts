@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -115,7 +114,8 @@ app.post('/api/login', async (req: any, res: any) => {
   try {
     const user = await prisma.user.findUnique({ where: { email } });
     
-    if (!user) {
+    // Check if user exists AND has a password set (handle nullable password type)
+    if (!user || !user.password) {
        // Mitigation for timing attacks: verify a dummy hash if user not found
        await bcrypt.compare(password, '$2b$10$abcdefghijklmnopqrstuv'); 
        return res.status(401).json({ error: "Invalid credentials" });
