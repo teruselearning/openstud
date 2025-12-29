@@ -1,13 +1,12 @@
 
-
 export const SUPABASE_SCHEMA_SQL = `
--- 1. Enable RLS and Grants (Crucial for 'permission denied' fix)
+-- 1. Enable RLS and Grants
 GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO postgres, anon, authenticated, service_role;
 
--- 2. Tables (Safe Creation - Idempotent)
+-- 2. Tables
 CREATE TABLE IF NOT EXISTS public.organizations (
   id text primary key,
   name text,
@@ -37,6 +36,7 @@ CREATE TABLE IF NOT EXISTS public.projects (
 
 CREATE TABLE IF NOT EXISTS public.users (
   id text primary key,
+  org_id text references public.organizations(id) ON DELETE CASCADE,
   name text,
   email text,
   role text,
@@ -133,7 +133,6 @@ CREATE TABLE IF NOT EXISTS public.app_config (
   settings jsonb
 );
 
--- New Languages Table
 CREATE TABLE IF NOT EXISTS public.languages (
   code text primary key,
   name text,
@@ -143,7 +142,7 @@ CREATE TABLE IF NOT EXISTS public.languages (
   is_deleted boolean DEFAULT false
 );
 
--- 3. Enable RLS (Idempotent)
+-- 3. Enable RLS
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -155,7 +154,7 @@ ALTER TABLE public.partnerships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.languages ENABLE ROW LEVEL SECURITY;
 
--- 4. Create Policies (Drop first to avoid conflicts)
+-- 4. Create Policies
 DROP POLICY IF EXISTS "Public Access" ON public.organizations;
 CREATE POLICY "Public Access" ON public.organizations FOR ALL USING (true) WITH CHECK (true);
 
@@ -186,41 +185,12 @@ CREATE POLICY "Public Access" ON public.app_config FOR ALL USING (true) WITH CHE
 DROP POLICY IF EXISTS "Public Access" ON public.languages;
 CREATE POLICY "Public Access" ON public.languages FOR ALL USING (true) WITH CHECK (true);
 
--- 5. Final Grant to ensure new tables are accessible
+-- 5. Final Grant
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
 GRANT ALL ON TABLE public.app_config TO anon;
 GRANT ALL ON TABLE public.languages TO anon;
 
--- 6. Initialize Config Rows (Prevent 404s)
+-- 6. Initialize Config Rows
 INSERT INTO public.app_config (id, settings) VALUES ('global-settings', '{}'::jsonb) ON CONFLICT (id) DO NOTHING;
-
--- 7. FIX EXISTING CONSTRAINTS (For users updating existing DB)
--- This ensures 'Cascade Delete' is enabled so deleting an Org automatically deletes its projects/species/etc.
-DO $$
-BEGIN
-  -- Projects -> Org
-  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'projects_org_id_fkey') THEN
-    ALTER TABLE public.projects DROP CONSTRAINT projects_org_id_fkey;
-  END IF;
-  ALTER TABLE public.projects ADD CONSTRAINT projects_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-  -- Species -> Projects
-  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'species_project_id_fkey') THEN
-    ALTER TABLE public.species DROP CONSTRAINT species_project_id_fkey;
-  END IF;
-  ALTER TABLE public.species ADD CONSTRAINT species_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
-
-  -- Individuals -> Projects
-  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'individuals_project_id_fkey') THEN
-    ALTER TABLE public.individuals DROP CONSTRAINT individuals_project_id_fkey;
-  END IF;
-  ALTER TABLE public.individuals ADD CONSTRAINT individuals_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
-  
-  -- Breeding Events -> Species
-  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'breeding_events_species_id_fkey') THEN
-    ALTER TABLE public.breeding_events DROP CONSTRAINT breeding_events_species_id_fkey;
-  END IF;
-  ALTER TABLE public.breeding_events ADD CONSTRAINT breeding_events_species_id_fkey FOREIGN KEY (species_id) REFERENCES public.species(id) ON DELETE CASCADE;
-END $$;
 `;

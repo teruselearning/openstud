@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { getUsers, saveUsers, getProjects } from '../services/storage';
+// Import getOrg to provide orgId for new users
+import { getUsers, saveUsers, getProjects, getOrg } from '../services/storage';
 import { User, UserRole, UserStatus, Project } from '../types';
 import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, HelpCircle, Check, Briefcase } from 'lucide-react';
 
@@ -88,8 +89,10 @@ const UserManager: React.FC = () => {
         return u;
       });
     } else {
+      // Fix: Added missing orgId property required by User interface
       const newUser: User = {
         id: `u-${Date.now()}`,
+        orgId: getOrg().id,
         name: formData.name!,
         email: formData.email!,
         role: formData.role as UserRole,

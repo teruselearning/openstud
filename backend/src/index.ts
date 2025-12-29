@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -33,7 +34,42 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 app.use(morgan('dev') as any);
 app.use(express.static(path.join(__dirname, '../../dist')));
 
-// Fix: Removed unused toHex helper that caused compilation errors regarding 'Buffer'.
+// Temporary memory store for password reset codes
+const resetCodes = new Map<string, { code: string, expires: number }>();
+
+// --- EMAIL TRANSPORTER HELPER ---
+const getTransporter = async () => {
+  try {
+    const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
+    const settings = config?.settings || {};
+
+    // Check if host is configured
+    if (settings.smtpHost && settings.smtpHost.trim() !== '') {
+      console.log(`[EMAIL] Using configured SMTP: ${settings.smtpHost}:${settings.smtpPort}`);
+      return nodemailer.createTransport({
+        host: settings.smtpHost,
+        port: Number(settings.smtpPort) || 587,
+        secure: !!settings.smtpSecure,
+        auth: {
+          user: settings.smtpUser,
+          pass: settings.smtpPass,
+        },
+      });
+    }
+
+    // Default Fallback to Mailcatcher
+    console.log(`[EMAIL] No SMTP configured. Falling back to Mailcatcher (127.0.0.1:1025)`);
+    return nodemailer.createTransport({
+      host: '127.0.0.1',
+      port: 1025,
+      secure: false, // Mailcatcher doesn't use SSL/TLS by default
+      ignoreTLS: true
+    });
+  } catch (e) {
+    console.error("[EMAIL] Transporter init error, falling back to local:", e);
+    return nodemailer.createTransport({ host: '127.0.0.1', port: 1025 });
+  }
+};
 
 // --- BCRYPT SELF TEST ---
 const runBcryptSelfTest = async () => {
@@ -66,7 +102,108 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.6' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.8' }));
+
+// --- EMAIL ROUTES ---
+
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+  const { to, subject, html } = req.body;
+  if (!to || !subject || !html) return res.status(400).json({ error: "Missing required fields" });
+
+  try {
+    const transporter = await getTransporter();
+    await transporter.sendMail({
+      from: '"OpenStudbook" <noreply@openstudbook.org>',
+      to,
+      subject,
+      html
+    });
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("[EMAIL] Send failed:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: "To address required" });
+
+  try {
+    const transporter = await getTransporter();
+    await transporter.sendMail({
+      from: '"OpenStudbook Test" <noreply@openstudbook.org>',
+      to,
+      subject: "SMTP Connection Test",
+      text: "If you received this, your OpenStudbook SMTP configuration (or fallback) is working correctly.",
+      html: "<h3>SMTP Connection Test</h3><p>If you received this, your OpenStudbook SMTP configuration (or fallback) is working correctly.</p>"
+    });
+    res.json({ success: true, message: "Test email sent successfully!" });
+  } catch (e: any) {
+    console.error("[EMAIL] Test failed:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Proper Forgot Password flow
+app.post('/api/auth/forgot-password', async (req: any, res: any) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+  const cleanEmail = email.toLowerCase().trim();
+  
+  try {
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (!user) {
+      // Don't reveal if user exists or not for security
+      return res.json({ success: true, message: "If an account exists, a code has been sent." });
+    }
+    
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    resetCodes.set(cleanEmail, { code, expires: Date.now() + 15 * 60 * 1000 }); // 15 mins
+    
+    console.log(`[AUTH] Password reset code for ${cleanEmail}: ${code}`);
+    
+    // Attempt to send email
+    try {
+      const transporter = await getTransporter();
+      await transporter.sendMail({
+        from: '"OpenStudbook" <security@openstudbook.org>',
+        to: cleanEmail,
+        subject: "Password Reset Code",
+        html: `<h3>Reset Your Password</h3><p>Your verification code is: <b>${code}</b></p><p>This code will expire in 15 minutes.</p>`
+      });
+    } catch (mailErr: any) {
+      console.warn(`[AUTH] Mail sending failed, but code is logged to console: ${mailErr.message}`);
+    }
+
+    res.json({ success: true, message: "Verification code sent to email." });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req: any, res: any) => {
+  const { email, code, newPassword } = req.body;
+  const cleanEmail = email?.toLowerCase().trim();
+  
+  const record = resetCodes.get(cleanEmail);
+  if (!record || record.code !== code || record.expires < Date.now()) {
+    return res.status(400).json({ error: "Invalid or expired code." });
+  }
+  
+  try {
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { email: cleanEmail },
+      data: { password: hashedPassword }
+    });
+    resetCodes.delete(cleanEmail);
+    console.log(`[AUTH] Password changed for ${cleanEmail}`);
+    res.json({ success: true, message: "Password updated successfully." });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.post('/api/rescue/reset-password', async (req: any, res: any) => {
   const { email } = req.body;
@@ -119,16 +256,21 @@ app.post('/api/login', async (req: any, res: any) => {
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    console.log(`[LOGIN] SUCCESS: ${cleanEmail}`);
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+    // Fetch associated organization to prevent demo fallback
+    const organization = await prisma.organization.findUnique({ where: { id: user.org_id } });
+
+    console.log(`[LOGIN] SUCCESS: ${cleanEmail} (Org: ${organization?.name || 'Unknown'})`);
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
     
     res.json({ 
       token, 
       user: { 
         ...user, 
+        orgId: user.org_id,
         allowedProjectIds: user.allowed_project_ids || [], 
         avatarUrl: user.avatar_url 
-      } 
+      },
+      organization: organization || undefined
     });
   } catch (e: any) {
     console.error("[LOGIN] SERVER ERROR:", e);
@@ -161,7 +303,7 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
 
 const prepOrg = (o: any) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, founded_year: o.founded_year, description: o.description, focus: o.focus, is_org_public: o.is_org_public, is_species_public: o.is_species_public, obscure_location: o.obscure_location, hide_name: o.hide_name, allow_breeding_requests: o.allow_breeding_requests, breeding_request_contact_id: o.breeding_request_contact_id, show_native_status: o.show_native_status, dashboard_block: o.dashboard_block, is_deleted: o.is_deleted });
 const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id, name: p.name, description: p.description });
-const prepUser = (u: any) => ({ id: u.id, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status, password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids });
+const prepUser = (u: any) => ({ id: u.id, org_id: u.orgId || u.org_id, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status, password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids });
 const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
 const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
 
@@ -171,7 +313,6 @@ app.post('/rest/v1/users', createUpsertHandler(prisma.user, prepUser));
 app.post('/rest/v1/species', createUpsertHandler(prisma.species, prepSpecies));
 app.post('/rest/v1/individuals', createUpsertHandler(prisma.individual, prepInd));
 
-// CHANGED TO GET to match syncService.ts expectations
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    try {
       const [orgs, projects, users, species, individuals, config, languages] = await Promise.all([

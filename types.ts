@@ -14,6 +14,7 @@ export enum UserStatus {
 
 export interface User {
   id: string;
+  orgId: string; // Linked organization
   name: string;
   email: string;
   role: UserRole;

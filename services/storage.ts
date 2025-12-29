@@ -225,8 +225,12 @@ export const login = async (email: string, pass: string): Promise<User | null> =
       body: JSON.stringify({ email: email.toLowerCase().trim(), password: pass })
     });
     if (response.ok) {
-      const { token, user } = await response.json();
+      const { token, user, organization } = await response.json();
       localStorage.setItem(KEYS.TOKEN, token);
+      // Ensure the logged in user's actual organization is persisted to prevent demo org fallback
+      if (organization) {
+         saveOrg(organization, true);
+      }
       return user;
     }
   } catch (e: any) {
@@ -241,6 +245,24 @@ export const login = async (email: string, pass: string): Promise<User | null> =
      if (hashedInput === user.password) return user;
   }
   return null;
+};
+
+export const forgotPassword = async (email: string): Promise<any> => {
+   const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim() })
+   });
+   return response.json();
+};
+
+export const resetPassword = async (email: string, code: string, newPassword: string): Promise<any> => {
+   const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim(), code, newPassword })
+   });
+   return response.json();
 };
 
 export const deleteOrganization = async (orgId: string) => {
@@ -325,13 +347,12 @@ export const regenerateDemoData = async () => {
 
     // Use standard plain text for sync, the backend now correctly detects and hashes these
     const mockUsers: User[] = [
-      { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
-      { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
-      { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] }
+      { id: 'u-1', orgId: 'org-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
+      { id: 'u-2', orgId: 'org-1', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
+      { id: 'u-3', orgId: 'org-1', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] }
     ];
 
     const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
-    // Fix: correct property name from life_expectancy_years to lifeExpectancyYears
     const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
 
     saveOrg(mockOrg, true);

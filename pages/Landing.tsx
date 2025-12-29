@@ -1,13 +1,13 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { registerOrganization, login, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, regenerateDemoData } from '../services/storage';
+import { registerOrganization, login, forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, regenerateDemoData } from '../services/storage';
 import { fetchRemoteData } from '../services/syncService'; 
 import { User, OrganizationFocus, LandingFeature } from '../types';
 import { LanguageContext } from '../App';
 
-export type ViewMode = 'landing' | 'login' | 'register' | 'mfa' | 'about' | 'privacy' | 'terms';
+export type ViewMode = 'landing' | 'login' | 'register' | 'mfa' | 'about' | 'privacy' | 'terms' | 'forgot_password' | 'reset_password';
 
 interface LandingProps {
   onLogin: (user: User) => void;
@@ -17,6 +17,7 @@ interface LandingProps {
 const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
   useEffect(() => {
@@ -39,6 +40,13 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const [loginData, setLoginData] = useState({
     email: '',
     password: ''
+  });
+
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetData, setResetData] = useState({
+     code: '',
+     newPassword: '',
+     confirmPassword: ''
   });
 
   const [mfaData, setMfaData] = useState({
@@ -69,27 +77,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     }
     setRecaptchaToken(null);
   }, [viewMode, settings.recaptchaSiteKey]);
-
-  useEffect(() => {
-    const styleId = 'custom-theme-styles-landing';
-    let styleEl = document.getElementById(styleId);
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
-    }
-    const pColor = settings.themePrimaryColor || '#059669';
-    styleEl.innerHTML = `
-      .text-emerald-600, .text-emerald-700 { color: ${pColor} !important; }
-      .bg-emerald-600 { background-color: ${pColor} !important; }
-      .bg-emerald-600:hover { opacity: 0.9; }
-      .focus\\:ring-emerald-500:focus { --tw-ring-color: ${pColor} !important; }
-      .border-emerald-100 { border-color: ${pColor}20 !important; }
-      .hover\\:text-emerald-700:hover { color: ${pColor} !important; }
-      .hover\\:shadow-emerald-200:hover { --tw-shadow-color: ${pColor}20 !important; }
-      ${settings.customCss || ''}
-    `;
-  }, [settings]);
 
   const handleDemoLogin = async () => {
     setIsLoading(true);
@@ -124,19 +111,10 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    await new Promise(r => setTimeout(r, 50));
     if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
+    
     let user = await login(loginData.email, loginData.password);
-    if (!user) {
-       try {
-         const result = await fetchRemoteData();
-         if (result.success && result.data?.users) {
-            const { saveUsers } = await import('../services/storage');
-            saveUsers(result.data.users, true);
-            user = await login(loginData.email, loginData.password);
-         }
-       } catch (e) { console.error("Login retry failed", e); }
-    }
+    
     if (user) {
       if (settings.enableMfa) {
          if (isMfaTrustedDevice(user.id)) { saveSession(user); onLogin(user); } 
@@ -151,9 +129,42 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     } else {
       setError("Invalid email or password.");
       setIsLoading(false);
-      if (settings.recaptchaSiteKey && (window as any).grecaptcha) (window as any).grecaptcha.reset();
-      setRecaptchaToken(null);
     }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    try {
+       const res = await forgotPassword(forgotEmail);
+       if (res.success) {
+          setSuccess(res.message);
+          setViewMode('reset_password');
+       } else {
+          setError(res.error || "Could not process request.");
+       }
+    } catch(e: any) { setError(e.message); }
+    finally { setIsLoading(false); }
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+     if (resetData.newPassword !== resetData.confirmPassword) {
+        setError("Passwords do not match."); return;
+     }
+     setIsLoading(true);
+     setError(null);
+     try {
+        const res = await resetPassword(forgotEmail, resetData.code, resetData.newPassword);
+        if (res.success) {
+           alert("Password changed successfully. Please sign in.");
+           setViewMode('login');
+        } else {
+           setError(res.error || "Invalid code or request.");
+        }
+     } catch(e: any) { setError(e.message); }
+     finally { setIsLoading(false); }
   };
 
   const handleMfaSubmit = (e: React.FormEvent) => {
@@ -247,13 +258,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 })}
               </div>
             )}
-            {landingConfig?.customContentHtml && <div className="pt-8 text-left prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: landingConfig.customContentHtml }} />}
           </div>
         )}
-
-        {viewMode === 'about' && <StaticPage title={settings.aboutPage.title} content={settings.aboutPage.contentHtml} />}
-        {viewMode === 'privacy' && <StaticPage title={settings.privacyPage.title} content={settings.privacyPage.contentHtml} />}
-        {viewMode === 'terms' && <StaticPage title={settings.termsPage.title} content={settings.termsPage.contentHtml} />}
 
         {viewMode === 'login' && (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
@@ -277,12 +283,58 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                     <input type="password" name="password" autoComplete="current-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} required />
                   </div>
                 </div>
+                <div className="text-right">
+                   <button type="button" onClick={() => setViewMode('forgot_password')} className="text-xs text-slate-500 hover:text-emerald-600">Forgot Password?</button>
+                </div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Sign In</button></div>
                 <div className="text-center pt-2"><button type="button" onClick={() => setViewMode('register')} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>
               </form>
             </div>
           </div>
+        )}
+
+        {viewMode === 'forgot_password' && (
+           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
+               <button onClick={() => setViewMode('login')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← Back to Login</button>
+               <h2 className="text-2xl font-bold text-slate-900 mb-2">Forgot Password</h2>
+               <p className="text-slate-500 mb-6 text-sm">Enter your email to receive a recovery code.</p>
+               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">{error}</div>}
+               <form onSubmit={handleForgotSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                    <input type="email" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organization.org" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required />
+                  </div>
+                  <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold">Request Code</button>
+               </form>
+             </div>
+           </div>
+        )}
+
+        {viewMode === 'reset_password' && (
+           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
+               <h2 className="text-2xl font-bold text-slate-900 mb-2">Set New Password</h2>
+               <p className="text-slate-500 mb-6 text-sm">Check your email (or server logs) for the code sent to <strong>{forgotEmail}</strong>.</p>
+               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">{error}</div>}
+               <form onSubmit={handleResetSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Verification Code</label>
+                    <input className="w-full px-4 py-3 text-center tracking-widest text-xl font-mono border border-slate-300 rounded-lg" maxLength={6} value={resetData.code} onChange={e => setResetData({...resetData, code: e.target.value})} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                    <input type="password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg" value={resetData.newPassword} onChange={e => setResetData({...resetData, newPassword: e.target.value})} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
+                    <input type="password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg" value={resetData.confirmPassword} onChange={e => setResetData({...resetData, confirmPassword: e.target.value})} required />
+                  </div>
+                  <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold">Update Password</button>
+               </form>
+             </div>
+           </div>
         )}
 
         {viewMode === 'mfa' && (
@@ -296,7 +348,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <form onSubmit={handleMfaSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Security Code</label><input className="w-full px-4 py-3 text-center tracking-[0.5em] text-2xl font-mono border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900" placeholder="000000" maxLength={6} value={mfaData.code} onChange={e => setMfaData({...mfaData, code: e.target.value})} required /></div>
                 <div className="pt-2"><button type="submit" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700 transition-colors">Verify & Login</button></div>
-                <div className="text-center pt-2"><button type="button" onClick={() => { const code = Math.floor(100000 + Math.random() * 900000).toString(); setMfaData({...mfaData, generatedCode: code}); if(mfaData.pendingUser) sendMfaCode(mfaData.pendingUser.email, code); }} className="text-sm text-slate-500 hover:text-purple-600 font-medium">Resend Code</button></div>
               </form>
             </div>
           </div>
