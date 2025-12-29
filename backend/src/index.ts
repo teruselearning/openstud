@@ -47,62 +47,56 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-const createTransporter = async () => {
-  const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
-  const settings = config?.settings ? (typeof config.settings === 'string' ? JSON.parse(config.settings) : config.settings) : {};
-  if (settings.smtpHost && settings.smtpUser) {
-    return nodemailer.createTransport({ host: settings.smtpHost, port: Number(settings.smtpPort) || 587, secure: settings.smtpSecure || false, auth: { user: settings.smtpUser, pass: settings.smtpPass } });
-  }
-  return null;
-};
-
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
-
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
   const cleanEmail = email?.toLowerCase().trim();
+  
   console.log(`[LOGIN] Attempt: ${cleanEmail}`);
+  
+  // DEBUG ENCODING ISSUES
+  if (typeof password === 'string') {
+    console.log(`[DEBUG] Password Type: String, Length: ${password.length}, Starts with: "${password.substring(0, 2)}..."`);
+  } else {
+    console.log(`[DEBUG] Password Type: ${typeof password}`);
+  }
+
   try {
     const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    
     if (!user) {
        console.log(`[LOGIN] User NOT found: ${cleanEmail}`);
-       await bcrypt.compare(password, '$2b$10$abcdefghijklmnopqrstuv'); 
+       await bcrypt.compare("dummy", '$2b$10$abcdefghijklmnopqrstuv'); 
        return res.status(401).json({ error: "Invalid credentials" });
     }
+
     if (!user.password) {
        console.log(`[LOGIN] User found but has NULL password in DB.`);
        return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    // Use bcryptjs to compare the raw password from the request with the DB hash
     const passwordValid = await bcrypt.compare(password, user.password);
+    
     if (!passwordValid) {
        console.log(`[LOGIN] Password mismatch for: ${cleanEmail}`);
-       // Log hash info for debugging (do not do this in production)
-       console.log(`[DEBUG] Received length: ${password.length}. DB Hash starts with: ${user.password.substring(0, 7)}`);
+       console.log(`[DEBUG] DB Hash type: ${user.password.substring(0, 7)}`);
        return res.status(401).json({ error: "Invalid credentials" });
     }
+
     console.log(`[LOGIN] SUCCESS: ${cleanEmail}`);
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { ...user, allowedProjectIds: user.allowed_project_ids || [], avatarUrl: user.avatar_url } });
+    
+    res.json({ 
+      token, 
+      user: { 
+        ...user, 
+        allowedProjectIds: user.allowed_project_ids || [], 
+        avatarUrl: user.avatar_url 
+      } 
+    });
   } catch (e: any) {
     console.error("[LOGIN] ERROR:", e);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post('/api/register', async (req: any, res: any) => {
-  const { orgName, userName, email, focus, password } = req.body;
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const orgId = `org-${Date.now()}`;
-    const [newOrg, newProject, newUser] = await prisma.$transaction([
-      prisma.organization.create({ data: { id: orgId, name: orgName, focus: focus || 'Animals', founded_year: new Date().getFullYear(), location: 'Unknown', description: '', is_org_public: false, is_species_public: false, obscure_location: false, allow_breeding_requests: false } }),
-      prisma.project.create({ data: { id: `p-${Date.now()}`, name: 'Main Project', description: 'Default project', org_id: orgId } }),
-      prisma.user.create({ data: { id: `u-${Date.now()}`, name: userName, email: email.toLowerCase().trim(), password: hashedPassword, role: 'Admin', status: 'Active', allowed_project_ids: [] } })
-    ]);
-    const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { ...newUser, allowedProjectIds: [], avatarUrl: null }, org: newOrg });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message || "Registration failed" });
   }
 });
 
@@ -114,10 +108,13 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
             const item = prepareBody(rawItem);
             const whereClause: any = {};
             whereClause[idField] = item[idField];
+            
+            // Only hash if it's a new plain password
             if (idField === 'id' && item.password && !item.password.startsWith('$2')) {
                console.log(`[SYNC] Hashing password for user ${item.email}`);
                item.password = await bcrypt.hash(item.password, 10);
             }
+            
             Object.keys(item).forEach(key => item[key] === undefined && delete item[key]);
             await table.upsert({ where: whereClause, update: item, create: item });
         }
