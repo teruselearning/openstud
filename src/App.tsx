@@ -45,11 +45,10 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners } from './services/storage';
-import { fetchRemoteData } from './services/syncService';
+import { getSession, logout, isMfaTrustedDevice, trustDevice, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners } from './services/storage';
+import { fetchRemoteData, syncPushLanguages } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
-import { hashPassword } from './services/crypto';
 
 // --- Components ---
 
@@ -133,7 +132,11 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           <div className="relative">
              <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> Current Project</div>
              <select value={currentProjectId} onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
-               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+               {projects.length > 0 ? (
+                 projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+               ) : (
+                 <option value="">No Projects Found</option>
+               )}
                <option disabled>──────────</option>
                <option value="NEW">+ Create New Project</option>
              </select>
@@ -256,7 +259,7 @@ const App: React.FC = () => {
               await syncPushBreedingEvents(getBreedingEvents());
               await syncPushBreedingLoans(getBreedingLoans());
               await syncPushPartnerships(getPartnerships());
-              await saveLanguages(getLanguages(), false); 
+              await syncPushLanguages(getLanguages());
            } else {
               if (data.org) saveOrg(data.org, true);
               if (data.settings) { saveSystemSettings(data.settings, true); setSystemSettings(data.settings); }
@@ -283,17 +286,30 @@ const App: React.FC = () => {
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
+    
     const isSuper = session.role === UserRole.SUPER_ADMIN || (session.role as string) === 'Super Admin';
     setImpersonating(isSuper ? false : isImpersonating());
-    setCurrentOrg(getOrg());
+    
+    const activeOrg = getOrg();
+    setCurrentOrg(activeOrg);
+    
     const allProjects = getProjects();
-    setProjects(allProjects);
-    let availableProjects = allProjects.filter(p => (!getOrg().id || !p.orgId || p.orgId === getOrg().id) && (!session.allowedProjectIds?.length || session.allowedProjectIds.includes(p.id)));
+    
+    // CRITICAL: Filter projects strictly by the current organization context
+    // This handles Super Admins who switch contexts or are auto-associated during login
+    let availableProjects = allProjects.filter(p => {
+       const projectOrgId = p.orgId || (p as any).org_id;
+       return projectOrgId === activeOrg.id;
+    });
+
+    // Handle project selection logic
     let savedPid = getCurrentProjectId();
     if (!availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
     }
+    
+    setProjects(availableProjects);
     setCurrentProjectIdState(savedPid);
     calculateFeatureVisibility(savedPid);
     setUnreadCount(getNotifications().filter(n => n.recipientId === session.id && !n.isRead).length);
@@ -308,14 +324,24 @@ const App: React.FC = () => {
   
   const handleLogin = (u: User) => loadData(u);
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
-  const handleProjectChange = (id: string) => { setCurrentProjectIdState(id); saveCurrentProjectId(id); calculateFeatureVisibility(id); };
+  
+  const handleProjectChange = (id: string) => { 
+     setCurrentProjectIdState(id); 
+     saveCurrentProjectId(id); 
+     calculateFeatureVisibility(id); 
+  };
 
   const handleCreateProject = () => {
     if (!newProjectName) return;
-    const newProject: Project = { id: `p-${Date.now()}`, name: newProjectName, description: newProjectDesc || '', orgId: currentOrg?.id };
-    const updated = [...projects, newProject];
-    setProjects(updated);
-    saveProjects(updated);
+    const orgId = currentOrg?.id || getOrg().id;
+    const newProject: Project = { id: `p-${Date.now()}`, name: newProjectName, description: newProjectDesc || '', orgId: orgId };
+    const allProjects = [...getProjects(), newProject];
+    saveProjects(allProjects);
+    
+    // Refresh the local filtered list
+    const filtered = allProjects.filter(p => (p.orgId || (p as any).org_id) === orgId);
+    setProjects(filtered);
+    
     handleProjectChange(newProject.id);
     setShowAddProjectModal(false);
     setNewProjectName(''); setNewProjectDesc('');
@@ -345,15 +371,14 @@ const App: React.FC = () => {
   if (isLoading) return null;
   if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
 
-  const isSuperAdmin = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   return (
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
       <HashRouter>
         <div className="min-h-screen bg-slate-50 flex">
-          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects.filter(p => (!currentOrg || !p.orgId || p.orgId === currentOrg.id) && (!user.allowedProjectIds?.length || user.allowedProjectIds.includes(p.id)))} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
+          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organization: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
-            {(currentOrg?.id === 'org-1' && !isSuperAdmin) && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organization</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organization</button></div>}
+            {(currentOrg?.id === 'org-1' && (user.role as string) !== 'Super Admin') && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organization</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organization</button></div>}
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>
@@ -364,14 +389,14 @@ const App: React.FC = () => {
               </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={isSuperAdmin ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
+              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
             </div>
           </main>
         </div>
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         {showAddProjectModal && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
         {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UserIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div className="flex flex-col items-center mb-4"><div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden mb-2 relative group">{profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt="Avatar" className="w-full h-full object-cover" /> : <UserIcon size={32} className="text-slate-400" />}<div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Camera size={20} className="text-white"/></div></div><input className="text-xs text-center border border-slate-200 rounded px-2 py-1 w-full bg-white text-slate-900" placeholder="Avatar URL" value={profileForm.avatarUrl} onChange={e => setProfileForm({...profileForm, avatarUrl: e.target.value})} /></div><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly title="To change email, use the verification flow below." />{!isVerifyingEmail ? <div className="flex gap-2"><input className="flex-1 px-3 py-1.5 border border-slate-300 rounded text-sm outline-none focus:ring-1 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Email Address" value={pendingEmail} onChange={e => setPendingEmail(e.target.value)} /><button type="button" onClick={() => { if (!pendingEmail?.includes('@')) return; const code = Math.floor(100000 + Math.random() * 900000).toString(); setGeneratedCode(code); sendMfaCode(pendingEmail, code); setIsVerifyingEmail(true); }} disabled={!pendingEmail || !pendingEmail.includes('@')} className="bg-slate-800 text-white px-3 py-1.5 rounded text-sm hover:bg-slate-700 disabled:opacity-50">Verify</button></div> : <div className="bg-emerald-50 p-3 rounded border border-emerald-100"><p className="text-xs text-emerald-800 mb-2 font-medium">Enter code sent to {pendingEmail}:</p><div className="flex gap-2"><input className="w-24 px-2 py-1 border border-emerald-300 rounded text-center tracking-widest font-mono bg-white text-slate-900" placeholder="000000" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} /><button type="button" onClick={() => { if (verifyCode === generatedCode) { setProfileForm({ ...profileForm, email: pendingEmail }); setIsVerifyingEmail(false); setPendingEmail(''); showToast("Email verified.", "success"); } else showToast("Invalid code.", "error"); }} className="text-xs bg-emerald-600 text-white px-3 py-1 rounded font-bold hover:bg-emerald-700">Confirm</button><button type="button" onClick={() => setIsVerifyingEmail(false)} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button></div></div>}</div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3"><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} /><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} /></div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
-        {showBackendSetup && <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col"><div className="p-6 border-b border-red-100 bg-red-50 flex justify-between items-center rounded-t-xl"><div className="flex items-center gap-3 text-red-800"><Server size={24} /><h3 className="text-xl font-bold">Backend Service Unavailable</h3></div><button onClick={() => setShowBackendSetup(false)} className="text-red-600 hover:text-red-800 bg-white/50 p-1 rounded-full"><X size={24}/></button></div><div className="p-6 space-y-4"><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4"><p className="text-sm text-yellow-800 font-bold">Sync Error: {syncError || "The backend service is not responding."}</p></div><h4 className="font-bold text-slate-900">How to Fix:</h4><ol className="list-decimal list-inside text-sm text-slate-700 space-y-2"><li>Ensure your Node.js backend is running (typically on port 3001).</li><li>Check the backend console for any database connection errors.</li><li>If you just started the app, wait a few moments and click retry.</li></ol></div><div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-xl"><button onClick={() => { setShowBackendSetup(false); performSync(); }} className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Retry Sync</button></div></div></div>}
+        {showBackendSetup && <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-xl shadow-2xl w-full max-lg flex flex-col"><div className="p-6 border-b border-red-100 bg-red-50 flex justify-between items-center rounded-t-xl"><div className="flex items-center gap-3 text-red-800"><Server size={24} /><h3 className="text-xl font-bold">Backend Service Unavailable</h3></div><button onClick={() => setShowBackendSetup(false)} className="text-red-600 hover:text-red-800 bg-white/50 p-1 rounded-full"><X size={24}/></button></div><div className="p-6 space-y-4"><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4"><p className="text-sm text-yellow-800 font-bold">Sync Error: {syncError || "The backend service is not responding."}</p></div><h4 className="font-bold text-slate-900">How to Fix:</h4><ol className="list-decimal list-inside text-sm text-slate-700 space-y-2"><li>Ensure your Node.js backend is running (typically on port 3001).</li><li>Check the backend console for any database connection errors.</li><li>If you just started the app, wait a few moments and click retry.</li></ol></div><div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-xl"><button onClick={() => { setShowBackendSetup(false); performSync(); }} className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Retry Sync</button></div></div></div>}
       </HashRouter>
     </LanguageContext.Provider>
   );
