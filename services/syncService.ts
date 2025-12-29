@@ -1,3 +1,4 @@
+
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
 import { getOrg } from './storage'; 
 
@@ -26,7 +27,8 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
        const text = await response.text();
-       throw new Error(`Server returned non-JSON response: ${response.status} ${response.statusText}`);
+       console.error("Non-JSON Response received:", text.substring(0, 500)); // Log first 500 chars
+       throw new Error(`Server Error: The backend returned an unexpected response (${response.status}). If you are seeing this, the backend service might be down or misconfigured.`);
     }
 
     const data = await response.json();

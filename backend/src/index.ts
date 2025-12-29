@@ -9,10 +9,8 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+declare const __dirname: string;
 
 dotenv.config();
 
@@ -30,36 +28,13 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
-// Enable permissive CORS for dev (Must be first middleware)
 app.use(cors({ origin: '*' }) as any);
-
-// Increase payload size limit for base64 images
 app.use(express.json({ limit: '50mb' }) as any);
 app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
-
 app.use(morgan('dev') as any);
-
-// --- STATIC FILES SERVING ---
-// Serve React frontend (dist folder) from the parent directory
 app.use(express.static(path.join(__dirname, '../../dist')));
 
-// --- Helper: JSON Parsing for SQLite Compatibility (GET) ---
-const safeParse = (val: any) => {
-  if (typeof val === 'string') {
-    try {
-      return JSON.parse(val);
-    } catch {
-      return val;
-    }
-  }
-  return val;
-};
-
 // --- Middleware ---
-interface AuthRequest extends express.Request {
-  user?: any;
-}
-
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -78,7 +53,6 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 
 // --- Email Helper ---
 const createTransporter = async () => {
-  // 1. Try DB Config first
   const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
   const settings = config?.settings ? (typeof config.settings === 'string' ? JSON.parse(config.settings) : config.settings) : {};
   
@@ -86,7 +60,7 @@ const createTransporter = async () => {
     return nodemailer.createTransport({
       host: settings.smtpHost,
       port: Number(settings.smtpPort) || 587,
-      secure: settings.smtpSecure || false, // true for 465, false for other ports
+      secure: settings.smtpSecure || false,
       auth: {
         user: settings.smtpUser,
         pass: settings.smtpPass,
@@ -94,7 +68,6 @@ const createTransporter = async () => {
     });
   }
 
-  // 2. Fallback to Env Vars
   if (process.env.SMTP_HOST) {
     return nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -112,27 +85,21 @@ const createTransporter = async () => {
 
 // --- Health Check ---
 app.get('/api/health', (req: any, res: any) => {
-  res.send('OpenStudbook Backend is running');
+  res.json({ status: 'ok', message: 'OpenStudbook Backend is running' });
 });
 
 // --- Secure Auth Routes ---
 
-// 1. LOGIN
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
-  
   try {
     const user = await prisma.user.findUnique({ where: { email } });
-    
-    // Check if user exists AND has a password set (handle nullable password type)
     if (!user || !user.password) {
-       // Mitigation for timing attacks: verify a dummy hash if user not found
        await bcrypt.compare(password, '$2b$10$abcdefghijklmnopqrstuv'); 
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
     const passwordValid = await bcrypt.compare(password, user.password);
-    
     if (!passwordValid) {
        return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -143,13 +110,11 @@ app.post('/api/login', async (req: any, res: any) => {
         { expiresIn: '30d' }
     );
 
-    // Map DB fields to Frontend fields
     const safeUser = { 
         ...user, 
         allowedProjectIds: user.allowed_project_ids || [],
         avatarUrl: user.avatar_url
     };
-    
     res.json({ token, user: safeUser });
   } catch (e: any) {
     console.error("Login Error:", e);
@@ -157,10 +122,8 @@ app.post('/api/login', async (req: any, res: any) => {
   }
 });
 
-// 2. REGISTER
 app.post('/api/register', async (req: any, res: any) => {
   const { orgName, userName, email, focus, password } = req.body;
-
   if (!email || !password || !orgName) {
       return res.status(400).json({ error: "Missing required fields" });
   }
@@ -176,7 +139,6 @@ app.post('/api/register', async (req: any, res: any) => {
     const projectId = `p-${Date.now()}`;
     const userId = `u-${Date.now()}`;
 
-    // Transaction: Create Org -> Project -> User
     const [newOrg, newProject, newUser] = await prisma.$transaction([
       prisma.organization.create({
         data: {
@@ -206,9 +168,9 @@ app.post('/api/register', async (req: any, res: any) => {
           name: userName,
           email: email,
           password: hashedPassword,
-          role: 'Admin', // Default role for creator
+          role: 'Admin',
           status: 'Active',
-          allowed_project_ids: [] // Empty = All Access
+          allowed_project_ids: []
         }
       })
     ]);
@@ -224,9 +186,7 @@ app.post('/api/register', async (req: any, res: any) => {
         allowedProjectIds: newUser.allowed_project_ids || [],
         avatarUrl: newUser.avatar_url
     };
-
     res.json({ token, user: safeUser, org: newOrg });
-
   } catch (e: any) {
     console.error("Registration Error:", e);
     res.status(500).json({ error: e.message || "Registration failed" });
@@ -240,22 +200,18 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
   try {
     const transporter = await createTransporter();
     if (!transporter) {
-      return res.status(400).json({ error: "SMTP not configured in settings or environment." });
+      return res.status(400).json({ error: "SMTP not configured." });
     }
-
     await transporter.verify();
-    
     await transporter.sendMail({
       from: '"OpenStudbook System" <no-reply@openstudbook.org>',
       to,
       subject: 'OpenStudbook SMTP Test',
-      text: 'If you are reading this, your SMTP configuration is correct!',
+      text: 'SMTP configuration is correct!',
       html: '<h3>SMTP Configured Successfully</h3><p>Your OpenStudbook instance can now send emails.</p>'
     });
-
     res.json({ success: true, message: "Test email sent successfully." });
   } catch (e: any) {
-    console.error("SMTP Test Error:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -263,23 +219,17 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
   const { to, subject, html } = req.body;
   if (!to || !subject || !html) return res.status(400).json({ error: "Missing fields" });
-
   try {
     const transporter = await createTransporter();
-    if (!transporter) {
-      return res.status(400).json({ error: "SMTP not configured." });
-    }
-
+    if (!transporter) return res.status(400).json({ error: "SMTP not configured." });
     await transporter.sendMail({
       from: '"OpenStudbook" <no-reply@openstudbook.org>',
       to,
       subject,
       html
     });
-
     res.json({ success: true });
   } catch (e: any) {
-    console.error("Email Send Error:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -287,11 +237,7 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
 // --- Synchronization Endpoints ---
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
   try {
-    // Wrap database calls in a try/catch to handle potential missing table errors gracefully
-    const [
-      orgs, projects, users, species, individuals, 
-      events, loans, partnerships, config, languages
-    ] = await Promise.all([
+    const [orgs, projects, users, species, individuals, events, loans, partnerships, config, languages] = await Promise.all([
       prisma.organization.findMany({ where: { is_deleted: false } }).catch(() => []),
       prisma.project.findMany().catch(() => []),
       prisma.user.findMany().catch(() => []),
@@ -304,7 +250,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       prisma.language?.findMany({ where: { is_deleted: false } }).catch(() => []) 
     ]);
 
-    // MAP DB SNAKE_CASE TO FRONTEND CAMELCASE
     res.json({
       success: true,
       data: {
@@ -349,6 +294,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectId: i.project_id,
             speciesId: i.species_id,
             studbookId: i.studbook_id,
+            name: i.name,
+            sex: i.sex,
             birthDate: i.birth_date,
             weightKg: i.weight_kg,
             sireId: i.sire_id,
@@ -393,7 +340,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         partnerships: partnerships.map((p: any) => ({
             ...p,
             orgId1: p.org_id_1,
-            orgId2: p.org_id_2,
+            org_id_2: p.org_id_2,
             establishedDate: p.established_date
         })),
         settings: config ? config.settings : {},
@@ -413,40 +360,34 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
   }
 });
 
-// Helper for Upserts
 const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
     try {
         const rawData = req.body;
         const items = Array.isArray(rawData) ? rawData : [rawData];
         
-        if (!table) {
-            console.error(`Database Table Missing for ID Field: ${idField}.`);
-            return res.status(500).json({ success: false, message: `Database table not initialized for ${idField}.` });
-        }
+        if (!table) return res.status(500).json({ success: false, message: "Table missing." });
 
         for (const rawItem of items) {
             const item = prepareBody(rawItem);
             const whereClause: any = {};
             whereClause[idField] = item[idField];
 
-            // Filter out undefined keys to prevent Prisma validation errors
-            Object.keys(item).forEach(key => item[key] === undefined && delete item[key]);
+            // SPECIAL CASE FOR USER PASSWORD SYNC
+            // If the incoming item has a password, we need to ensure it's hashed.
+            // But only re-hash if it doesn't look like a bcrypt string already.
+            if (idField === 'id' && item.password && !item.password.startsWith('$2')) {
+               item.password = await bcrypt.hash(item.password, 10);
+            }
 
-            await table.upsert({
-                where: whereClause,
-                update: item,
-                create: item
-            });
+            Object.keys(item).forEach(key => item[key] === undefined && delete item[key]);
+            await table.upsert({ where: whereClause, update: item, create: item });
         }
         res.json({ success: true });
     } catch (e: any) {
-        console.error(`Upsert Error (${idField}):`, e);
-        // Return full error details to help debugging
-        res.status(500).json({ success: false, message: e.message, details: e.meta || e.clientVersion });
+        res.status(500).json({ success: false, message: e.message });
     }
 };
 
-// Prep functions - explicitly define what to pass through to strip any extra/unknown fields
 const prepOrg = (o: any) => ({
     id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude,
     founded_year: o.founded_year, description: o.description, focus: o.focus,
@@ -455,9 +396,7 @@ const prepOrg = (o: any) => ({
     allow_breeding_requests: o.allow_breeding_requests, breeding_request_contact_id: o.breeding_request_contact_id,
     show_native_status: o.show_native_status, dashboard_block: o.dashboard_block, is_deleted: o.is_deleted
 });
-const prepProject = (p: any) => ({
-    id: p.id, org_id: p.org_id, name: p.name, description: p.description
-});
+const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id, name: p.name, description: p.description });
 const prepUser = (u: any) => ({
     id: u.id, name: u.name, email: u.email, role: u.role, status: u.status,
     password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids
@@ -497,7 +436,6 @@ const prepLang = (l: any) => ({
     manual_overrides: l.manual_overrides, is_deleted: l.is_deleted
 });
 
-// Define routes with prep functions
 app.post('/rest/v1/organizations', createUpsertHandler(prisma.organization, prepOrg));
 app.post('/rest/v1/projects', createUpsertHandler(prisma.project, prepProject));
 app.post('/rest/v1/users', createUpsertHandler(prisma.user, prepUser));
@@ -509,15 +447,11 @@ app.post('/rest/v1/partnerships', createUpsertHandler(prisma.partnership, (x: an
 app.post('/rest/v1/app_config', createUpsertHandler(prisma.appConfig, prepConfig));
 app.post('/rest/v1/languages', createUpsertHandler(prisma.language, prepLang, 'code')); 
 
-// Soft Delete
 app.patch('/rest/v1/organizations', async (req: any, res: any) => {
     try {
         const id = (req.query.id as string)?.replace('eq.', '');
         if (id) {
-            await prisma.organization.update({
-                where: { id },
-                data: { is_deleted: true }
-            });
+            await prisma.organization.update({ where: { id }, data: { is_deleted: true } });
             return res.json({ success: true });
         }
         res.status(400).json({ error: "Missing ID" });
@@ -529,15 +463,9 @@ app.patch('/rest/v1/organizations', async (req: any, res: any) => {
 app.patch('/rest/v1/languages', async (req: any, res: any) => {
     try {
         const code = (req.query.code as string)?.replace('eq.', '');
-        // Safeguard against undefined prisma.language (if client not regenerated)
         if (code && prisma.language) {
-            await prisma.language.update({
-                where: { code },
-                data: { is_deleted: true }
-            });
+            await prisma.language.update({ where: { code }, data: { is_deleted: true } });
             return res.json({ success: true });
-        } else if (!prisma.language) {
-            return res.status(500).json({ error: "Language table not initialized." });
         }
         res.status(400).json({ error: "Missing Code" });
     } catch(e:any) {
@@ -545,12 +473,10 @@ app.patch('/rest/v1/languages', async (req: any, res: any) => {
     }
 });
 
-// React Router Catch-All (must be last)
 app.get('*', (req: any, res: any) => {
   res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 
-// Bind to default to allow Node to handle dual-stack
 app.listen(PORT, () => {
   console.log(`OpenStudbook Backend running on port ${PORT}`);
 });

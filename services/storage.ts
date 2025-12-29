@@ -6,14 +6,11 @@ import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 
 // API Configuration
-// Using window location check to avoid import.meta.env runtime issues if build replacement fails
 const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const API_BASE_URL = isLocal ? 'http://localhost:3001' : '';
 
-// Re-export sync functions for external usage (e.g. SuperAdmin seeding)
 export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage };
 
-// --- Constants & Keys ---
 const STORAGE_PREFIX = 'os_';
 const KEYS = {
   ORG: `${STORAGE_PREFIX}org`,
@@ -28,7 +25,7 @@ const KEYS = {
   PARTNERS: `${STORAGE_PREFIX}partners`,
   INVITE_CODES: `${STORAGE_PREFIX}invite_codes`,
   SESSION: `${STORAGE_PREFIX}session`,
-  TOKEN: `${STORAGE_PREFIX}token`, // New JWT Token key
+  TOKEN: `${STORAGE_PREFIX}token`,
   NOTIFICATIONS: `${STORAGE_PREFIX}notifications`,
   SETTINGS: `${STORAGE_PREFIX}settings`,
   LANGUAGES: `${STORAGE_PREFIX}languages`,
@@ -36,8 +33,6 @@ const KEYS = {
   IMPERSONATING: `${STORAGE_PREFIX}impersonating`,
   BACKUP: `${STORAGE_PREFIX}backup`
 };
-
-// --- Core Helper Functions ---
 
 const get = <T>(key: string, defaultVal: T): T => {
   if (typeof window === 'undefined') return defaultVal;
@@ -87,23 +82,17 @@ export const getSystemSettings = (): SystemSettings => get(KEYS.SETTINGS, getDef
 export const saveSystemSettings = (s: SystemSettings, skipSync = false) => {
   set(KEYS.SETTINGS, s);
   if (!skipSync) {
-    syncPushSettings(s).catch(err => {
-      // console.error("Sync Error (Settings):", err); // Suppressed to avoid noise
-    });
+    syncPushSettings(s).catch(() => {});
   }
 };
 
-// --- Language Management ---
 export const getLanguages = (): LanguageConfig[] => {
   const stored = get<LanguageConfig[]>(KEYS.LANGUAGES, []);
   if (stored.length === 0) {
-    // Seed initial languages if none exist
     set(KEYS.LANGUAGES, SEED_LANGUAGES);
-    // Quietly attempt sync, don't spam console if offline
     syncPushLanguages(SEED_LANGUAGES).catch(() => {});
     return SEED_LANGUAGES;
   }
-  // Filter out soft deleted languages locally
   return stored.filter(l => !l.deleted);
 };
 
@@ -111,7 +100,6 @@ export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
   set(KEYS.LANGUAGES, langs);
   if (!skipSync) {
     syncPushLanguages(langs).catch(err => {
-      // Only log if it's NOT a connectivity error (which is expected in offline mode)
       if (!err.message.includes('Failed to fetch') && !err.message.includes('Network request failed')) {
          console.error("Sync Error (Languages):", err);
       }
@@ -120,45 +108,30 @@ export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
 };
 
 export const deleteLanguage = async (code: string) => {
-  // Update local storage - Mark as deleted or remove?
-  // If we remove locally but sync fails, next pull might bring it back unless sync filters.
-  // Sync service `fetchRemoteData` now filters `is_deleted`.
-  // So we can remove locally.
   const current = get<LanguageConfig[]>(KEYS.LANGUAGES, []);
   const updated = current.filter(l => l.code !== code);
   set(KEYS.LANGUAGES, updated);
-  
-  // Update remote DB explicitly using soft delete logic
   try {
     await syncDeleteLanguage(code);
   } catch (e: any) {
     console.warn("Language delete sync failed:", e.message);
-    // Suppress error so UI updates even if sync fails
   }
 };
 
-// --- Pattern Generator ---
 export const generatePattern = (text: string): string => {
   const settings = getSystemSettings();
   const baseColor = settings.themePrimaryColor || '#059669';
   const width = 400;
   const height = 300;
-  
-  // Solid background using primary color
   let svgContent = `<rect width="${width}" height="${height}" fill="${baseColor}"/>`;
-  
   const estimatedFontSize = Math.min(60, Math.max(16, 500 / (text.length + 1)));
-  
-  // Text overlay
   svgContent += `
     <text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold" font-size="${estimatedFontSize}" fill="rgba(255,255,255,0.95)" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">${text}</text>
   `;
-  
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svgContent}</svg>`.trim())}`;
 };
 export const generateMockPattern = generatePattern;
 
-// --- Initialization Defaults (Empty for Production) ---
 const createEmptyOrg = (): Organization => ({
   id: '',
   name: 'New Organization',
@@ -172,7 +145,6 @@ const createEmptyOrg = (): Organization => ({
   allowBreedingRequests: false
 });
 
-// Mock helpers for manual generation only
 const createMockOrg = (): Organization => ({
   id: 'org-1',
   name: 'Sanctuary of the Wild',
@@ -187,7 +159,6 @@ const createMockOrg = (): Organization => ({
 const createMockProjects = (): Project[] => [
   { id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' },
   { id: 'p-2', name: 'Conservation 2025', description: 'Special conservation initiatives', orgId: 'org-1' },
-  // Adding partner project mock for local testing
   { id: 'p-seattle-1', name: 'Northwest Native', description: 'Local species tracking for Seattle', orgId: 'ext-1' }
 ];
 
@@ -196,8 +167,6 @@ const createMockUsers = (): User[] => [
   { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: '', allowedProjectIds: ['p-1'] },
   { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] }
 ];
-
-// --- Exported Accessors ---
 
 export const getSession = (): User | null => get(KEYS.SESSION, null);
 export const saveSession = (u: User) => set(KEYS.SESSION, u);
@@ -223,19 +192,14 @@ export const restoreMainOrg = () => {
 };
 
 export const switchOrganization = (partnerId: string, explicitOrg?: any): boolean => {
-   const backup = {
-      org: getOrg(),
-   };
+   const backup = { org: getOrg() };
    localStorage.setItem(KEYS.BACKUP, JSON.stringify(backup));
    localStorage.setItem(KEYS.IMPERSONATING, partnerId);
-
    const partners = getNetworkPartners();
    const partner = explicitOrg || partners.find(p => p.id === partnerId);
-   
    if (partner) {
       const tempOrg: Organization = {
          ...partner,
-         // Ensure basic fields exist if switching to a partner object that might be partial
          foundedYear: partner.foundedYear || 2000, 
          description: partner.description || 'Partner Organization View',
          focus: partner.focus || 'Animals',
@@ -247,14 +211,11 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
    return false;
 };
 
-// Data Accessors
 export const getOrg = (): Organization => get(KEYS.ORG, createEmptyOrg());
 export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
   if (!skipSync) {
-    syncPushOrg(o).catch(err => {
-      // console.error("Sync Error (Org):", err);
-    });
+    syncPushOrg(o).catch(() => {});
   }
 };
 
@@ -262,9 +223,7 @@ export const getProjects = (): Project[] => get(KEYS.PROJECTS, []);
 export const saveProjects = (p: Project[], skipSync = false) => {
   set(KEYS.PROJECTS, p);
   if (!skipSync) {
-    syncPushProjects(p).catch(err => {
-      // console.error("Sync Error (Projects):", err);
-    });
+    syncPushProjects(p).catch(() => {});
   }
 };
 export const getCurrentProjectId = (): string => get(KEYS.CURRENT_PROJECT, '');
@@ -274,9 +233,7 @@ export const getUsers = (): User[] => get(KEYS.USERS, []);
 export const saveUsers = (u: User[], skipSync = false) => {
   set(KEYS.USERS, u);
   if (!skipSync) {
-    syncPushUsers(u).catch(err => {
-      // console.error("Sync Error (Users):", err);
-    });
+    syncPushUsers(u).catch(() => {});
   }
 };
 
@@ -284,9 +241,7 @@ export const getSpecies = (): Species[] => get(KEYS.SPECIES, []);
 export const saveSpecies = (s: Species[], skipSync = false) => {
   set(KEYS.SPECIES, s);
   if (!skipSync) {
-    syncPushSpecies(s).catch(err => {
-      // console.error("Sync Error (Species):", err);
-    });
+    syncPushSpecies(s).catch(() => {});
   }
 };
 
@@ -294,9 +249,7 @@ export const getIndividuals = (): Individual[] => get(KEYS.INDIVIDUALS, []);
 export const saveIndividuals = (i: Individual[], skipSync = false) => {
   set(KEYS.INDIVIDUALS, i);
   if (!skipSync) {
-    syncPushIndividuals(i).catch(err => {
-      // console.error("Sync Error (Individuals):", err);
-    });
+    syncPushIndividuals(i).catch(() => {});
   }
 };
 
@@ -304,9 +257,7 @@ export const getBreedingEvents = (): BreedingEvent[] => get(KEYS.BREEDING, []);
 export const saveBreedingEvents = (b: BreedingEvent[], skipSync = false) => {
   set(KEYS.BREEDING, b);
   if (!skipSync) {
-    syncPushBreedingEvents(b).catch(err => {
-      // console.error("Sync Error (Events):", err);
-    });
+    syncPushBreedingEvents(b).catch(() => {});
   }
 };
 
@@ -314,9 +265,7 @@ export const getBreedingLoans = (): BreedingLoan[] => get(KEYS.BREEDING_LOANS, [
 export const saveBreedingLoans = (l: BreedingLoan[], skipSync = false) => {
   set(KEYS.BREEDING_LOANS, l);
   if (!skipSync) {
-    syncPushBreedingLoans(l).catch(err => {
-      // console.error("Sync Error (Loans):", err);
-    });
+    syncPushBreedingLoans(l).catch(() => {});
   }
 };
 
@@ -324,13 +273,10 @@ export const getPartnerships = (): Partnership[] => get(KEYS.PARTNERSHIPS, []);
 export const savePartnerships = (p: Partnership[], skipSync = false) => {
   set(KEYS.PARTNERSHIPS, p);
   if (!skipSync) {
-    syncPushPartnerships(p).catch(err => {
-      // console.error("Sync Error (Partnerships):", err);
-    });
+    syncPushPartnerships(p).catch(() => {});
   }
 };
 
-// Partners - filtered for deleted
 export const getNetworkPartners = (): ExternalPartner[] => {
   const all = get<ExternalPartner[]>(KEYS.PARTNERS, []);
   return all.filter(p => !p.deleted);
@@ -346,7 +292,6 @@ export const generatePartnerInvite = (): string => {
 export const redeemPartnerInvite = (code: string): { success: boolean, partner?: ExternalPartner, message: string } => {
    const partners = getNetworkPartners();
    let partnerId = '';
-   // Mock lookup 
    if (code.includes('SEA')) partnerId = 'ext-1';
    else if (code.includes('SAN')) partnerId = 'ext-2';
    else if (code.includes('LON')) partnerId = 'ext-3';
@@ -364,15 +309,13 @@ export const redeemPartnerInvite = (code: string): { success: boolean, partner?:
    const newPartnership: Partnership = {
       id: `rel-${Date.now()}`,
       orgId1: org.id,
-      orgId2: partnerId,
+      org_id_2: partnerId,
       status: 'Active',
       establishedDate: new Date().toISOString().split('T')[0]
-   };
+   } as any;
    savePartnerships([...existing, newPartnership]); 
    return { success: true, partner, message: `Connected with ${partner.name}!` };
 };
-
-// --- AUTHENTICATION (SERVER SIDE MIGRATION) ---
 
 export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<User> => {
   try {
@@ -388,14 +331,9 @@ export const registerOrganization = async (orgName: string, userName: string, em
     }
 
     const { token, user, org } = await response.json();
-    
-    // Store Auth
     localStorage.setItem(KEYS.TOKEN, token);
-    
-    // Update Local State with Server Response
-    saveOrg(org, true); // Skip sync because server already has it
+    saveOrg(org, true); 
     saveUsers([user], true);
-    
     return user;
   } catch (error: any) {
     console.error("Server Registration Failed:", error);
@@ -404,7 +342,6 @@ export const registerOrganization = async (orgName: string, userName: string, em
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
-  // 1. Try Server Auth First
   try {
     const response = await fetch(`${API_BASE_URL}/api/login`, {
       method: 'POST',
@@ -421,17 +358,14 @@ export const login = async (email: string, pass: string): Promise<User | null> =
     console.warn("Server Login Failed / Offline:", e);
   }
 
-  // 2. Fallback: Local Demo Auth (For all demo users)
-  // Allows login without backend or bcrypt dependency if offline
-  const demoEmails = ['sarah@wild.org', 'mike@wild.org', 'zoe@openstudbook.org'];
-  
-  if (demoEmails.includes(email)) {
-     const users = getUsers();
-     const user = users.find(u => u.email === email);
-     
-     // Specific check for demo user password 'password' without hash lib dependency
-     if (user && pass === 'password') {
-        console.log("Logged in via Local Demo Fallback");
+  // Fallback: Local Demo Auth (For all demo users)
+  // We use the client-side hash function to verify the stored hash if server is offline
+  const users = getUsers();
+  const user = users.find(u => u.email === email);
+  if (user && user.password) {
+     const hashedInput = await hashPassword(pass);
+     if (hashedInput === user.password) {
+        console.log("Logged in via Local Data Hash");
         return user;
      }
   }
@@ -440,23 +374,18 @@ export const login = async (email: string, pass: string): Promise<User | null> =
 };
 
 export const deleteOrganization = async (orgId: string) => {
-   // 1. Trigger Cloud Soft Delete FIRST
    try {
       await syncDeleteOrganization(orgId);
    } catch (e: any) {
       if (!e.message.includes('not configured')) {
-         throw e; // Stop if it's a genuine DB error
+         throw e;
       }
    }
-
-   // 2. Local Cleanup (Soft Delete)
-   // For Network Partners list:
    const partners = get<ExternalPartner[]>(KEYS.PARTNERS, []);
-   const updatedPartners = partners.filter(p => p.id !== orgId); // Remove from view
+   const updatedPartners = partners.filter(p => p.id !== orgId);
    saveNetworkPartners(updatedPartners);
 };
 
-// ... (MFA, Notifications, Exports, Imports - unchanged) ...
 export const isMfaTrustedDevice = (userId: string): boolean => {
    if (typeof window === 'undefined') return false;
    const trusted = JSON.parse(localStorage.getItem(KEYS.TRUSTED_DEVICES) || '{}');
@@ -471,18 +400,8 @@ export const trustDevice = (userId: string) => {
 };
 
 export const sendMfaCode = async (email: string, code: string) => {
-   // Attempt to send real email
-   const sent = await sendSystemEmail(
-      email, 
-      'mfa', 
-      { code }, 
-      "Your OpenStudbook Code", 
-      `Your code is ${code}`
-   );
-
-   if (sent) {
-      console.log(`[SMTP] MFA Code sent to ${email}`);
-   } else {
+   const sent = await sendSystemEmail(email, 'mfa', { code }, "Your OpenStudbook Code", `Your code is ${code}`);
+   if (!sent) {
       console.log(`[MOCK EMAIL] To: ${email}, Code: ${code}`);
       alert(`MOCK EMAIL (SMTP Not Configured): Your verification code is ${code}`);
    }
@@ -504,8 +423,6 @@ export const sendMockNotification = (recipientId: string, title: string, message
       type
    };
    saveNotifications([newNotif, ...notifs]);
-   
-   // Try sending email if recipient has an email address (lookup logic omitted for brevity in mock func, usually we'd look up user)
 };
 
 export const exportSpeciesData = (speciesId: string): any => {
@@ -562,55 +479,43 @@ export const exportDataAsCSV = (): string => {
   const individuals = getIndividuals();
   const species = getSpecies();
   const projects = getProjects();
-
   const header = "Studbook ID,Individual Name,Common Name,Scientific Name,Type,Sex,Birth/Plant Date,Current Weight (kg),Height (cm),Status,Project,Sire ID,Dam ID,Location,Notes";
-
   const rows = individuals.map(ind => {
     const sp = species.find(s => s.id === ind.speciesId);
     const proj = projects.find(p => p.id === ind.projectId);
-    
     let status = 'Active';
     if (ind.isDeceased) status = 'Deceased';
     else if (ind.loanStatus === 'Loaned Out') status = 'Loaned Out';
     else if (ind.loanStatus === 'On Loan') status = 'On Loan';
     else if (ind.transferredToOrgId) status = 'Transferred';
-
     const escape = (txt: any) => {
         if (txt === undefined || txt === null) return '';
         const str = String(txt);
         if (str.includes(',') || str.includes('"') || str.includes('\n')) return `"${str.replace(/"/g, '""')}"`;
         return str;
     };
-
     let latestHeight = '';
     if (ind.growthHistory && ind.growthHistory.length > 0) {
        const sorted = [...ind.growthHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
        latestHeight = String(sorted[0].heightCm);
     }
-
     const location = (ind.latitude && ind.longitude) ? `${ind.latitude}, ${ind.longitude}` : '';
-
     return [
       escape(ind.studbookId), escape(ind.name), escape(sp?.commonName), escape(sp?.scientificName), escape(sp?.type),
       escape(ind.sex), escape(ind.birthDate), escape(ind.weightKg), escape(latestHeight), escape(status),
       escape(proj?.name), escape(ind.sireId), escape(ind.damId), escape(location), escape(ind.notes)
     ].join(",");
   });
-
   return [header, ...rows].join("\n");
 };
 
-// --- DEMO RESTORATION FUNCTION ---
 export const regenerateDemoData = async () => {
-    // 1. Prepare Data
     const mockOrg = createMockOrg();
-    
-    // Store simple hash or placeholder locally
-    // The backend sync will receive this placeholder. Since the backend expects a bcrypt hash, 
-    // a simple string won't work for REAL backend auth, but for demo mode it's irrelevant.
-    // The user will use the "Explore Demo" button which triggers the local bypass logic above.
-    const mockUsers = createMockUsers().map(u => ({ ...u, password: 'demo-local-placeholder' }));
-    
+    const mockUsers = createMockUsers();
+    // Pre-hash the default password 'password' for offline local login
+    const defaultHash = await hashPassword('password');
+    mockUsers.forEach(u => u.password = defaultHash);
+
     let projects = createMockProjects();
     const projectId = projects[0].id;
 
@@ -644,21 +549,19 @@ export const regenerateDemoData = async () => {
     };
     const events = [ev1];
 
-    // 2. Save LOCALLY FIRST (Critical for offline capability)
     saveOrg(mockOrg, true);
     saveUsers(mockUsers, true);
     saveProjects(projects, true);
     saveSpecies(speciesList, true);
     saveIndividuals(individualList, true);
     saveBreedingEvents(events, true);
-    
-    // Ensure Languages exist
     getLanguages();
 
     console.log("Demo Data Restored Locally.");
 
-    // 3. Attempt Sync (Fire and forget, or handle silently)
     try {
+       // IMPORTANT: When pushing to backend, we send plain password if we want server to hash,
+       // but here we already have a hash. We will fix backend to handle this in its upsert.
        await syncPushOrg(mockOrg);
        await syncPushUsers(mockUsers);
        await syncPushProjects(projects);
@@ -667,7 +570,6 @@ export const regenerateDemoData = async () => {
        await syncPushBreedingEvents(events);
        console.log("Demo Data Synced to Backend.");
     } catch(e: any) {
-       // Suppress backend errors during demo init - user can still work locally
-       console.warn("Demo Sync Failed (Backend might be offline or empty):", e.message);
+       console.warn("Demo Sync Failed:", e.message);
     }
 };

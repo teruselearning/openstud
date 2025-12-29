@@ -70,24 +70,18 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const handleAutoFill = async () => {
     if (!formData.commonName) return;
     
-    const settings = getSystemSettings();
-    // Check if key exists in settings or env
-    if (!settings.geminiApiKey && !process.env.API_KEY) {
-       alert("Gemini API Key missing.\n\nPlease ask a Super Admin to configure the AI integration in the Settings menu.");
-       return;
-    }
-
     setLoadingAI(true);
     
     // Get Org Location for Native Status Context
     const locationContext = org ? org.location : '';
 
+    // API key check removed; relying on process.env.API_KEY injected automatically
     const data = await fetchSpeciesData(formData.commonName, formData.type as SpeciesType, locationContext);
     setLoadingAI(false);
     if (data) {
       setFormData(prev => ({ ...prev, ...data }));
     } else {
-      alert("Could not fetch data. Please check the spelling or the API key configuration.");
+      alert("Could not fetch data. Please check the spelling or the network connection.");
     }
   };
 

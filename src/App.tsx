@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -63,7 +64,11 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
+  // Added constructor to ensure props and state are correctly initialized for TypeScript
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -391,7 +396,6 @@ const App: React.FC = () => {
     `;
   }, [systemSettings]);
 
-  // ... (calculateFeatureVisibility, performSync, loadData effects unchanged) ...
   const calculateFeatureVisibility = (pid: string) => {
      const allSpecies = getSpecies();
      const allIndividuals = getIndividuals();
@@ -418,7 +422,6 @@ const App: React.FC = () => {
         const result = await fetchRemoteData();
         if (result.success && result.data) {
            const { data } = result;
-           // ... (sync logic unchanged) ...
            const localUsers = getUsers();
            const remoteUsers = data.users || [];
            
@@ -716,7 +719,6 @@ const App: React.FC = () => {
           />
           
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
-            {/* ... Existing Banner & Header Code ... */}
             {impersonating && (
               <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md">
                 <div className="flex items-center gap-2">
@@ -748,7 +750,6 @@ const App: React.FC = () => {
             )}
 
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
-              {/* Mobile Header Branding */}
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">
                  {systemSettings.appLogoUrl ? (
                     <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" />
@@ -758,11 +759,9 @@ const App: React.FC = () => {
                 <span>OpenStudbook</span>
               </div>
 
-              {/* Desktop Header Spacer */}
               <div className="hidden lg:block"></div>
 
               <div className="flex items-center gap-4">
-                 {/* Notifications Bell */}
                  <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full">
                     <Bell size={20} />
                     {unreadCount > 0 && (
@@ -770,7 +769,6 @@ const App: React.FC = () => {
                     )}
                  </Link>
 
-                 {/* Sync Status */}
                  <div className="hidden sm:flex items-center gap-2">
                     {syncError && (
                        <div 
@@ -792,7 +790,6 @@ const App: React.FC = () => {
                     </button>
                  </div>
 
-                 {/* Mobile Menu Toggle */}
                  <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1">
                    <Menu size={24} />
                  </button>
@@ -823,13 +820,11 @@ const App: React.FC = () => {
           </main>
         </div>
 
-        {/* Global Toast Container */}
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-        {/* ... Modals (AddProject, DBSetup, Profile) ... */}
         {showAddProjectModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-             <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+             <div className="bg-white rounded-xl shadow-xl max-sm w-full p-6">
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3>
                 <div className="space-y-4">
                    <div>

@@ -1,6 +1,4 @@
 
-
-
 export enum UserRole {
   SUPER_ADMIN = 'Super Admin',
   ADMIN = 'Admin',
@@ -150,9 +148,7 @@ export interface SystemSettings {
   aboutPage: StaticPageConfig;
   privacyPage: StaticPageConfig;
   termsPage: StaticPageConfig;
-  // AI
-  geminiApiKey?: string;
-  openAiApiKey?: string;
+  // AI API keys removed to strictly follow environment variable requirements
   // Security
   recaptchaSiteKey?: string;
   recaptchaSecretKey?: string;

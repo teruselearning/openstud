@@ -1,11 +1,9 @@
 
-
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
-import { getSystemSettings } from "./storage";
 
-// Separate Schemas for stricter typing guidance
-const speciesSchema: Schema = {
+// Separate Schemas for stricter typing guidance (removed explicit Schema type for compatibility)
+const speciesSchema = {
   type: Type.OBJECT,
   properties: {
     scientificName: { type: Type.STRING, description: "The scientific (Latin) name of the species." },
@@ -23,17 +21,10 @@ const speciesSchema: Schema = {
   required: ["scientificName", "conservationStatus", "sexualMaturityAgeYears", "nativeStatusCountry", "nativeStatusLocal"]
 };
 
-// Helper to get client with correct key
-const getAiClient = (): GoogleGenAI | null => {
-  const settings = getSystemSettings();
-  const apiKey = settings.geminiApiKey || process.env.API_KEY;
-  
-  if (!apiKey) {
-    console.warn("No Gemini API key found in settings or environment.");
-    return null;
-  }
-  
-  return new GoogleGenAI({ apiKey });
+// Helper to get client with environment variable key
+const getAiClient = (): GoogleGenAI => {
+  // Initialization strictly following guidelines to use process.env.API_KEY
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 // 1. GBIF API Service (Open Data)
@@ -113,7 +104,6 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
   // Step 2: Use Gemini to fill in biological traits (fallback or enrichment)
   try {
     const ai = getAiClient();
-    if (!ai) return result.scientificName ? result : null;
 
     const locationPrompt = locationContext 
       ? `The organization tracking this species is located in "${locationContext}". 
@@ -133,7 +123,7 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
          ${locationPrompt}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: 'gemini-3-flash-preview',
       contents: `${contextPrompt} ${result.scientificName ? `Use the scientific name "${result.scientificName}" for lookup.` : ''}`,
       config: {
         responseMimeType: "application/json",
@@ -160,7 +150,6 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<Record<string, string>> => {
   try {
     const ai = getAiClient();
-    if (!ai) throw new Error("AI Client not configured");
 
     const prompt = `Translate the values of the following JSON object into ${targetLanguage}. 
     Do not change the keys. Return only valid JSON.
@@ -170,7 +159,7 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     ${JSON.stringify(sourceData)}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json"
