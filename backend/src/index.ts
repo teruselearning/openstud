@@ -28,11 +28,13 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
-app.use(cors({ origin: '*' }) as any);
-app.use(express.json({ limit: '50mb' }) as any);
-app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
-app.use(morgan('dev') as any);
-app.use(express.static(path.join(__dirname, '../../dist')));
+// Fix for line 35 and surrounding middleware type issues by explicitly providing the mount path
+// This ensures TypeScript correctly identifies which 'app.use' overload is being utilized.
+app.use('/', cors({ origin: '*' }) as any);
+app.use('/', express.json({ limit: '50mb' }) as any);
+app.use('/', express.urlencoded({ limit: '50mb', extended: true }) as any);
+app.use('/', morgan('dev') as any);
+app.use('/', express.static(path.join(__dirname, '../../dist')) as any);
 
 // Temporary memory store for password reset codes
 const resetCodes = new Map<string, { code: string, expires: number }>();
@@ -63,22 +65,20 @@ const getTransporter = async () => {
     }
 
     // Default Fallback to Mailcatcher
-    // We try '127.0.0.1' first, as 'localhost' can resolve to IPv6 on some systems (::1) which Mailcatcher might not be listening on.
+    // Mailcatcher usually expects no auth and no TLS on port 1025
     console.log(`[EMAIL] Transporter: Falling back to Mailcatcher (127.0.0.1:1025)`);
     return nodemailer.createTransport({
       host: '127.0.0.1',
       port: 1025,
       secure: false,
       ignoreTLS: true,
-      tls: {
-        rejectUnauthorized: false
-      }
+      // Do not provide auth: {} at all if not using it, some versions of nodemailer/mailcatcher struggle with empty auth
     });
   } catch (e) {
     console.error("[EMAIL] Transporter init error, ultimate fallback to 127.0.0.1:1025:", e);
     return nodemailer.createTransport({ 
       host: '127.0.0.1', 
-      port: 1025,
+      port: 1025, 
       secure: false
     });
   }
@@ -115,7 +115,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.12' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.13' }));
 
 // --- EMAIL ROUTES ---
 
@@ -198,7 +198,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
           </div>
         `
       });
-      console.log(`[EMAIL] Dispatch success to ${cleanEmail}. Mailcatcher info: ${info.messageId}`);
+      console.log(`[EMAIL] Dispatch success to ${cleanEmail}. MessageId: ${info.messageId}`);
     } catch (mailErr: any) {
       console.warn(`[AUTH] Mail sending failed: ${mailErr.message}. Code remains available in console.`);
     }
@@ -310,23 +310,40 @@ app.post('/api/login', async (req: any, res: any) => {
     if (!organization && user.role === 'Super Admin') {
        const firstOrg = await (prisma as any).organization.findFirst({ where: { is_deleted: false } });
        if (firstOrg) {
-          console.log(`[LOGIN] Super Admin associated with first available org: ${firstOrg.name}`);
+          console.log(`[LOGIN] Super Admin associating with: ${firstOrg.name}`);
           organization = firstOrg;
-          await (prisma as any).user.update({
-             where: { id: user.id },
-             data: { org_id: firstOrg.id }
-          });
+          
+          // CRITICAL FIX: Attempt update with both camelCase and snake_case to avoid Prisma ValidationError
+          try {
+             await (prisma as any).user.update({
+                where: { id: user.id },
+                data: { org_id: firstOrg.id }
+             });
+             console.log(`[LOGIN] Super Admin org_id updated (snake_case).`);
+          } catch (snakeErr) {
+             try {
+                await (prisma as any).user.update({
+                   where: { id: user.id },
+                   data: { orgId: firstOrg.id }
+                });
+                console.log(`[LOGIN] Super Admin orgId updated (camelCase).`);
+             } catch (camelErr: any) {
+                console.warn(`[LOGIN] Could not persist Super Admin org association in DB: ${camelErr.message}`);
+                // Proceed anyway, we have the organization object for the session
+             }
+          }
        }
     }
 
     console.log(`[LOGIN] SUCCESS: ${cleanEmail} (Org: ${organization?.name || 'None'})`);
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: actualOrgId || organization?.id }, JWT_SECRET, { expiresIn: '30d' });
+    const finalOrgId = actualOrgId || organization?.id;
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: finalOrgId }, JWT_SECRET, { expiresIn: '30d' });
     
     res.json({ 
       token, 
       user: { 
         ...user, 
-        orgId: actualOrgId || organization?.id,
+        orgId: finalOrgId,
         allowedProjectIds: user.allowed_project_ids || user.allowedProjectIds || [], 
         avatarUrl: user.avatar_url || user.avatarUrl
       },
