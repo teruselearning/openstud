@@ -43,8 +43,10 @@ const getTransporter = async () => {
     const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
     const settings = config?.settings || {};
 
-    // Check if host is configured
-    if (settings.smtpHost && settings.smtpHost.trim() !== '') {
+    // Strictly check if host is configured and not a placeholder
+    const hasHost = settings.smtpHost && typeof settings.smtpHost === 'string' && settings.smtpHost.trim() !== '' && !settings.smtpHost.includes('your-smtp');
+
+    if (hasHost) {
       console.log(`[EMAIL] Using configured SMTP: ${settings.smtpHost}:${settings.smtpPort}`);
       return nodemailer.createTransport({
         host: settings.smtpHost,
@@ -58,11 +60,11 @@ const getTransporter = async () => {
     }
 
     // Default Fallback to Mailcatcher
-    console.log(`[EMAIL] No SMTP configured. Falling back to Mailcatcher (127.0.0.1:1025)`);
+    console.log(`[EMAIL] No valid SMTP configured. Falling back to Mailcatcher (127.0.0.1:1025)`);
     return nodemailer.createTransport({
       host: '127.0.0.1',
       port: 1025,
-      secure: false, // Mailcatcher doesn't use SSL/TLS by default
+      secure: false,
       ignoreTLS: true
     });
   } catch (e) {
@@ -102,7 +104,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.8' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.9' }));
 
 // --- EMAIL ROUTES ---
 
@@ -172,6 +174,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
         subject: "Password Reset Code",
         html: `<h3>Reset Your Password</h3><p>Your verification code is: <b>${code}</b></p><p>This code will expire in 15 minutes.</p>`
       });
+      console.log(`[EMAIL] Reset code sent to ${cleanEmail} via SMTP.`);
     } catch (mailErr: any) {
       console.warn(`[AUTH] Mail sending failed, but code is logged to console: ${mailErr.message}`);
     }
@@ -256,17 +259,34 @@ app.post('/api/login', async (req: any, res: any) => {
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Fetch associated organization to prevent demo fallback
-    const organization = await prisma.organization.findUnique({ where: { id: user.org_id } });
+    // FIX: Only query organization if org_id is present to avoid Prisma ValidationError
+    let organization = null;
+    if (user.org_id) {
+       organization = await prisma.organization.findUnique({ where: { id: user.org_id } });
+    }
 
-    console.log(`[LOGIN] SUCCESS: ${cleanEmail} (Org: ${organization?.name || 'Unknown'})`);
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
+    // SPECIAL HANDLING: If Super Admin has no org, try to find the first available org
+    if (!organization && user.role === 'Super Admin') {
+       const firstOrg = await prisma.organization.findFirst({ where: { is_deleted: false } });
+       if (firstOrg) {
+          console.log(`[LOGIN] Super Admin associated with first available org: ${firstOrg.name}`);
+          organization = firstOrg;
+          // Update the user record to persist this association
+          await prisma.user.update({
+             where: { id: user.id },
+             data: { org_id: firstOrg.id }
+          });
+       }
+    }
+
+    console.log(`[LOGIN] SUCCESS: ${cleanEmail} (Org: ${organization?.name || 'None'})`);
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id || organization?.id }, JWT_SECRET, { expiresIn: '30d' });
     
     res.json({ 
       token, 
       user: { 
         ...user, 
-        orgId: user.org_id,
+        orgId: user.org_id || organization?.id,
         allowedProjectIds: user.allowed_project_ids || [], 
         avatarUrl: user.avatar_url 
       },
