@@ -43,33 +43,44 @@ const getTransporter = async () => {
     const config: any = await (prisma as any).appConfig.findUnique({ where: { id: 'global-settings' } });
     const settings = (config?.settings || {}) as any;
 
-    // Strictly check if host is configured and not a placeholder
-    const hasHost = settings.smtpHost && typeof settings.smtpHost === 'string' && settings.smtpHost.trim() !== '' && !settings.smtpHost.includes('your-smtp');
+    const host = settings.smtpHost;
+    const isConfigured = host && typeof host === 'string' && host.trim() !== '' && !host.includes('your-smtp');
 
-    if (hasHost) {
-      console.log(`[EMAIL] Using configured SMTP: ${settings.smtpHost}:${settings.smtpPort}`);
+    if (isConfigured) {
+      console.log(`[EMAIL] Transporter: Using external SMTP (${host}:${settings.smtpPort})`);
       return nodemailer.createTransport({
-        host: settings.smtpHost,
+        host: host,
         port: Number(settings.smtpPort) || 587,
         secure: !!settings.smtpSecure,
         auth: {
           user: settings.smtpUser,
           pass: settings.smtpPass,
         },
+        tls: {
+          rejectUnauthorized: false
+        }
       });
     }
 
     // Default Fallback to Mailcatcher
-    console.log(`[EMAIL] No valid SMTP configured. Falling back to Mailcatcher (127.0.0.1:1025)`);
+    // We try '127.0.0.1' first, as 'localhost' can resolve to IPv6 on some systems (::1) which Mailcatcher might not be listening on.
+    console.log(`[EMAIL] Transporter: Falling back to Mailcatcher (127.0.0.1:1025)`);
     return nodemailer.createTransport({
       host: '127.0.0.1',
       port: 1025,
       secure: false,
-      ignoreTLS: true
+      ignoreTLS: true,
+      tls: {
+        rejectUnauthorized: false
+      }
     });
   } catch (e) {
-    console.error("[EMAIL] Transporter init error, falling back to local:", e);
-    return nodemailer.createTransport({ host: '127.0.0.1', port: 1025 });
+    console.error("[EMAIL] Transporter init error, ultimate fallback to 127.0.0.1:1025:", e);
+    return nodemailer.createTransport({ 
+      host: '127.0.0.1', 
+      port: 1025,
+      secure: false
+    });
   }
 };
 
@@ -104,7 +115,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.11' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.12' }));
 
 // --- EMAIL ROUTES ---
 
@@ -114,15 +125,16 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
 
   try {
     const transporter = await getTransporter();
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: '"OpenStudbook" <noreply@openstudbook.org>',
       to,
       subject,
       html
     });
+    console.log(`[EMAIL] Dispatch successful. MessageId: ${info.messageId}`);
     res.json({ success: true });
   } catch (e: any) {
-    console.error("[EMAIL] Send failed:", e.message);
+    console.error("[EMAIL] Dispatch failed:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -133,13 +145,14 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
 
   try {
     const transporter = await getTransporter();
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: '"OpenStudbook Test" <noreply@openstudbook.org>',
       to,
       subject: "SMTP Connection Test",
       text: "If you received this, your OpenStudbook SMTP configuration (or fallback) is working correctly.",
       html: "<h3>SMTP Connection Test</h3><p>If you received this, your OpenStudbook SMTP configuration (or fallback) is working correctly.</p>"
     });
+    console.log(`[EMAIL] Test mail sent. MessageId: ${info.messageId}`);
     res.json({ success: true, message: "Test email sent successfully!" });
   } catch (e: any) {
     console.error("[EMAIL] Test failed:", e.message);
@@ -158,33 +171,41 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
   try {
     const user: any = await (prisma as any).user.findUnique({ where: { email: cleanEmail } });
     if (!user) {
-      console.log(`[AUTH] User not found for forgot-password: ${cleanEmail}`);
-      // Don't reveal if user exists or not for security
+      console.log(`[AUTH] User not found: ${cleanEmail}. Returning success to prevent enumeration.`);
       return res.json({ success: true, message: "If an account exists, a code has been sent." });
     }
     
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     resetCodes.set(cleanEmail, { code, expires: Date.now() + 15 * 60 * 1000 }); // 15 mins
     
-    console.log(`[AUTH] NEW CODE for ${cleanEmail}: ${code}`);
+    console.log(`[AUTH] GENERATED CODE for ${cleanEmail}: ${code}`);
     
     // Attempt to send email
     try {
       const transporter = await getTransporter();
-      await transporter.sendMail({
-        from: '"OpenStudbook" <security@openstudbook.org>',
+      const info = await transporter.sendMail({
+        from: '"OpenStudbook Security" <security@openstudbook.org>',
         to: cleanEmail,
         subject: "Password Reset Code",
-        html: `<h3>Reset Your Password</h3><p>Your verification code is: <b>${code}</b></p><p>This code will expire in 15 minutes.</p>`
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; color: #333;">
+            <h2 style="color: #059669;">Reset Your Password</h2>
+            <p>Your verification code is:</p>
+            <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 5px; text-align: center; margin: 20px 0;">
+              ${code}
+            </div>
+            <p>This code will expire in 15 minutes. If you did not request this, please ignore this email.</p>
+          </div>
+        `
       });
-      console.log(`[EMAIL] Reset code sent to ${cleanEmail} via SMTP.`);
+      console.log(`[EMAIL] Dispatch success to ${cleanEmail}. Mailcatcher info: ${info.messageId}`);
     } catch (mailErr: any) {
-      console.warn(`[AUTH] Mail sending failed, but code is logged above: ${mailErr.message}`);
+      console.warn(`[AUTH] Mail sending failed: ${mailErr.message}. Code remains available in console.`);
     }
 
     return res.json({ success: true, message: "Verification code sent to email." });
   } catch (e: any) {
-    console.error(`[AUTH] Critical failure in forgot-password for ${cleanEmail}:`, e.message);
+    console.error(`[AUTH] Critical failure in forgot-password:`, e.message);
     return res.status(500).json({ error: e.message });
   }
 });
@@ -194,12 +215,22 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
   if (!email || !code || !newPassword) return res.status(400).json({ error: "Missing required fields" });
   
   const cleanEmail = String(email).toLowerCase().trim();
-  console.log(`[AUTH] Resetting password for: ${cleanEmail}`);
+  console.log(`[AUTH] Resetting password attempt for: ${cleanEmail}`);
   
   const record = resetCodes.get(cleanEmail);
-  if (!record || record.code !== String(code) || record.expires < Date.now()) {
-    console.log(`[AUTH] Invalid or expired code attempt for: ${cleanEmail}`);
-    return res.status(400).json({ error: "Invalid or expired code." });
+  if (!record) {
+    console.log(`[AUTH] No reset session found for ${cleanEmail}`);
+    return res.status(400).json({ error: "No reset session found. Please request a new code." });
+  }
+
+  if (record.code !== String(code)) {
+    console.log(`[AUTH] Invalid code for ${cleanEmail}. Expected ${record.code}, got ${code}`);
+    return res.status(400).json({ error: "Invalid verification code." });
+  }
+
+  if (record.expires < Date.now()) {
+    console.log(`[AUTH] Expired code for ${cleanEmail}`);
+    return res.status(400).json({ error: "Code has expired. Please request a new one." });
   }
   
   try {
@@ -209,11 +240,11 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
       data: { password: hashedPassword }
     });
     resetCodes.delete(cleanEmail);
-    console.log(`[AUTH] Password changed successfully for ${cleanEmail}`);
+    console.log(`[AUTH] Password successfully updated for ${cleanEmail}`);
     return res.json({ success: true, message: "Password updated successfully." });
   } catch (e: any) {
-    console.error(`[AUTH] Reset failed for ${cleanEmail}:`, e.message);
-    return res.status(500).json({ error: e.message });
+    console.error(`[AUTH] Database update failed during reset:`, e.message);
+    return res.status(500).json({ error: "Failed to update password in database." });
   }
 });
 
@@ -268,7 +299,6 @@ app.post('/api/login', async (req: any, res: any) => {
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // FIX: Safely check for organization ID
     const actualOrgId = user.org_id || user.orgId;
     let organization = null;
     
