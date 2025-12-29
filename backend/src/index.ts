@@ -40,8 +40,7 @@ const resetCodes = new Map<string, { code: string, expires: number }>();
 // --- EMAIL TRANSPORTER HELPER ---
 const getTransporter = async () => {
   try {
-    const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
-    // Cast to any to allow property access on Prisma JsonValue
+    const config: any = await (prisma as any).appConfig.findUnique({ where: { id: 'global-settings' } });
     const settings = (config?.settings || {}) as any;
 
     // Strictly check if host is configured and not a placeholder
@@ -105,7 +104,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.10' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.11' }));
 
 // --- EMAIL ROUTES ---
 
@@ -152,11 +151,14 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
 app.post('/api/auth/forgot-password', async (req: any, res: any) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email required" });
-  const cleanEmail = email.toLowerCase().trim();
+  const cleanEmail = String(email).toLowerCase().trim();
+  
+  console.log(`[AUTH] Forgot password request for: ${cleanEmail}`);
   
   try {
-    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    const user: any = await (prisma as any).user.findUnique({ where: { email: cleanEmail } });
     if (!user) {
+      console.log(`[AUTH] User not found for forgot-password: ${cleanEmail}`);
       // Don't reveal if user exists or not for security
       return res.json({ success: true, message: "If an account exists, a code has been sent." });
     }
@@ -164,7 +166,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     resetCodes.set(cleanEmail, { code, expires: Date.now() + 15 * 60 * 1000 }); // 15 mins
     
-    console.log(`[AUTH] Password reset code for ${cleanEmail}: ${code}`);
+    console.log(`[AUTH] NEW CODE for ${cleanEmail}: ${code}`);
     
     // Attempt to send email
     try {
@@ -177,35 +179,41 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
       });
       console.log(`[EMAIL] Reset code sent to ${cleanEmail} via SMTP.`);
     } catch (mailErr: any) {
-      console.warn(`[AUTH] Mail sending failed, but code is logged to console: ${mailErr.message}`);
+      console.warn(`[AUTH] Mail sending failed, but code is logged above: ${mailErr.message}`);
     }
 
-    res.json({ success: true, message: "Verification code sent to email." });
+    return res.json({ success: true, message: "Verification code sent to email." });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    console.error(`[AUTH] Critical failure in forgot-password for ${cleanEmail}:`, e.message);
+    return res.status(500).json({ error: e.message });
   }
 });
 
 app.post('/api/auth/reset-password', async (req: any, res: any) => {
   const { email, code, newPassword } = req.body;
-  const cleanEmail = email?.toLowerCase().trim();
+  if (!email || !code || !newPassword) return res.status(400).json({ error: "Missing required fields" });
+  
+  const cleanEmail = String(email).toLowerCase().trim();
+  console.log(`[AUTH] Resetting password for: ${cleanEmail}`);
   
   const record = resetCodes.get(cleanEmail);
-  if (!record || record.code !== code || record.expires < Date.now()) {
+  if (!record || record.code !== String(code) || record.expires < Date.now()) {
+    console.log(`[AUTH] Invalid or expired code attempt for: ${cleanEmail}`);
     return res.status(400).json({ error: "Invalid or expired code." });
   }
   
   try {
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
+    const hashedPassword = await bcrypt.hash(String(newPassword), 10);
+    await (prisma as any).user.update({
       where: { email: cleanEmail },
       data: { password: hashedPassword }
     });
     resetCodes.delete(cleanEmail);
-    console.log(`[AUTH] Password changed for ${cleanEmail}`);
-    res.json({ success: true, message: "Password updated successfully." });
+    console.log(`[AUTH] Password changed successfully for ${cleanEmail}`);
+    return res.json({ success: true, message: "Password updated successfully." });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    console.error(`[AUTH] Reset failed for ${cleanEmail}:`, e.message);
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -214,12 +222,12 @@ app.post('/api/rescue/reset-password', async (req: any, res: any) => {
   if (!email) return res.status(400).json({ error: "Email required" });
   try {
     const hashedPassword = await bcrypt.hash("password", 10);
-    const cleanEmail = email.toLowerCase().trim();
-    await prisma.user.update({
+    const cleanEmail = String(email).toLowerCase().trim();
+    await (prisma as any).user.update({
       where: { email: cleanEmail },
       data: { password: hashedPassword }
     });
-    console.log(`[RESCUE] Password for ${cleanEmail} reset to "password". Hash: ${hashedPassword}`);
+    console.log(`[RESCUE] Password for ${cleanEmail} reset to "password".`);
     res.json({ success: true, message: `Password for ${cleanEmail} reset to "password"` });
   } catch (e: any) {
     console.error("[RESCUE] Failed:", e.message);
@@ -234,8 +242,7 @@ app.post('/api/login', async (req: any, res: any) => {
   console.log(`[LOGIN] Attempt: ${cleanEmail}`);
   
   try {
-    // Cast user to any to handle potential property mapping differences in Prisma types
-    const user: any = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    const user: any = await (prisma as any).user.findUnique({ where: { email: cleanEmail } });
     
     if (!user) {
        console.log(`[LOGIN] User NOT found: ${cleanEmail}`);
@@ -261,22 +268,21 @@ app.post('/api/login', async (req: any, res: any) => {
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Attempt to lookup by snake_case first, then camelCase as fallback
+    // FIX: Safely check for organization ID
     const actualOrgId = user.org_id || user.orgId;
-
     let organization = null;
-    if (actualOrgId) {
-       organization = await prisma.organization.findUnique({ where: { id: actualOrgId } });
+    
+    if (actualOrgId && typeof actualOrgId === 'string' && actualOrgId.length > 0) {
+       organization = await (prisma as any).organization.findUnique({ where: { id: actualOrgId } });
     }
 
     // SPECIAL HANDLING: If Super Admin has no org, try to find the first available org
     if (!organization && user.role === 'Super Admin') {
-       const firstOrg = await prisma.organization.findFirst({ where: { is_deleted: false } });
+       const firstOrg = await (prisma as any).organization.findFirst({ where: { is_deleted: false } });
        if (firstOrg) {
           console.log(`[LOGIN] Super Admin associated with first available org: ${firstOrg.name}`);
           organization = firstOrg;
-          // Update the user record to persist this association - use dynamic update
-          await (prisma.user as any).update({
+          await (prisma as any).user.update({
              where: { id: user.id },
              data: { org_id: firstOrg.id }
           });
@@ -331,22 +337,22 @@ const prepUser = (u: any) => ({ id: u.id, org_id: u.orgId || u.org_id, name: u.n
 const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
 const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
 
-app.post('/rest/v1/organizations', createUpsertHandler(prisma.organization, prepOrg));
-app.post('/rest/v1/projects', createUpsertHandler(prisma.project, prepProject));
-app.post('/rest/v1/users', createUpsertHandler(prisma.user, prepUser));
-app.post('/rest/v1/species', createUpsertHandler(prisma.species, prepSpecies));
-app.post('/rest/v1/individuals', createUpsertHandler(prisma.individual, prepInd));
+app.post('/rest/v1/organizations', createUpsertHandler((prisma as any).organization, prepOrg));
+app.post('/rest/v1/projects', createUpsertHandler((prisma as any).project, prepProject));
+app.post('/rest/v1/users', createUpsertHandler((prisma as any).user, prepUser));
+app.post('/rest/v1/species', createUpsertHandler((prisma as any).species, prepSpecies));
+app.post('/rest/v1/individuals', createUpsertHandler((prisma as any).individual, prepInd));
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    try {
       const [orgs, projects, users, species, individuals, config, languages] = await Promise.all([
-         prisma.organization.findMany({ where: { is_deleted: false } }),
-         prisma.project.findMany(),
-         prisma.user.findMany(),
-         prisma.species.findMany(),
-         prisma.individual.findMany(),
-         prisma.appConfig.findUnique({ where: { id: 'global-settings' } }),
-         prisma.language?.findMany({ where: { is_deleted: false } })
+         (prisma as any).organization.findMany({ where: { is_deleted: false } }),
+         (prisma as any).project.findMany(),
+         (prisma as any).user.findMany(),
+         (prisma as any).species.findMany(),
+         (prisma as any).individual.findMany(),
+         (prisma as any).appConfig.findUnique({ where: { id: 'global-settings' } }),
+         (prisma as any).language?.findMany({ where: { is_deleted: false } }) || []
       ]);
       res.json({ 
         success: true, 
@@ -361,6 +367,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         } 
       });
    } catch (e: any) { 
+      console.error("[SYNC] Error:", e.message);
       res.status(500).json({ success: false, message: e.message }); 
    }
 });

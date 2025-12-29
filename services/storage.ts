@@ -49,6 +49,22 @@ const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') localStorage.setItem(key, JSON.stringify(val));
 };
 
+// Helper for parsing JSON safely from fetch responses
+const safeParseJson = async (response: Response) => {
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+     try {
+        return await response.json();
+     } catch (e) {
+        console.error("[STORAGE] JSON parse error:", e);
+        throw new Error("Invalid response from server.");
+     }
+  }
+  const text = await response.text();
+  console.warn("[STORAGE] Non-JSON response received:", text.substring(0, 200));
+  throw new Error(`Server returned unexpected content (Status: ${response.status})`);
+};
+
 export const getSystemSettings = (): SystemSettings => get(KEYS.SETTINGS, {
   smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
   emailTemplates: {
@@ -248,21 +264,31 @@ export const login = async (email: string, pass: string): Promise<User | null> =
 };
 
 export const forgotPassword = async (email: string): Promise<any> => {
-   const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.toLowerCase().trim() })
-   });
-   return response.json();
+   try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ email: email.toLowerCase().trim() })
+      });
+      return await safeParseJson(response);
+   } catch (e: any) {
+      console.error("[STORAGE] Forgot password error:", e.message);
+      return { success: false, error: e.message };
+   }
 };
 
 export const resetPassword = async (email: string, code: string, newPassword: string): Promise<any> => {
-   const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.toLowerCase().trim(), code, newPassword })
-   });
-   return response.json();
+   try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ email: email.toLowerCase().trim(), code, newPassword })
+      });
+      return await safeParseJson(response);
+   } catch (e: any) {
+      console.error("[STORAGE] Reset password error:", e.message);
+      return { success: false, error: e.message };
+   }
 };
 
 export const deleteOrganization = async (orgId: string) => {
