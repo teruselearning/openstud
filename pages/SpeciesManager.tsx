@@ -40,14 +40,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     try {
       const data = await fetchSpeciesData(formData.commonName, formData.type as SpeciesType, org?.location || '');
       setLoadingAI(false);
-      if (data) {
+      if (data && (data.scientificName || data.conservationStatus)) {
         setFormData(prev => ({ ...prev, ...data }));
       } else {
-        alert("Autofill: Could not find biological data for this species. Please fill details manually.");
+        alert("Autofill: Could not find biological data for this species. Please check the spelling or fill details manually.");
       }
-    } catch (e) {
+    } catch (e: any) {
       setLoadingAI(false);
-      alert("AI Service Error. Please try again later or fill manually.");
+      console.error("Autofill Service Failure:", e.message);
+      alert("AI Service Error: " + e.message + ". Please try again later or fill manually.");
     }
   };
 

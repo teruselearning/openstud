@@ -63,6 +63,13 @@ const fetchWikipediaImage = async (query: string): Promise<string | null> => {
   } catch (e) { return null; }
 };
 
+/**
+ * Strips markdown code blocks if the model returns them.
+ */
+const sanitizeJsonResponse = (text: string): string => {
+  return text.replace(/```json/g, "").replace(/```/g, "").trim();
+};
+
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   let result: Partial<Species> = {};
 
@@ -91,7 +98,7 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${result.scientificName ? `Use scientific name "${result.scientificName}".` : ''}`,
+      contents: `${contextPrompt} ${result.scientificName ? `Use scientific name "${result.scientificName}".` : ''} Return ONLY a raw JSON object matching the provided schema.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,
@@ -99,7 +106,8 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
     });
 
     if (response.text) {
-      const aiData = JSON.parse(response.text) as Partial<Species>;
+      const sanitized = sanitizeJsonResponse(response.text);
+      const aiData = JSON.parse(sanitized) as Partial<Species>;
       return {
         ...aiData,
         ...result, 
@@ -117,12 +125,16 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<Record<string, string>> => {
   try {
     const ai = getAiClient();
-    const prompt = `Translate values to ${targetLanguage}. Keep JSON keys intact: ${JSON.stringify(sourceData)}`;
+    const prompt = `Translate values to ${targetLanguage}. Keep JSON keys intact: ${JSON.stringify(sourceData)}. Return ONLY the JSON object.`;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: { responseMimeType: "application/json" }
     });
-    return response.text ? JSON.parse(response.text) : {};
+    if (response.text) {
+      const sanitized = sanitizeJsonResponse(response.text);
+      return JSON.parse(sanitized);
+    }
+    return {};
   } catch (e) { throw e; }
 };

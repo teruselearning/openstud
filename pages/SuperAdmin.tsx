@@ -1,15 +1,19 @@
 
-import React, { useContext, useState, useEffect } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getProjects, getIndividuals, getBreedingEvents, getBreedingLoans, getPartnerships, getSpecies, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, deleteOrganization, getLanguages, saveLanguages, deleteLanguage } from '../services/storage';
 import { checkSupabaseConnection, isSupabaseConfigured, saveSupabaseConfig, getSupabaseConfig } from '../services/supabase';
 import { SUPABASE_SCHEMA_SQL } from '../services/schemaTemplate';
 import { translateDictionary } from '../services/geminiService';
 import { testSmtpConnection } from '../services/emailService';
-import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send } from 'lucide-react';
+/* Added LucideIcons wildcard import for dynamic icon rendering */
+import * as LucideIcons from 'lucide-react';
+/* Added Pencil to named imports */
+import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate } from '../types';
+import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate, StaticPageConfig } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
+import React from 'react';
 
 const SuperAdmin: React.FC = () => {
   const { t, refreshTranslations } = useContext(LanguageContext);
@@ -18,7 +22,6 @@ const SuperAdmin: React.FC = () => {
   // Data Stats
   const partners = getNetworkPartners();
   const myOrg = getOrg();
-  // Ensure partners is an array and filter out any potential nulls
   const allOrganizations = [myOrg, ...(partners || [])].filter(Boolean);
 
   // Database State
@@ -66,6 +69,9 @@ const SuperAdmin: React.FC = () => {
   const [features, setFeatures] = useState<LandingFeature[]>(landingConfig.features || []);
   const [editingFeature, setEditingFeature] = useState<LandingFeature | null>(null);
   const [showFeatureForm, setShowFeatureForm] = useState(false);
+
+  // Static Pages Selection
+  const [selectedPage, setSelectedPage] = useState<'about' | 'privacy' | 'terms'>('about');
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -140,13 +146,12 @@ const SuperAdmin: React.FC = () => {
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    const updated = {
+    const updated: SystemSettings = {
       ...settings,
       landingPageConfig: { ...landingConfig, features: features },
       aboutPage: pagesConfig.about,
       privacyPage: pagesConfig.privacy,
-      terms: pagesConfig.terms,
-      // Ensure current template edit is saved to the main object
+      termsPage: pagesConfig.terms,
       emailTemplates: {
          ...settings.emailTemplates,
          [selectedTemplate]: editingTemplate || settings.emailTemplates?.[selectedTemplate]
@@ -161,7 +166,6 @@ const SuperAdmin: React.FC = () => {
      if(!testEmail) return;
      setIsTestingSmtp(true);
      try {
-        // Save settings first to ensure backend uses latest
         await syncPushSettings(settings);
         const result = await testSmtpConnection(testEmail);
         alert(result.message);
@@ -173,14 +177,12 @@ const SuperAdmin: React.FC = () => {
   };
   
   const handleTemplateChange = (type: string) => {
-     // Save current work to local state before switching
      if (editingTemplate) {
         setSettings(prev => ({
            ...prev,
            emailTemplates: { ...prev.emailTemplates, [selectedTemplate]: editingTemplate }
         }));
      }
-     
      setSelectedTemplate(type);
      setEditingTemplate(settings.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true });
   };
@@ -203,7 +205,6 @@ const SuperAdmin: React.FC = () => {
 
   const confirmDelete = async () => {
      if (!deleteTarget) return;
-
      if (deleteTarget.type === 'org') {
         setIsDeletingOrg(deleteTarget.id);
         try {
@@ -219,11 +220,8 @@ const SuperAdmin: React.FC = () => {
         setIsSavingLang(true);
         try {
            await deleteLanguage(deleteTarget.id);
-           
-           // Update local state after successful delete
            const updated = languages.filter(l => l.code !== deleteTarget.id);
            setLanguages(updated);
-           
            refreshTranslations();
            if (editingLang?.code === deleteTarget.id) setEditingLang(null);
         } catch(e: any) {
@@ -232,7 +230,6 @@ const SuperAdmin: React.FC = () => {
            setIsSavingLang(false);
         }
      }
-     
      setDeleteTarget(null);
   };
 
@@ -242,26 +239,17 @@ const SuperAdmin: React.FC = () => {
         setOrgBreakdown([]);
      } else {
         setExpandedOrgId(orgId);
-        // Calculate breakdown
         const allProjects = getProjects();
         const allSpecies = getSpecies();
         const allIndividuals = getIndividuals();
-
-        const orgProjectIds = allProjects.filter(p => p.orgId === orgId).map(p => p.id);
+        const orgProjectIds = allProjects.filter(p => (p.orgId || (p as any).org_id) === orgId).map(p => p.id);
         const orgSpecies = allSpecies.filter(s => orgProjectIds.includes(s.projectId));
-        
         const breakdown = orgSpecies.map(s => {
            const inds = allIndividuals.filter(i => i.speciesId === s.id && !i.isDeceased);
            const m = inds.filter(i => i.sex === Sex.MALE).length;
            const f = inds.filter(i => i.sex === Sex.FEMALE).length;
            const u = inds.filter(i => i.sex === Sex.UNKNOWN || !i.sex).length;
-           return {
-              id: s.id,
-              name: s.commonName,
-              scientific: s.scientificName,
-              type: s.type,
-              count: `${m}.${f}.${u}`
-           };
+           return { id: s.id, name: s.commonName, scientific: s.scientificName, type: s.type, count: `${m}.${f}.${u}` };
         });
         setOrgBreakdown(breakdown);
      }
@@ -296,26 +284,21 @@ const SuperAdmin: React.FC = () => {
         alert("Language code already exists.");
         return;
      }
-     
      const newLang: LanguageConfig = {
-        code: newLangCode,
-        name: newLangName,
-        isDefault: false,
+        code: newLangCode, name: newLangName, isDefault: false,
         translations: { ...BASE_TRANSLATIONS }, 
         manualOverrides: []
      };
-     
      const updated = [...languages, newLang];
      setLanguages(updated);
      setIsSavingLang(true);
      try {
         await saveLanguages(updated, false);
-        setNewLangCode('');
-        setNewLangName('');
+        setNewLangCode(''); setNewLangName('');
         refreshTranslations();
         alert(`Added ${newLangName} and synced to database.`);
      } catch (e) {
-        alert("Saved locally, but failed to sync to database. Check console.");
+        alert("Saved locally, but failed to sync to database.");
      } finally {
         setIsSavingLang(false);
      }
@@ -365,12 +348,12 @@ const SuperAdmin: React.FC = () => {
   const handleAutoTranslate = async () => {
      if (!editingLang) return;
      if (editingLang.code === 'en-GB') {
-        alert("Cannot auto-translate the source language (English UK).");
+        alert("Cannot auto-translate the source language.");
         return;
      }
      const apiKey = process.env.API_KEY;
      if (!apiKey) {
-        alert("Gemini API Key is not configured in the environment.");
+        alert("Gemini API Key is not configured.");
         return;
      }
      setIsTranslating(true);
@@ -378,7 +361,7 @@ const SuperAdmin: React.FC = () => {
         const overrides = new Set(editingLang.manualOverrides || []);
         const keysToTranslate = Object.keys(BASE_TRANSLATIONS).filter(k => !overrides.has(k));
         if (keysToTranslate.length === 0) {
-           alert("All keys are manually overridden. Nothing to translate.");
+           alert("All keys are manually overridden.");
            return;
         }
         const sourceObject: Record<string, string> = {};
@@ -393,7 +376,6 @@ const SuperAdmin: React.FC = () => {
         refreshTranslations();
         alert(`Successfully auto-translated ${Object.keys(translatedDict).length} strings.`);
      } catch (e: any) {
-        console.error("Auto Translate Error", e);
         alert(`Translation failed: ${e.message}`);
      } finally {
         setIsTranslating(false);
@@ -567,6 +549,161 @@ const SuperAdmin: React.FC = () => {
          </div>
       )}
 
+      {/* SETTINGS TAB */}
+      {activeTab === 'settings' && (
+         <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
+            <form onSubmit={handleSaveSettings} className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 space-y-8">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Palette size={20} className="text-emerald-600"/> {t('theming')}</h3>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('primaryColor')}</label>
+                        <div className="flex items-center gap-3">
+                           <input type="color" className="w-12 h-12 rounded border border-slate-300" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                           <input type="text" className="flex-1 px-4 py-2 border border-slate-300 rounded-lg font-mono text-sm bg-white" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                        </div>
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('appLogo')}</label>
+                        <div className="flex items-center gap-3">
+                           <div className="w-12 h-12 bg-slate-100 rounded border border-slate-300 flex items-center justify-center overflow-hidden">
+                              {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" /> : <ImageIcon size={20} className="text-slate-400" />}
+                           </div>
+                           <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Logo URL (https://...)" value={settings.appLogoUrl} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
+                        </div>
+                     </div>
+                  </div>
+                  <div className="space-y-4">
+                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Lock size={20} className="text-blue-600"/> Security</h3>
+                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div className="flex items-center justify-between mb-2">
+                           <span className="font-medium text-slate-700">{t('enableMfa')}</span>
+                           <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" className="sr-only peer" checked={settings.enableMfa} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                           </label>
+                        </div>
+                        <p className="text-xs text-slate-500">Requires users to verify their email on new devices. Recommended for cloud production.</p>
+                     </div>
+                  </div>
+               </div>
+               <div className="flex justify-end pt-4 border-t border-slate-100">
+                  <button type="submit" className="bg-emerald-600 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2">
+                     <Save size={18} /> {settingsSaved ? 'Saved!' : t('saveSettings')}
+                  </button>
+               </div>
+            </form>
+         </div>
+      )}
+
+      {/* CONTENT TAB */}
+      {activeTab === 'content' && (
+         <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+               {/* Sidebar Controls */}
+               <div className="lg:col-span-4 space-y-6">
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
+                     <div>
+                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4"><Monitor size={20} className="text-blue-600"/> Hero Section</h3>
+                        <div className="space-y-4">
+                           <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('heroTitle')}</label>
+                              <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={landingConfig.heroTitle || ''} onChange={e => setLandingConfig({...landingConfig, heroTitle: e.target.value})} placeholder={t('landingTitle')} />
+                           </div>
+                           <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('heroSubtitle')}</label>
+                              <textarea rows={3} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={landingConfig.heroSubtitle || ''} onChange={e => setLandingConfig({...landingConfig, heroSubtitle: e.target.value})} placeholder={t('landingSubtitle')} />
+                           </div>
+                        </div>
+                     </div>
+                     <div className="pt-6 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-4">
+                           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><LayoutTemplate size={20} className="text-emerald-600"/> Feature Tiles</h3>
+                           <button onClick={handleAddFeature} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"><Plus size={18}/></button>
+                        </div>
+                        <div className="space-y-3">
+                           {features.map(f => (
+                              <div key={f.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between group">
+                                 <div className="flex items-center gap-3 truncate">
+                                    <div className="p-2 bg-white rounded border border-slate-200 text-slate-400 group-hover:text-emerald-600 transition-colors">
+                                       {React.createElement((LucideIcons as any)[f.icon] || HelpCircle, { size: 16 })}
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-700 truncate">{f.title}</span>
+                                 </div>
+                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => { setEditingFeature(f); setShowFeatureForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
+                                    <button onClick={() => handleDeleteFeature(f.id)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={14}/></button>
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Main Editor Section for Static Pages */}
+               <div className="lg:col-span-8">
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[700px]">
+                     <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><FileText size={20} className="text-purple-600"/> {t('staticPages')}</h3>
+                           <div className="flex bg-white p-1 rounded-lg border border-slate-200 text-xs">
+                              <button onClick={() => setSelectedPage('about')} className={`px-3 py-1.5 rounded font-bold transition-all ${selectedPage === 'about' ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-50'}`}>About</button>
+                              <button onClick={() => setSelectedPage('privacy')} className={`px-3 py-1.5 rounded font-bold transition-all ${selectedPage === 'privacy' ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-50'}`}>Privacy</button>
+                              <button onClick={() => setSelectedPage('terms')} className={`px-3 py-1.5 rounded font-bold transition-all ${selectedPage === 'terms' ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-50'}`}>Terms</button>
+                           </div>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-slate-600 font-medium cursor-pointer">
+                           <input type="checkbox" checked={pagesConfig[selectedPage].enabled} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], enabled: e.target.checked}})} className="rounded text-purple-600" />
+                           {t('enabled')}
+                        </label>
+                     </div>
+                     <div className="p-6 space-y-4 flex-1 flex flex-col">
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('pageTitle')}</label>
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={pagesConfig[selectedPage].title} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], title: e.target.value}})} />
+                        </div>
+                        <div className="flex-1 min-h-[300px]">
+                           <RichTextEditor value={pagesConfig[selectedPage].contentHtml} onChange={val => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], contentHtml: val}})} height="100%" />
+                        </div>
+                     </div>
+                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                        <button onClick={handleSaveSettings} className="bg-emerald-600 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2">
+                           <Save size={18} /> {settingsSaved ? 'Content Saved!' : 'Save All Content'}
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            {/* Feature Editor Modal */}
+            {showFeatureForm && editingFeature && (
+               <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
+                  <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+                     <h3 className="text-lg font-bold">Edit Feature Tile</h3>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Title</label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={editingFeature.title} onChange={e => setEditingFeature({...editingFeature, title: e.target.value})} />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+                        <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" rows={3} value={editingFeature.description} onChange={e => setEditingFeature({...editingFeature, description: e.target.value})} />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Icon Name (Lucide)</label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={editingFeature.icon} onChange={e => setEditingFeature({...editingFeature, icon: e.target.value})} />
+                        <p className="text-[10px] text-slate-400 mt-1">E.g. Shield, Sprout, Globe2, Dna, Heart</p>
+                     </div>
+                     <div className="flex gap-2 pt-2">
+                        <button onClick={() => setShowFeatureForm(false)} className="flex-1 py-2 bg-slate-100 rounded-lg">Cancel</button>
+                        <button onClick={handleUpdateFeature} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold">Update</button>
+                     </div>
+                  </div>
+               </div>
+            )}
+         </div>
+      )}
+
       {/* EMAIL TAB */}
       {activeTab === 'email' && (
          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in">
@@ -596,7 +733,7 @@ const SuperAdmin: React.FC = () => {
                      </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
-                        <input type="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
+                        <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
                      </div>
                      <div className="pt-2 border-t border-slate-100 mt-4">
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Test Connection</label>
