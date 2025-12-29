@@ -41,7 +41,8 @@ const resetCodes = new Map<string, { code: string, expires: number }>();
 const getTransporter = async () => {
   try {
     const config = await prisma.appConfig.findUnique({ where: { id: 'global-settings' } });
-    const settings = config?.settings || {};
+    // Cast to any to allow property access on Prisma JsonValue
+    const settings = (config?.settings || {}) as any;
 
     // Strictly check if host is configured and not a placeholder
     const hasHost = settings.smtpHost && typeof settings.smtpHost === 'string' && settings.smtpHost.trim() !== '' && !settings.smtpHost.includes('your-smtp');
@@ -104,7 +105,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.9' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.10' }));
 
 // --- EMAIL ROUTES ---
 
@@ -233,7 +234,8 @@ app.post('/api/login', async (req: any, res: any) => {
   console.log(`[LOGIN] Attempt: ${cleanEmail}`);
   
   try {
-    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    // Cast user to any to handle potential property mapping differences in Prisma types
+    const user: any = await prisma.user.findUnique({ where: { email: cleanEmail } });
     
     if (!user) {
        console.log(`[LOGIN] User NOT found: ${cleanEmail}`);
@@ -259,10 +261,12 @@ app.post('/api/login', async (req: any, res: any) => {
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // FIX: Only query organization if org_id is present to avoid Prisma ValidationError
+    // Attempt to lookup by snake_case first, then camelCase as fallback
+    const actualOrgId = user.org_id || user.orgId;
+
     let organization = null;
-    if (user.org_id) {
-       organization = await prisma.organization.findUnique({ where: { id: user.org_id } });
+    if (actualOrgId) {
+       organization = await prisma.organization.findUnique({ where: { id: actualOrgId } });
     }
 
     // SPECIAL HANDLING: If Super Admin has no org, try to find the first available org
@@ -271,8 +275,8 @@ app.post('/api/login', async (req: any, res: any) => {
        if (firstOrg) {
           console.log(`[LOGIN] Super Admin associated with first available org: ${firstOrg.name}`);
           organization = firstOrg;
-          // Update the user record to persist this association
-          await prisma.user.update({
+          // Update the user record to persist this association - use dynamic update
+          await (prisma.user as any).update({
              where: { id: user.id },
              data: { org_id: firstOrg.id }
           });
@@ -280,15 +284,15 @@ app.post('/api/login', async (req: any, res: any) => {
     }
 
     console.log(`[LOGIN] SUCCESS: ${cleanEmail} (Org: ${organization?.name || 'None'})`);
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id || organization?.id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: actualOrgId || organization?.id }, JWT_SECRET, { expiresIn: '30d' });
     
     res.json({ 
       token, 
       user: { 
         ...user, 
-        orgId: user.org_id || organization?.id,
-        allowedProjectIds: user.allowed_project_ids || [], 
-        avatarUrl: user.avatar_url 
+        orgId: actualOrgId || organization?.id,
+        allowedProjectIds: user.allowed_project_ids || user.allowedProjectIds || [], 
+        avatarUrl: user.avatar_url || user.avatarUrl
       },
       organization: organization || undefined
     });
