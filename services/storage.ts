@@ -226,7 +226,7 @@ export const registerOrganization = async (orgName: string, userName: string, em
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
-  console.log(`[LOGIN DEBUG] Attempting login for ${email} at ${API_BASE_URL}`);
+  console.log(`[LOGIN DEBUG] Frontend login request for ${email}`);
   try {
     const response = await fetch(`${API_BASE_URL}/api/login`, {
       method: 'POST',
@@ -242,7 +242,7 @@ export const login = async (email: string, pass: string): Promise<User | null> =
     console.warn(`[LOGIN DEBUG] Server unreachable:`, e.message);
   }
 
-  // Local Fallback (for truly offline use)
+  // Local Fallback (Only works if DB has standard plain-text from old local-only mode)
   const user = getUsers().find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
   if (user?.password) {
      if (user.password.startsWith('$2')) return null; // Server required for Bcrypt
@@ -332,7 +332,7 @@ export const regenerateDemoData = async () => {
       description: 'Demo Sanctuary', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true
     };
 
-    // CRITICAL: We stop pre-hashing here. The server will hash these plain-text passwords during the sync.
+    // Use standard plain text for sync, the backend now correctly detects and hashes these
     const mockUsers: User[] = [
       { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
       { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
@@ -353,7 +353,7 @@ export const regenerateDemoData = async () => {
 
     try {
        await syncPushOrg(mockOrg);
-       await syncPushUsers(mockUsers); // Server will Bcrypt these now
+       await syncPushUsers(mockUsers); 
        await syncPushProjects(projects);
        await syncPushSpecies([s1]);
        console.log("Demo Data Synced to Backend.");

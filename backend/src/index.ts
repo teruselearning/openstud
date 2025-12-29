@@ -47,39 +47,41 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
+
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
   const cleanEmail = email?.toLowerCase().trim();
   
   console.log(`[LOGIN] Attempt: ${cleanEmail}`);
   
-  // DEBUG ENCODING ISSUES
-  if (typeof password === 'string') {
-    console.log(`[DEBUG] Password Type: String, Length: ${password.length}, Starts with: "${password.substring(0, 2)}..."`);
-  } else {
-    console.log(`[DEBUG] Password Type: ${typeof password}`);
-  }
-
   try {
     const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
     
     if (!user) {
        console.log(`[LOGIN] User NOT found: ${cleanEmail}`);
-       await bcrypt.compare("dummy", '$2b$10$abcdefghijklmnopqrstuv'); 
+       // Timing attack protection
+       await bcrypt.compare("dummy", '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890'); 
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
     if (!user.password) {
-       console.log(`[LOGIN] User found but has NULL password in DB.`);
+       console.log(`[LOGIN] User found but password column is NULL or empty.`);
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Use bcryptjs to compare the raw password from the request with the DB hash
+    // DIAGNOSTIC LOGGING
+    console.log(`[DEBUG] Received Password: "${password.substring(0,2)}..." (Len: ${password.length})`);
+    console.log(`[DEBUG] Database Hash: "${user.password.substring(0,7)}..." (Len: ${user.password.length})`);
+
+    // Standard Bcrypt comparison
     const passwordValid = await bcrypt.compare(password, user.password);
     
     if (!passwordValid) {
-       console.log(`[LOGIN] Password mismatch for: ${cleanEmail}`);
-       console.log(`[DEBUG] DB Hash type: ${user.password.substring(0, 7)}`);
+       console.log(`[LOGIN] Bcrypt comparison FAILED for: ${cleanEmail}`);
+       if (user.password.length < 60) {
+          console.warn(`[CRITICAL] DB Hash is only ${user.password.length} chars. Bcrypt requires 60. Your DB column is likely too short!`);
+       }
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -95,8 +97,25 @@ app.post('/api/login', async (req: any, res: any) => {
       } 
     });
   } catch (e: any) {
-    console.error("[LOGIN] ERROR:", e);
+    console.error("[LOGIN] SERVER ERROR:", e);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post('/api/register', async (req: any, res: any) => {
+  const { orgName, userName, email, focus, password } = req.body;
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const orgId = `org-${Date.now()}`;
+    const [newOrg, newProject, newUser] = await prisma.$transaction([
+      prisma.organization.create({ data: { id: orgId, name: orgName, focus: focus || 'Animals', founded_year: new Date().getFullYear(), location: 'Unknown', description: '', is_org_public: false, is_species_public: false, obscure_location: false, allow_breeding_requests: false } }),
+      prisma.project.create({ data: { id: `p-${Date.now()}`, name: 'Main Project', description: 'Default project', org_id: orgId } }),
+      prisma.user.create({ data: { id: `u-${Date.now()}`, name: userName, email: email.toLowerCase().trim(), password: hashedPassword, role: 'Admin', status: 'Active', allowed_project_ids: [] } })
+    ]);
+    const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, user: { ...newUser, allowedProjectIds: [], avatarUrl: null }, org: newOrg });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || "Registration failed" });
   }
 });
 
@@ -109,10 +128,13 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
             const whereClause: any = {};
             whereClause[idField] = item[idField];
             
-            // Only hash if it's a new plain password
-            if (idField === 'id' && item.password && !item.password.startsWith('$2')) {
-               console.log(`[SYNC] Hashing password for user ${item.email}`);
-               item.password = await bcrypt.hash(item.password, 10);
+            // Password logic for synchronization
+            if (idField === 'id' && item.password) {
+               // Only hash if it's NOT a bcrypt hash (checked via common prefixes)
+               if (!item.password.startsWith('$2a$') && !item.password.startsWith('$2b$') && !item.password.startsWith('$2y$')) {
+                  console.log(`[SYNC] Hashing plain text password for ${item.email}`);
+                  item.password = await bcrypt.hash(item.password, 10);
+               }
             }
             
             Object.keys(item).forEach(key => item[key] === undefined && delete item[key]);
