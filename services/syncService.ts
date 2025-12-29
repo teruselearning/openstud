@@ -1,9 +1,10 @@
-
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
 import { getOrg } from './storage'; 
 
 // Configuration
-const API_BASE_URL = 'http://localhost:3001';
+// Using window location check to avoid import.meta.env runtime issues if build replacement fails
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE_URL = isLocal ? 'http://localhost:3001' : '';
 
 // Helper for Fetch Wrapper with Retry
 const apiRequest = async (endpoint: string, method: string, body?: any, retries = 3, backoff = 300) => {

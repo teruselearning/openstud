@@ -1,7 +1,10 @@
 
 import { getSystemSettings } from './storage';
 
-const API_BASE_URL = 'http://localhost:3001';
+// API Configuration
+// Using window location check to avoid import.meta.env runtime issues if build replacement fails
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE_URL = isLocal ? 'http://localhost:3001' : '';
 
 const getTemplate = (type: string) => {
   const settings = getSystemSettings();
