@@ -92,17 +92,35 @@ app.get('/api/health', (req: any, res: any) => {
 
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
+  const cleanEmail = email?.toLowerCase().trim();
+  
+  console.log(`[LOGIN] Attempt for: ${cleanEmail}`);
+  
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.password) {
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    
+    if (!user) {
+       console.log(`[LOGIN] User NOT found in database: ${cleanEmail}`);
+       // Prevent timing attacks by doing a dummy hash compare
        await bcrypt.compare(password, '$2b$10$abcdefghijklmnopqrstuv'); 
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const passwordValid = await bcrypt.compare(password, user.password);
-    if (!passwordValid) {
+    console.log(`[LOGIN] User found. Verifying password...`);
+    
+    if (!user.password) {
+       console.log(`[LOGIN] User has no password set in database.`);
        return res.status(401).json({ error: "Invalid credentials" });
     }
+
+    const passwordValid = await bcrypt.compare(password, user.password);
+    
+    if (!passwordValid) {
+       console.log(`[LOGIN] Password mismatch for ${cleanEmail}`);
+       return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    console.log(`[LOGIN] Success for ${cleanEmail}`);
 
     const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role }, 
@@ -117,7 +135,7 @@ app.post('/api/login', async (req: any, res: any) => {
     };
     res.json({ token, user: safeUser });
   } catch (e: any) {
-    console.error("Login Error:", e);
+    console.error("[LOGIN] Server Error:", e);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -129,7 +147,7 @@ app.post('/api/register', async (req: any, res: any) => {
   }
 
   try {
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
     if (existingUser) {
         return res.status(409).json({ error: "Email already registered" });
     }
@@ -166,7 +184,7 @@ app.post('/api/register', async (req: any, res: any) => {
         data: {
           id: userId,
           name: userName,
-          email: email,
+          email: email.toLowerCase().trim(),
           password: hashedPassword,
           role: 'Admin',
           status: 'Active',
@@ -309,9 +327,9 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             transferredToOrgId: i.transferred_to_org_id,
             transferDate: i.transfer_date,
             transferNote: i.transfer_note,
-            weightHistory: i.weight_history,
-            growthHistory: i.growth_history,
-            healthHistory: i.health_history
+            weight_history: i.weight_history,
+            growth_history: i.growth_history,
+            health_history: i.health_history
         })),
         breedingEvents: events.map((e: any) => ({
             ...e,
@@ -373,8 +391,6 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
             whereClause[idField] = item[idField];
 
             // SPECIAL CASE FOR USER PASSWORD SYNC
-            // If the incoming item has a password, we need to ensure it's hashed.
-            // But only re-hash if it doesn't look like a bcrypt string already.
             if (idField === 'id' && item.password && !item.password.startsWith('$2')) {
                item.password = await bcrypt.hash(item.password, 10);
             }
@@ -398,7 +414,7 @@ const prepOrg = (o: any) => ({
 });
 const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id, name: p.name, description: p.description });
 const prepUser = (u: any) => ({
-    id: u.id, name: u.name, email: u.email, role: u.role, status: u.status,
+    id: u.id, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status,
     password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids
 });
 const prepSpecies = (s: any) => ({

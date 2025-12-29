@@ -76,7 +76,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    if (this.state.hasError) {
+    // Fix: Access props from this to avoid inference issues in certain TS environments
+    const { children } = this.props;
+    const { hasError, error } = this.state;
+
+    if (hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">
           <AlertCircle size={48} className="text-red-500 mb-4" />
@@ -84,9 +88,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <p className="text-slate-600 mb-6 max-w-md">
              We couldn't load this section. This might be due to a temporary glitch or missing data.
           </p>
-          {this.state.error && (
+          {error && (
              <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">
-                {this.state.error.toString()}
+                {error.toString()}
              </div>
           )}
           <button 
@@ -99,7 +103,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       );
     }
     // Accessing children from inherited props safely
-    return this.props.children;
+    return children;
   }
 }
 
@@ -395,11 +399,10 @@ const App: React.FC = () => {
      }
      let updatedUser = { ...user, name: profileForm.name, email: profileForm.email, avatarUrl: profileForm.avatarUrl };
      
-     // IMPORTANT: The backend 'sync' logic now expects a plaintext or pre-hashed password.
-     // We will store the client-side SHA256 hash locally for fallback auth,
-     // and the backend will wrap it in Bcrypt for server auth.
+     // CRITICAL FIX: The backend bcrypt logic expects the plain text or a consistent pre-hash.
+     // Removing explicit SHA-256 client hashing for sync'd users where backend handles bcrypt.
      if (profileForm.newPassword) {
-        updatedUser.password = await hashPassword(profileForm.newPassword);
+        updatedUser.password = profileForm.newPassword;
      }
 
      const updatedList = getUsers().map(u => u.id === user.id ? updatedUser : u);

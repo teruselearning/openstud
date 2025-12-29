@@ -5,9 +5,19 @@ import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPush
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 
-// API Configuration
-const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const API_BASE_URL = isLocal ? 'http://localhost:3001' : '';
+// Improved API Configuration detection
+const getApiBaseUrl = () => {
+  if (typeof window === 'undefined') return 'http://localhost:3001';
+  const { hostname, protocol } = window.location;
+  // If we are on a standard dev/local setup, target port 3001
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
+    return `${protocol}//${hostname}:3001`;
+  }
+  // Production fallback
+  return '';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage };
 
@@ -130,43 +140,6 @@ export const generatePattern = (text: string): string => {
   `;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svgContent}</svg>`.trim())}`;
 };
-export const generateMockPattern = generatePattern;
-
-const createEmptyOrg = (): Organization => ({
-  id: '',
-  name: 'New Organization',
-  location: '',
-  foundedYear: new Date().getFullYear(),
-  description: '',
-  focus: 'Animals',
-  isOrgPublic: false,
-  isSpeciesPublic: false,
-  obscureLocation: false,
-  allowBreedingRequests: false
-});
-
-const createMockOrg = (): Organization => ({
-  id: 'org-1',
-  name: 'Sanctuary of the Wild',
-  location: 'Sabah, Borneo',
-  latitude: 4.965, longitude: 117.805,
-  isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998,
-  description: 'Dedicated to the preservation of endangered species through captive breeding and education.',
-  focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
-  dashboardBlock: { enabled: true, title: 'Demo Environment', content: '<p>Welcome to the <strong>OpenStudbook Demo</strong>! Feel free to explore the features.</p>' }
-});
-
-const createMockProjects = (): Project[] => [
-  { id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' },
-  { id: 'p-2', name: 'Conservation 2025', description: 'Special conservation initiatives', orgId: 'org-1' },
-  { id: 'p-seattle-1', name: 'Northwest Native', description: 'Local species tracking for Seattle', orgId: 'ext-1' }
-];
-
-const createMockUsers = (): User[] => [
-  { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] },
-  { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: '', allowedProjectIds: ['p-1'] },
-  { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: '', allowedProjectIds: [] }
-];
 
 export const getSession = (): User | null => get(KEYS.SESSION, null);
 export const saveSession = (u: User) => set(KEYS.SESSION, u);
@@ -210,6 +183,19 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
    }
    return false;
 };
+
+const createEmptyOrg = (): Organization => ({
+  id: '',
+  name: 'New Organization',
+  location: '',
+  foundedYear: new Date().getFullYear(),
+  description: '',
+  focus: 'Animals',
+  isOrgPublic: false,
+  isSpeciesPublic: false,
+  obscureLocation: false,
+  allowBreedingRequests: false
+});
 
 export const getOrg = (): Organization => get(KEYS.ORG, createEmptyOrg());
 export const saveOrg = (o: Organization, skipSync = false) => {
@@ -283,38 +269,40 @@ export const getNetworkPartners = (): ExternalPartner[] => {
 };
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
+// Fix: Add missing generatePartnerInvite member
 export const generatePartnerInvite = (): string => {
-   const org = getOrg();
-   const code = `INV-${org.name.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-   return code; 
+  const code = Math.floor(1000 + Math.random() * 9000).toString() + '-' + Math.floor(1000 + Math.random() * 9000).toString();
+  const codes = get<string[]>(KEYS.INVITE_CODES, []);
+  codes.push(code);
+  set(KEYS.INVITE_CODES, codes);
+  return code;
 };
 
-export const redeemPartnerInvite = (code: string): { success: boolean, partner?: ExternalPartner, message: string } => {
-   const partners = getNetworkPartners();
-   let partnerId = '';
-   if (code.includes('SEA')) partnerId = 'ext-1';
-   else if (code.includes('SAN')) partnerId = 'ext-2';
-   else if (code.includes('LON')) partnerId = 'ext-3';
-   else return { success: false, message: "Invalid Invite Code" };
+// Fix: Add missing redeemPartnerInvite member
+export const redeemPartnerInvite = (code: string): { success: boolean, message: string } => {
+  if (!code || !code.includes('-')) return { success: false, message: "Invalid code format." };
+  
+  const currentPartnerships = getPartnerships();
+  const myOrg = getOrg();
+  const partners = getNetworkPartners();
+  
+  const candidate = partners.find(p => 
+    p.id !== myOrg.id && 
+    !currentPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id))
+  );
 
-   const partner = partners.find(p => p.id === partnerId);
-   if (!partner) return { success: false, message: "Partner not found in network" };
+  if (!candidate) return { success: false, message: "No new partners found to connect in demo." };
 
-   const existing = getPartnerships();
-   const org = getOrg();
-   if (existing.some(p => (p.orgId1 === org.id && p.orgId2 === partnerId) || (p.orgId1 === partnerId && p.orgId2 === org.id))) {
-      return { success: false, message: "Partnership already exists" };
-   }
+  const newPartnership: Partnership = {
+    id: `ps-${Date.now()}`,
+    orgId1: myOrg.id,
+    orgId2: candidate.id,
+    status: 'Active',
+    establishedDate: new Date().toISOString().split('T')[0]
+  };
 
-   const newPartnership: Partnership = {
-      id: `rel-${Date.now()}`,
-      orgId1: org.id,
-      org_id_2: partnerId,
-      status: 'Active',
-      establishedDate: new Date().toISOString().split('T')[0]
-   } as any;
-   savePartnerships([...existing, newPartnership]); 
-   return { success: true, partner, message: `Connected with ${partner.name}!` };
+  savePartnerships([...currentPartnerships, newPartnership]);
+  return { success: true, message: `Partnership established with ${candidate.name}!` };
 };
 
 export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<User> => {
@@ -342,37 +330,39 @@ export const registerOrganization = async (orgName: string, userName: string, em
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
+  console.log(`[LOGIN DEBUG] Attempting login for ${email} at ${API_BASE_URL}`);
   try {
     const response = await fetch(`${API_BASE_URL}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass })
+      body: JSON.stringify({ email: email.toLowerCase().trim(), password: pass })
     });
 
     if (response.ok) {
       const { token, user } = await response.json();
+      console.log(`[LOGIN DEBUG] Success! Token received.`);
       localStorage.setItem(KEYS.TOKEN, token);
       return user;
+    } else {
+      const errData = await response.json();
+      console.warn(`[LOGIN DEBUG] Server rejected login: ${errData.error || response.statusText}`);
     }
-  } catch (e) {
-    console.warn("Server Login Failed / Offline:", e);
+  } catch (e: any) {
+    console.warn(`[LOGIN DEBUG] Server unreachable or error:`, e.message);
   }
 
-  // Fallback: Local Demo Auth
-  // Note: Local passwords might be SHA-256 (local default) or Bcrypt (synced from server).
-  // This fallback only works for users whose password matches the client-side SHA-256 logic.
+  // Fallback: Local Demo Auth (only works if data was synced previously)
   const users = getUsers();
-  const user = users.find(u => u.email === email);
+  const user = users.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
   if (user && user.password) {
-     // If the password starts with $2 (bcrypt), the client cannot verify it offline.
      if (user.password.startsWith('$2')) {
-        console.warn("Cannot verify Bcrypt password offline.");
+        console.warn("[LOGIN DEBUG] Fallback failed: Stored password is encrypted and requires the server.");
         return null;
      }
 
      const hashedInput = await hashPassword(pass);
      if (hashedInput === user.password) {
-        console.log("Logged in via Local Data Hash");
+        console.log("[LOGIN DEBUG] Logged in via Local Offline Cache");
         return user;
      }
   }
@@ -517,64 +507,50 @@ export const exportDataAsCSV = (): string => {
 };
 
 export const regenerateDemoData = async () => {
-    const mockOrg = createMockOrg();
-    const mockUsers = createMockUsers();
-    // Pre-hash the default password 'password' for offline local login
-    const defaultHash = await hashPassword('password');
-    mockUsers.forEach(u => u.password = defaultHash);
+    const mockOrg: Organization = {
+      id: 'org-1',
+      name: 'Sanctuary of the Wild',
+      location: 'Sabah, Borneo',
+      latitude: 4.965, longitude: 117.805,
+      isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998,
+      description: 'Dedicated to the preservation of endangered species through captive breeding and education.',
+      focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
+      dashboardBlock: { enabled: true, title: 'Demo Environment', content: '<p>Welcome to the <strong>OpenStudbook Demo</strong>! Feel free to explore the features.</p>' }
+    };
 
-    let projects = createMockProjects();
-    const projectId = projects[0].id;
+    const defaultHash = await hashPassword('password');
+    const mockUsers: User[] = [
+      { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: defaultHash, allowedProjectIds: [] },
+      { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: defaultHash, allowedProjectIds: ['p-1'] },
+      { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: defaultHash, allowedProjectIds: [] }
+    ];
+
+    const projects: Project[] = [
+      { id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' },
+      { id: 'p-2', name: 'Conservation 2025', description: 'Special conservation initiatives', orgId: 'org-1' }
+    ];
 
     const s1: Species = {
-       id: 'sp-1', projectId, commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal',
+       id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal',
        conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20,
        breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger')
     };
-    const s2: Species = {
-       id: 'sp-2', projectId, commonName: 'Titan Arum', scientificName: 'Amorphophallus titanum', type: 'Plant',
-       conservationStatus: 'Endangered', sexualMaturityAgeYears: 7, averageAdultWeightKg: 0, lifeExpectancyYears: 40,
-       plantClassification: 'Monoecious', breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Titan Arum')
-    };
-    const speciesList = [s1, s2];
-
-    const i1: Individual = {
-       id: 'ind-1', projectId, speciesId: s1.id, studbookId: 'SB-1001', name: 'Raja', sex: Sex.MALE, birthDate: '2018-05-15', weightKg: 130,
-       notes: 'Dominant male.', imageUrl: generatePattern('Raja'), weightHistory: [], growthHistory: [], healthHistory: [],
-       source: 'Wild Caught', loanStatus: 'Loaned Out'
-    };
-    const i2: Individual = {
-       id: 'ind-2', projectId, speciesId: s1.id, studbookId: 'SB-1002', name: 'Ratu', sex: Sex.FEMALE, birthDate: '2019-02-10', weightKg: 110,
-       notes: 'Good mother.', imageUrl: generatePattern('Ratu'), weightHistory: [], growthHistory: [], healthHistory: [],
-       source: 'Captive Bred'
-    };
-    const individualList = [i1, i2];
-
-    const ev1: BreedingEvent = {
-       id: 'evt-1', speciesId: s1.id, sireId: i1.id, damId: i2.id, date: '2023-06-01', offspringCount: 2, successfulBirths: 2, losses: 0,
-       notes: 'First successful clutch.', offspringIds: []
-    };
-    const events = [ev1];
+    const speciesList = [s1];
 
     saveOrg(mockOrg, true);
     saveUsers(mockUsers, true);
     saveProjects(projects, true);
     saveSpecies(speciesList, true);
-    saveIndividuals(individualList, true);
-    saveBreedingEvents(events, true);
-    getLanguages();
+    saveIndividuals([], true);
+    saveBreedingEvents([], true);
 
     console.log("Demo Data Restored Locally.");
 
     try {
-       // IMPORTANT: When pushing to backend, we send plain password if we want server to hash,
-       // but here we already have a hash. We will fix backend to handle this in its upsert.
        await syncPushOrg(mockOrg);
        await syncPushUsers(mockUsers);
        await syncPushProjects(projects);
        await syncPushSpecies(speciesList);
-       await syncPushIndividuals(individualList);
-       await syncPushBreedingEvents(events);
        console.log("Demo Data Synced to Backend.");
     } catch(e: any) {
        console.warn("Demo Sync Failed:", e.message);

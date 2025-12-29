@@ -76,7 +76,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    if (this.state.hasError) {
+    // Fix: Access props from this to avoid inference issues in certain TS environments
+    const { children } = this.props;
+    const { hasError, error } = this.state;
+
+    if (hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">
           <AlertCircle size={48} className="text-red-500 mb-4" />
@@ -84,9 +88,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <p className="text-slate-600 mb-6 max-w-md">
              We couldn't load this section. This might be due to a temporary glitch or missing data.
           </p>
-          {this.state.error && (
+          {error && (
              <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">
-                {this.state.error.toString()}
+                {error.toString()}
              </div>
           )}
           <button 
@@ -99,7 +103,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       );
     }
     // Accessing children from inherited props safely
-    return this.props.children;
+    return children;
   }
 }
 
