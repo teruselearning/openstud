@@ -62,7 +62,10 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
+// Added property declarations for state to fix "Property 'state' does not exist on type 'ErrorBoundary'" error
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState;
+
   // Added constructor to ensure props and state are correctly initialized for TypeScript
   constructor(props: ErrorBoundaryProps) {
     super(props);

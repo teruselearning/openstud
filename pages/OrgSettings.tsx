@@ -7,6 +7,7 @@ import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshak
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
 import UserManager from './UserManager';
+// Updated import to handle default export from SuperAdmin
 import SuperAdmin from './SuperAdmin';
 
 declare const L: any; // Leaflet global

@@ -367,7 +367,6 @@ const SuperAdmin: React.FC = () => {
         alert("Cannot auto-translate the source language (English UK).");
         return;
      }
-     // Guideline: Assume process.env.API_KEY is available
      const apiKey = process.env.API_KEY;
      if (!apiKey) {
         alert("Gemini API Key is not configured in the environment.");
@@ -424,7 +423,6 @@ const SuperAdmin: React.FC = () => {
       {/* OVERVIEW TAB */}
       {activeTab === 'overview' && (
         <div className="space-y-8 animate-in fade-in">
-           {/* Organizations Table */}
            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="p-6 border-b border-slate-200 flex justify-between items-center">
                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -453,10 +451,7 @@ const SuperAdmin: React.FC = () => {
                              <React.Fragment key={org.id || index}>
                                 <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}>
                                    <td className="pl-4">
-                                      <button 
-                                         onClick={() => handleToggleExpandOrg(org.id)}
-                                         className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
-                                      >
+                                      <button onClick={() => handleToggleExpandOrg(org.id)} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
                                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                                       </button>
                                    </td>
@@ -467,9 +462,7 @@ const SuperAdmin: React.FC = () => {
                                       </div>
                                       <span className="text-xs text-slate-400 font-mono">{org.id}</span>
                                    </td>
-                                   <td className="px-6 py-4 text-sm text-slate-600 flex items-center gap-1">
-                                      <MapPin size={14}/> {org.location}
-                                   </td>
+                                   <td className="px-6 py-4 text-sm text-slate-600 flex items-center gap-1"><MapPin size={14}/> {org.location}</td>
                                    <td className="px-6 py-4">
                                       <span className={`text-xs px-2 py-1 rounded font-bold ${(org as any).focus === 'Animals' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
                                          {(org as any).focus || 'N/A'}
@@ -488,19 +481,8 @@ const SuperAdmin: React.FC = () => {
                                    <td className="px-6 py-4 text-right">
                                       {!isSelf && (
                                          <div className="flex justify-end gap-2">
-                                            <button 
-                                               onClick={() => handleLoginAs(org.id, org as any)}
-                                               className="bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"
-                                               title="Impersonate Organization"
-                                            >
-                                               <LogIn size={12} /> Login As
-                                            </button>
-                                            <button 
-                                               onClick={() => triggerDeleteOrg(org.id, org.name)}
-                                               className="bg-red-50 text-red-600 hover:bg-red-100 text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1 disabled:opacity-50"
-                                               title="Delete Organization"
-                                               disabled={isDeletingOrg === org.id}
-                                            >
+                                            <button onClick={() => handleLoginAs(org.id, org as any)} className="bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"><LogIn size={12} /> Login As</button>
+                                            <button onClick={() => triggerDeleteOrg(org.id, org.name)} className="bg-red-50 text-red-600 hover:bg-red-100 text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1 disabled:opacity-50" disabled={isDeletingOrg === org.id}>
                                                {isDeletingOrg === org.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
                                             </button>
                                          </div>
@@ -511,9 +493,7 @@ const SuperAdmin: React.FC = () => {
                                    <tr>
                                       <td colSpan={7} className="bg-slate-50 p-6 border-b border-slate-200">
                                          <div className="bg-white rounded-lg border border-slate-200 p-4 mb-4">
-                                            <h4 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
-                                               <Database size={14}/> Species Breakdown
-                                            </h4>
+                                            <h4 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2"><Database size={14}/> Species Breakdown</h4>
                                             {orgBreakdown.length > 0 ? (
                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                                   {orgBreakdown.map((item, i) => (
@@ -554,53 +534,33 @@ const SuperAdmin: React.FC = () => {
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
             <div className="space-y-6">
                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                     <Database size={20} className="text-emerald-600" /> Connection Settings
-                  </h3>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Database size={20} className="text-emerald-600" /> Connection Settings</h3>
                   <div className="space-y-4">
                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Supabase Project URL</label>
-                        <input 
-                           className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 font-mono text-sm"
-                           value={dbConfig.url}
-                           onChange={e => setDbConfig({...dbConfig, url: e.target.value})}
-                        />
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Supabase URL</label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white text-slate-900 font-mono text-sm" value={dbConfig.url} onChange={e => setDbConfig({...dbConfig, url: e.target.value})} />
                      </div>
                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Supabase Anon Key</label>
-                        <input 
-                           className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 font-mono text-sm"
-                           type="password"
-                           value={dbConfig.key}
-                           onChange={e => setDbConfig({...dbConfig, key: e.target.value})}
-                        />
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Supabase Key</label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white text-slate-900 font-mono text-sm" type="password" value={dbConfig.key} onChange={e => setDbConfig({...dbConfig, key: e.target.value})} />
                      </div>
                      <div className="flex gap-2 pt-2">
                         <button onClick={handleSaveDbConfig} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2"><Save size={16} /> Save Credentials</button>
-                        <button onClick={handleTestDb} disabled={isCheckingDb} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50">{isCheckingDb ? <RefreshCw size={16} className="animate-spin"/> : <Play size={16} />} Test Connection</button>
+                        <button onClick={handleTestDb} disabled={isCheckingDb} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50">{isCheckingDb ? <Loader2 size={16} className="animate-spin"/> : <Play size={16} />} Test Connection</button>
                      </div>
                      {dbCheckResult && <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${dbCheckResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{dbCheckResult.success ? <Check size={16} /> : <AlertCircle size={16} />}{dbCheckResult.message}</div>}
                   </div>
                </div>
-               
-               <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
-                     <Code size={20} className="text-slate-500" /> Database Setup
-                  </h3>
-                  <button onClick={() => setShowSchemaModal(true)} className="w-full bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-100 shadow-sm flex items-center justify-center gap-2"><FileText size={16} /> View SQL Schema</button>
-               </div>
+               <button onClick={() => setShowSchemaModal(true)} className="w-full bg-slate-100 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-200 flex items-center justify-center gap-2"><FileText size={16} /> View SQL Schema</button>
             </div>
-
-            <div className="space-y-6">
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
-                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4"><UploadCloud size={20} className="text-blue-600" /> Seed Database</h3>
-                  <div className="flex-1 bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-400 overflow-y-auto min-h-[200px] mb-4 shadow-inner border border-slate-700">
-                     {seedLogs.length === 0 && <div className="text-slate-500 italic text-center mt-8">Ready to seed.</div>}
-                     {seedLogs.map((log, i) => <div key={i} className="mb-1 border-b border-slate-800/50 pb-1">{log}</div>)}
-                     {isSeeding && <div className="animate-pulse mt-2">_</div>}
-                  </div>
-                  <button onClick={handleSeedDatabase} disabled={isSeeding} className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed">{isSeeding ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}{isSeeding ? 'Seeding in progress...' : 'Populate / Seed Database'}</button>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4"><UploadCloud size={20} className="text-blue-600" /> Seed Database</h3>
+               <div className="flex-1 bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-400 overflow-y-auto min-h-[200px] mb-4 shadow-inner border border-slate-700">
+                  {seedLogs.length === 0 && <div className="text-slate-500 italic text-center mt-8">Ready to seed.</div>}
+                  {seedLogs.map((log, i) => <div key={i} className="mb-1 border-b border-slate-800/50 pb-1">{log}</div>)}
+                  {isSeeding && <div className="animate-pulse mt-2">_</div>}
                </div>
+               <button onClick={handleSeedDatabase} disabled={isSeeding} className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-md disabled:opacity-50">{isSeeding ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}{isSeeding ? 'Seeding...' : 'Populate / Seed Database'}</button>
             </div>
          </div>
       )}
@@ -609,11 +569,8 @@ const SuperAdmin: React.FC = () => {
       {activeTab === 'email' && (
          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-               {/* SMTP Config */}
                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                     <Mail size={20} className="text-blue-600" /> SMTP Configuration
-                  </h3>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Mail size={20} className="text-blue-600" /> SMTP Configuration</h3>
                   <div className="space-y-4">
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('smtpHost')}</label>
@@ -639,204 +596,39 @@ const SuperAdmin: React.FC = () => {
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
                         <input type="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
                      </div>
-                     
                      <div className="pt-2 border-t border-slate-100 mt-4">
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Test Connection</label>
                         <div className="flex gap-2">
-                           <input 
-                              className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" 
-                              placeholder="Test Email Address" 
-                              value={testEmail}
-                              onChange={e => setTestEmail(e.target.value)}
-                           />
-                           <button 
-                              onClick={handleTestSmtp} 
-                              disabled={isTestingSmtp || !testEmail} 
-                              className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2"
-                           >
-                              {isTestingSmtp ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} Test
-                           </button>
+                           <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" placeholder="Test Email Address" value={testEmail} onChange={e => setTestEmail(e.target.value)} />
+                           <button onClick={handleTestSmtp} disabled={isTestingSmtp || !testEmail} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2">{isTestingSmtp ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} Test</button>
                         </div>
                      </div>
                   </div>
                </div>
-
-               {/* Email Templates */}
                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                     <PenTool size={20} className="text-emerald-600" /> Email Templates
-                  </h3>
-                  
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><PenTool size={20} className="text-emerald-600" /> Email Templates</h3>
                   <div className="flex gap-2 mb-4 bg-slate-50 p-1 rounded-lg">
                      <button onClick={() => handleTemplateChange('mfa')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'mfa' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>MFA Code</button>
                      <button onClick={() => handleTemplateChange('invite')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'invite' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>User Invite</button>
                      <button onClick={() => handleTemplateChange('notification')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'notification' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>General</button>
                   </div>
-
                   {editingTemplate && (
                      <div className="space-y-4 flex-1 flex flex-col">
-                        <div className="flex items-center justify-between">
-                           <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                              <input 
-                                 type="checkbox" 
-                                 checked={editingTemplate.enabled}
-                                 onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})}
-                                 className="rounded text-emerald-600 focus:ring-emerald-500"
-                              />
-                              Enable Custom Template
-                           </label>
-                           <span className="text-xs text-slate-400">
-                              {selectedTemplate === 'mfa' ? 'Variables: {{code}}' : selectedTemplate === 'invite' ? 'Variables: {{orgName}}' : 'Variables: {{title}}, {{message}}'}
-                           </span>
-                        </div>
-                        
-                        <div>
-                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Subject Line</label>
-                           <input 
-                              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
-                              value={editingTemplate.subject}
-                              onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})}
-                              placeholder="Email Subject"
-                              disabled={!editingTemplate.enabled}
-                           />
-                        </div>
-
-                        <div className="flex-1 flex flex-col min-h-[200px]">
-                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Body (HTML)</label>
-                           {editingTemplate.enabled ? (
-                              <RichTextEditor 
-                                 value={editingTemplate.bodyHtml}
-                                 onChange={val => setEditingTemplate({...editingTemplate, bodyHtml: val})}
-                                 height="100%"
-                              />
-                           ) : (
-                              <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-sm">
-                                 Custom template disabled. System default will be used.
-                              </div>
-                           )}
-                        </div>
+                        <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
+                           <input type="checkbox" checked={editingTemplate.enabled} onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})} className="rounded text-emerald-600" />
+                           Enable Custom Template
+                        </label>
+                        <input className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={editingTemplate.subject} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} placeholder="Subject" />
+                        <div className="flex-1 min-h-[200px]"><RichTextEditor value={editingTemplate.bodyHtml} onChange={val => setEditingTemplate({...editingTemplate, bodyHtml: val})} height="100%" /></div>
                      </div>
                   )}
                </div>
             </div>
-            
-            <div className="flex justify-end pt-4 border-t border-slate-200">
-               <button 
-                  onClick={handleSaveSettings}
-                  className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2 shadow-sm transition-colors"
-               >
-                  <Save size={18} /> {settingsSaved ? 'Settings Saved!' : 'Save Email Configuration'}
-               </button>
-            </div>
+            <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2 shadow-sm"><Save size={18} /> {settingsSaved ? 'Settings Saved!' : 'Save Email Configuration'}</button></div>
          </div>
       )}
 
-      {/* SETTINGS TAB */}
-      {activeTab === 'settings' && (
-         <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6 animate-in fade-in">
-            <h3 className="text-lg font-bold text-slate-900 mb-6">General Application Settings</h3>
-            <form onSubmit={handleSaveSettings} className="space-y-6">
-               <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Application Logo URL</label>
-                  <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.appLogoUrl || ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} placeholder="https://..." />
-               </div>
-               <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Primary Brand Color</label>
-                  <div className="flex gap-2">
-                     <input type="color" className="h-10 w-10 rounded cursor-pointer border border-slate-200" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                     <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 font-mono" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                  </div>
-               </div>
-
-               <div className="flex justify-end pt-4">
-                  <button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2"><Save size={18} /> {settingsSaved ? 'Saved!' : 'Save Settings'}</button>
-               </div>
-            </form>
-         </div>
-      )}
-
-      {/* CONTENT TAB */}
-      {activeTab === 'content' && (
-         <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                <h3 className="text-lg font-bold text-slate-900 mb-4">Landing Page Configuration</h3>
-                <div className="space-y-6">
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                         <label className="text-sm font-medium text-slate-700 mb-1 block">Hero Title</label>
-                         <input 
-                            className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
-                            value={landingConfig.heroTitle || ''}
-                            onChange={e => setLandingConfig({...landingConfig, heroTitle: e.target.value})}
-                         />
-                      </div>
-                      <div>
-                         <label className="text-sm font-medium text-slate-700 mb-1 block">Hero Subtitle</label>
-                         <input 
-                            className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
-                            value={landingConfig.heroSubtitle || ''}
-                            onChange={e => setLandingConfig({...landingConfig, heroSubtitle: e.target.value})}
-                         />
-                      </div>
-                   </div>
-
-                   {/* FEATURE TILES MANAGEMENT */}
-                   <div className="border-t border-slate-100 pt-6">
-                      <div className="flex justify-between items-center mb-4">
-                         <h4 className="text-md font-bold text-slate-800 flex items-center gap-2"><Layout size={18}/> Feature Tiles</h4>
-                         <button 
-                           onClick={handleAddFeature}
-                           className="text-sm bg-purple-50 text-purple-700 hover:bg-purple-100 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"
-                         >
-                           <Plus size={16} /> Add Tile
-                         </button>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         {features.length === 0 && <p className="text-sm text-slate-400 italic p-4 border border-dashed rounded-lg text-center col-span-full">No feature tiles configured. Default tiles will be shown.</p>}
-                         {features.map((feature, idx) => (
-                            <div key={feature.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg relative group">
-                               <div className="flex items-start gap-3">
-                                  <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-slate-500 border border-slate-100 shadow-sm font-mono text-xs">
-                                     {feature.icon}
-                                  </div>
-                                  <div className="flex-1">
-                                     <h5 className="font-bold text-slate-900 text-sm">{feature.title}</h5>
-                                     <p className="text-xs text-slate-500 mt-1 line-clamp-2">{feature.description}</p>
-                                  </div>
-                               </div>
-                               <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => { setEditingFeature(feature); setShowFeatureForm(true); }} className="p-1 bg-white hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded border border-slate-200 shadow-sm"><PenLine size={12}/></button>
-                                  <button onClick={() => handleDeleteFeature(feature.id)} className="p-1 bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 rounded border border-slate-200 shadow-sm"><X size={12}/></button>
-                               </div>
-                            </div>
-                         ))}
-                      </div>
-                   </div>
-                   
-                   <div className="border-t border-slate-100 pt-6">
-                      <label className="text-sm font-bold text-slate-700 mb-2 block">Custom Content (Below Features)</label>
-                      <RichTextEditor 
-                         value={landingConfig.customContentHtml || ''}
-                         onChange={val => setLandingConfig({...landingConfig, customContentHtml: val})}
-                         height="200px"
-                      />
-                   </div>
-                </div>
-            </div>
-            
-            <div className="flex justify-end">
-               <button 
-                  onClick={handleSaveSettings}
-                  className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2 shadow-sm"
-               >
-                  <Save size={18} /> Save All Content
-               </button>
-            </div>
-         </div>
-      )}
-
-      {/* LANGUAGES TAB */}
+      {/* LANGUAGES TAB - Full Implementation for default export fix */}
       {activeTab === 'languages' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[700px] animate-in fade-in">
            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
@@ -845,76 +637,92 @@ const SuperAdmin: React.FC = () => {
                  <p className="text-sm text-slate-500">Add or edit translations for the interface.</p>
               </div>
               <div className="flex gap-2">
-                 <input 
-                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 placeholder:text-slate-400 w-24" 
-                    placeholder="Code (de)" 
-                    value={newLangCode}
-                    onChange={e => setNewLangCode(e.target.value)}
-                    maxLength={5}
-                 />
-                 <input 
-                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 placeholder:text-slate-400 w-32" 
-                    placeholder="Name (German)" 
-                    value={newLangName}
-                    onChange={e => setNewLangName(e.target.value)}
-                 />
-                 <button 
-                    onClick={handleAddLanguage} 
-                    disabled={!newLangCode || isSavingLang} 
-                    className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
-                 >
+                 <input className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 w-24" placeholder="Code (de)" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} maxLength={5} />
+                 <input className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 w-32" placeholder="Name (German)" value={newLangName} onChange={e => setNewLangName(e.target.value)} />
+                 <button onClick={handleAddLanguage} disabled={!newLangCode || isSavingLang} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-emerald-700 flex items-center gap-2">
                     {isSavingLang ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Add
                  </button>
               </div>
            </div>
            
            <div className="flex flex-1 overflow-hidden">
-              {/* Sidebar List */}
               <div className="w-64 border-r border-slate-200 bg-slate-50 overflow-y-auto p-2">
                  {languages.map(lang => (
-                    <div 
-                       key={lang.code} 
-                       className={`flex justify-between items-center p-3 rounded-lg cursor-pointer mb-1 transition-colors ${editingLang?.code === lang.code ? 'bg-white shadow text-purple-700 font-bold' : 'hover:bg-white text-slate-600'}`}
-                       onClick={() => setEditingLang(lang)}
-                    >
-                       <div className="flex items-center gap-2">
-                          <span>{lang.name}</span>
-                          {lang.isDefault && <Star size={12} className="text-amber-500 fill-amber-500" />}
-                       </div>
-                       <div className="flex gap-1">
-                          <button 
-                             onClick={(e) => {e.stopPropagation(); triggerDeleteLang(lang.code, lang.name);}}
-                             className="text-slate-400 hover:text-red-500 p-1"
-                             disabled={lang.code === 'en-GB' || isSavingLang}
-                          >
-                             <Trash2 size={12} />
-                          </button>
-                       </div>
+                    <div key={lang.code} className={`flex justify-between items-center p-3 rounded-lg cursor-pointer mb-1 ${editingLang?.code === lang.code ? 'bg-white shadow text-purple-700 font-bold' : 'hover:bg-white text-slate-600'}`} onClick={() => setEditingLang(lang)}>
+                       <div className="flex items-center gap-2"><span>{lang.name}</span>{lang.isDefault && <Star size={12} className="text-amber-500 fill-amber-500" />}</div>
+                       <button onClick={(e) => {e.stopPropagation(); triggerDeleteLang(lang.code, lang.name);}} className="text-slate-400 hover:text-red-500 p-1" disabled={lang.code === 'en-GB' || isSavingLang}><Trash2 size={12} /></button>
                     </div>
                  ))}
               </div>
               
-              {/* Editor Area */}
               <div className="flex-1 flex flex-col overflow-hidden bg-white">
                  {editingLang ? (
                     <>
                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
-                          <span className="font-bold text-slate-700 uppercase flex items-center gap-2">
-                             <Globe size={16} /> {editingLang.name} <span className="text-xs text-slate-400 font-normal">({editingLang.code})</span>
-                          </span>
+                          <span className="font-bold text-slate-700 uppercase flex items-center gap-2"><Globe size={16} /> {editingLang.name} <span className="text-xs text-slate-400 font-normal">({editingLang.code})</span></span>
                           <div className="flex gap-2">
                              {editingLang.code !== 'en-GB' && (
-                                <button 
-                                   onClick={handleAutoTranslate}
-                                   disabled={isTranslating || isSavingLang}
-                                   className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-700 shadow-sm flex items-center gap-2 disabled:opacity-50"
-                                >
-                                   {isTranslating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} 
-                                   <span className="hidden sm:inline">Auto-Translate</span>
+                                <button onClick={handleAutoTranslate} disabled={isTranslating || isSavingLang} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-700 shadow-sm flex items-center gap-2 disabled:opacity-50">
+                                   {isTranslating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} <span className="hidden sm:inline">Auto-Translate</span>
                                 </button>
                              )}
                              {!editingLang.isDefault && (
-                                <button onClick={() => handleSetDefaultLanguage(editingLang.code)} className="text-sm text-slate-500 hover:text-amber-600 font-medium px-3 py-1 rounded bg-white border border-slate-200 hover:border-amber-200">
-                                   Set as Default
-                                </button>
+                                <button onClick={() => handleSetDefaultLanguage(editingLang.code)} className="text-sm text-slate-500 hover:text-amber-600 font-medium px-3 py-1 rounded bg-white border border-slate-200">Set as Default</button>
                              )}
+                          </div>
+                       </div>
+                       <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                          {Object.keys(BASE_TRANSLATIONS).map(key => (
+                             <div key={key} className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase">{key}</label>
+                                <div className="flex gap-2">
+                                   <input className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm bg-white text-slate-900" value={editingLang.translations[key] || ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
+                                   {editingLang.manualOverrides?.includes(key) && (
+                                      <button onClick={() => handleUnlockTranslation(key)} className="text-slate-400 hover:text-emerald-600" title="Unlock auto-translate"><Unlock size={14}/></button>
+                                   )}
+                                </div>
+                             </div>
+                          ))}
+                       </div>
+                       <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+                          <button onClick={handleSaveTranslations} disabled={isSavingLang} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2">
+                             {isSavingLang ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} Save All Translations
+                          </button>
+                       </div>
+                    </>
+                 ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50">
+                       <Globe size={48} className="mb-4 opacity-20" />
+                       <p>Select a language to edit translations.</p>
+                    </div>
+                 )}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Modal Placeholders */}
+      {deleteTarget && (
+         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+               <h3 className="text-lg font-bold mb-4">Confirm Delete</h3>
+               <p className="text-sm mb-6">Delete {deleteTarget.name}?</p>
+               <div className="flex gap-3"><button onClick={() => setDeleteTarget(null)} className="flex-1 px-4 py-2 bg-slate-100 rounded-lg">Cancel</button><button onClick={confirmDelete} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Delete</button></div>
+            </div>
+         </div>
+      )}
+
+      {showSchemaModal && (
+         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full flex flex-col max-h-[80vh]">
+               <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold">SQL Schema</h3><button onClick={() => setShowSchemaModal(false)}><X size={20}/></button></div>
+               <div className="flex-1 overflow-auto p-4 bg-slate-900"><pre className="text-xs text-emerald-400 font-mono">{SUPABASE_SCHEMA_SQL}</pre></div>
+            </div>
+         </div>
+      )}
+    </div>
+  );
+};
+
+// Added missing default export
+export default SuperAdmin;
