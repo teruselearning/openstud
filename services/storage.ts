@@ -9,11 +9,9 @@ import { sendSystemEmail } from './emailService';
 const getApiBaseUrl = () => {
   if (typeof window === 'undefined') return 'http://localhost:3001';
   const { hostname, protocol } = window.location;
-  // If we are on a standard dev/local setup, target port 3001
   if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
     return `${protocol}//${hostname}:3001`;
   }
-  // Production fallback
   return '';
 };
 
@@ -51,9 +49,7 @@ const get = <T>(key: string, defaultVal: T): T => {
   try {
     return JSON.parse(item);
   } catch (e) {
-    if (typeof defaultVal === 'string') {
-        return defaultVal as unknown as T;
-    }
+    if (typeof defaultVal === 'string') return defaultVal as unknown as T;
     return defaultVal;
   }
 };
@@ -62,38 +58,23 @@ const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') localStorage.setItem(key, JSON.stringify(val));
 };
 
-const getDefaultSystemSettings = (): SystemSettings => ({
+export const getSystemSettings = (): SystemSettings => get(KEYS.SETTINGS, {
   smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
   emailTemplates: {
-    mfa: {
-      enabled: true,
-      subject: "Your OpenStudbook Verification Code",
-      bodyHtml: "<h3>Verification Required</h3><p>Your security code is: <strong>{{code}}</strong></p><p>This code will expire in 10 minutes.</p>"
-    },
-    invite: {
-      enabled: true,
-      subject: "Invitation to Join OpenStudbook",
-      bodyHtml: "<h3>Hello!</h3><p>You have been invited to join the <strong>{{orgName}}</strong> workspace on OpenStudbook.</p><p>Please ask your administrator for your temporary login credentials.</p>"
-    },
-    notification: {
-      enabled: true,
-      subject: "New Notification: {{title}}",
-      bodyHtml: "<h3>New Activity</h3><p>{{message}}</p><p>Log in to view details.</p>"
-    }
+    mfa: { enabled: true, subject: "Your Verification Code", bodyHtml: "Code: {{code}}" },
+    invite: { enabled: true, subject: "OpenStudbook Invite", bodyHtml: "Welcome to {{orgName}}" },
+    notification: { enabled: true, subject: "New Activity", bodyHtml: "{{message}}" }
   },
   themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
-  aboutPage: { enabled: true, title: 'About Us', contentHtml: '<p>About content...</p>' },
-  privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Privacy content...</p>' },
-  termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Terms content...</p>' },
+  aboutPage: { enabled: true, title: 'About', contentHtml: '' },
+  privacyPage: { enabled: true, title: 'Privacy', contentHtml: '' },
+  termsPage: { enabled: true, title: 'Terms', contentHtml: '' },
   enableMfa: false
 });
 
-export const getSystemSettings = (): SystemSettings => get(KEYS.SETTINGS, getDefaultSystemSettings());
 export const saveSystemSettings = (s: SystemSettings, skipSync = false) => {
   set(KEYS.SETTINGS, s);
-  if (!skipSync) {
-    syncPushSettings(s).catch(() => {});
-  }
+  if (!skipSync) syncPushSettings(s).catch(() => {});
 };
 
 export const getLanguages = (): LanguageConfig[] => {
@@ -108,37 +89,20 @@ export const getLanguages = (): LanguageConfig[] => {
 
 export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
   set(KEYS.LANGUAGES, langs);
-  if (!skipSync) {
-    syncPushLanguages(langs).catch(err => {
-      if (!err.message.includes('Failed to fetch') && !err.message.includes('Network request failed')) {
-         console.error("Sync Error (Languages):", err);
-      }
-    });
-  }
+  if (!skipSync) syncPushLanguages(langs).catch(() => {});
 };
 
 export const deleteLanguage = async (code: string) => {
   const current = get<LanguageConfig[]>(KEYS.LANGUAGES, []);
   const updated = current.filter(l => l.code !== code);
   set(KEYS.LANGUAGES, updated);
-  try {
-    await syncDeleteLanguage(code);
-  } catch (e: any) {
-    console.warn("Language delete sync failed:", e.message);
-  }
+  try { await syncDeleteLanguage(code); } catch (e) {}
 };
 
 export const generatePattern = (text: string): string => {
   const settings = getSystemSettings();
   const baseColor = settings.themePrimaryColor || '#059669';
-  const width = 400;
-  const height = 300;
-  let svgContent = `<rect width="${width}" height="${height}" fill="${baseColor}"/>`;
-  const estimatedFontSize = Math.min(60, Math.max(16, 500 / (text.length + 1)));
-  svgContent += `
-    <text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold" font-size="${estimatedFontSize}" fill="rgba(255,255,255,0.95)" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">${text}</text>
-  `;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${svgContent}</svg>`.trim())}`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="${baseColor}"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="24" fill="white">${text}</text></svg>`)}`;
 };
 
 export const getSession = (): User | null => get(KEYS.SESSION, null);
@@ -155,10 +119,7 @@ export const isImpersonating = () => typeof window !== 'undefined' && !!localSto
 export const restoreMainOrg = () => {
    if (isImpersonating()) {
       const backup = localStorage.getItem(KEYS.BACKUP);
-      if (backup) {
-         const data = JSON.parse(backup);
-         set(KEYS.ORG, data.org);
-      }
+      if (backup) set(KEYS.ORG, JSON.parse(backup).org);
       localStorage.removeItem(KEYS.IMPERSONATING);
       localStorage.removeItem(KEYS.BACKUP);
    }
@@ -171,162 +132,97 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
    const partners = getNetworkPartners();
    const partner = explicitOrg || partners.find(p => p.id === partnerId);
    if (partner) {
-      const tempOrg: Organization = {
-         ...partner,
-         foundedYear: partner.foundedYear || 2000, 
-         description: partner.description || 'Partner Organization View',
-         focus: partner.focus || 'Animals',
-         breedingRequestContactId: 'u-temp'
-      };
-      set(KEYS.ORG, tempOrg);
+      set(KEYS.ORG, { ...partner, foundedYear: 2000, description: '', focus: 'Animals' });
       return true;
    }
    return false;
 };
 
-const createEmptyOrg = (): Organization => ({
-  id: '',
-  name: 'New Organization',
-  location: '',
-  foundedYear: new Date().getFullYear(),
-  description: '',
-  focus: 'Animals',
-  isOrgPublic: false,
-  isSpeciesPublic: false,
-  obscureLocation: false,
-  allowBreedingRequests: false
-});
-
-export const getOrg = (): Organization => get(KEYS.ORG, createEmptyOrg());
+export const getOrg = (): Organization => get(KEYS.ORG, { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false });
 export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
-  if (!skipSync) {
-    syncPushOrg(o).catch(() => {});
-  }
+  if (!skipSync) syncPushOrg(o).catch(() => {});
 };
 
 export const getProjects = (): Project[] => get(KEYS.PROJECTS, []);
 export const saveProjects = (p: Project[], skipSync = false) => {
   set(KEYS.PROJECTS, p);
-  if (!skipSync) {
-    syncPushProjects(p).catch(() => {});
-  }
+  if (!skipSync) syncPushProjects(p).catch(() => {});
 };
+
 export const getCurrentProjectId = (): string => get(KEYS.CURRENT_PROJECT, '');
 export const saveCurrentProjectId = (id: string) => set(KEYS.CURRENT_PROJECT, id);
 
 export const getUsers = (): User[] => get(KEYS.USERS, []);
 export const saveUsers = (u: User[], skipSync = false) => {
   set(KEYS.USERS, u);
-  if (!skipSync) {
-    syncPushUsers(u).catch(() => {});
-  }
+  if (!skipSync) syncPushUsers(u).catch(() => {});
 };
 
 export const getSpecies = (): Species[] => get(KEYS.SPECIES, []);
 export const saveSpecies = (s: Species[], skipSync = false) => {
   set(KEYS.SPECIES, s);
-  if (!skipSync) {
-    syncPushSpecies(s).catch(() => {});
-  }
+  if (!skipSync) syncPushSpecies(s).catch(() => {});
 };
 
 export const getIndividuals = (): Individual[] => get(KEYS.INDIVIDUALS, []);
 export const saveIndividuals = (i: Individual[], skipSync = false) => {
   set(KEYS.INDIVIDUALS, i);
-  if (!skipSync) {
-    syncPushIndividuals(i).catch(() => {});
-  }
+  if (!skipSync) syncPushIndividuals(i).catch(() => {});
 };
 
 export const getBreedingEvents = (): BreedingEvent[] => get(KEYS.BREEDING, []);
 export const saveBreedingEvents = (b: BreedingEvent[], skipSync = false) => {
   set(KEYS.BREEDING, b);
-  if (!skipSync) {
-    syncPushBreedingEvents(b).catch(() => {});
-  }
+  if (!skipSync) syncPushBreedingEvents(b).catch(() => {});
 };
 
 export const getBreedingLoans = (): BreedingLoan[] => get(KEYS.BREEDING_LOANS, []);
 export const saveBreedingLoans = (l: BreedingLoan[], skipSync = false) => {
   set(KEYS.BREEDING_LOANS, l);
-  if (!skipSync) {
-    syncPushBreedingLoans(l).catch(() => {});
-  }
+  if (!skipSync) syncPushBreedingLoans(l).catch(() => {});
 };
 
 export const getPartnerships = (): Partnership[] => get(KEYS.PARTNERSHIPS, []);
 export const savePartnerships = (p: Partnership[], skipSync = false) => {
   set(KEYS.PARTNERSHIPS, p);
-  if (!skipSync) {
-    syncPushPartnerships(p).catch(() => {});
-  }
+  if (!skipSync) syncPushPartnerships(p).catch(() => {});
 };
 
-export const getNetworkPartners = (): ExternalPartner[] => {
-  const all = get<ExternalPartner[]>(KEYS.PARTNERS, []);
-  return all.filter(p => !p.deleted);
-};
+export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
-// Fix: Add missing generatePartnerInvite member
 export const generatePartnerInvite = (): string => {
-  const code = Math.floor(1000 + Math.random() * 9000).toString() + '-' + Math.floor(1000 + Math.random() * 9000).toString();
+  const code = `${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
   const codes = get<string[]>(KEYS.INVITE_CODES, []);
   codes.push(code);
   set(KEYS.INVITE_CODES, codes);
   return code;
 };
 
-// Fix: Add missing redeemPartnerInvite member
 export const redeemPartnerInvite = (code: string): { success: boolean, message: string } => {
-  if (!code || !code.includes('-')) return { success: false, message: "Invalid code format." };
-  
-  const currentPartnerships = getPartnerships();
-  const myOrg = getOrg();
   const partners = getNetworkPartners();
-  
-  const candidate = partners.find(p => 
-    p.id !== myOrg.id && 
-    !currentPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id))
-  );
-
-  if (!candidate) return { success: false, message: "No new partners found to connect in demo." };
-
-  const newPartnership: Partnership = {
-    id: `ps-${Date.now()}`,
-    orgId1: myOrg.id,
-    orgId2: candidate.id,
-    status: 'Active',
-    establishedDate: new Date().toISOString().split('T')[0]
-  };
-
-  savePartnerships([...currentPartnerships, newPartnership]);
-  return { success: true, message: `Partnership established with ${candidate.name}!` };
+  const myOrg = getOrg();
+  const candidate = partners.find(p => p.id !== myOrg.id);
+  if (!candidate) return { success: false, message: "No partners found." };
+  const current = getPartnerships();
+  const newRel: Partnership = { id: `ps-${Date.now()}`, orgId1: myOrg.id, orgId2: candidate.id, status: 'Active', establishedDate: new Date().toISOString().split('T')[0] };
+  savePartnerships([...current, newRel]);
+  return { success: true, message: `Connected to ${candidate.name}` };
 };
 
 export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<User> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orgName, userName, email, focus, password })
-    });
-
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || "Registration failed");
-    }
-
-    const { token, user, org } = await response.json();
-    localStorage.setItem(KEYS.TOKEN, token);
-    saveOrg(org, true); 
-    saveUsers([user], true);
-    return user;
-  } catch (error: any) {
-    console.error("Server Registration Failed:", error);
-    throw error;
-  }
+  const response = await fetch(`${API_BASE_URL}/api/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orgName, userName, email, focus, password })
+  });
+  if (!response.ok) throw new Error((await response.json()).error || "Registration failed");
+  const { token, user, org } = await response.json();
+  localStorage.setItem(KEYS.TOKEN, token);
+  saveOrg(org, true);
+  saveUsers([user], true);
+  return user;
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
@@ -337,71 +233,39 @@ export const login = async (email: string, pass: string): Promise<User | null> =
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.toLowerCase().trim(), password: pass })
     });
-
     if (response.ok) {
       const { token, user } = await response.json();
-      console.log(`[LOGIN DEBUG] Success! Token received.`);
       localStorage.setItem(KEYS.TOKEN, token);
       return user;
-    } else {
-      const errData = await response.json();
-      console.warn(`[LOGIN DEBUG] Server rejected login: ${errData.error || response.statusText}`);
     }
   } catch (e: any) {
-    console.warn(`[LOGIN DEBUG] Server unreachable or error:`, e.message);
+    console.warn(`[LOGIN DEBUG] Server unreachable:`, e.message);
   }
 
-  // Fallback: Local Demo Auth (only works if data was synced previously)
-  const users = getUsers();
-  const user = users.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
-  if (user && user.password) {
-     if (user.password.startsWith('$2')) {
-        console.warn("[LOGIN DEBUG] Fallback failed: Stored password is encrypted and requires the server.");
-        return null;
-     }
-
+  // Local Fallback (for truly offline use)
+  const user = getUsers().find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
+  if (user?.password) {
+     if (user.password.startsWith('$2')) return null; // Server required for Bcrypt
      const hashedInput = await hashPassword(pass);
-     if (hashedInput === user.password) {
-        console.log("[LOGIN DEBUG] Logged in via Local Offline Cache");
-        return user;
-     }
+     if (hashedInput === user.password) return user;
   }
-
   return null;
 };
 
 export const deleteOrganization = async (orgId: string) => {
-   try {
-      await syncDeleteOrganization(orgId);
-   } catch (e: any) {
-      if (!e.message.includes('not configured')) {
-         throw e;
-      }
-   }
-   const partners = get<ExternalPartner[]>(KEYS.PARTNERS, []);
-   const updatedPartners = partners.filter(p => p.id !== orgId);
-   saveNetworkPartners(updatedPartners);
+   try { await syncDeleteOrganization(orgId); } catch (e) {}
+   saveNetworkPartners(getNetworkPartners().filter(p => p.id !== orgId));
 };
 
-export const isMfaTrustedDevice = (userId: string): boolean => {
-   if (typeof window === 'undefined') return false;
-   const trusted = JSON.parse(localStorage.getItem(KEYS.TRUSTED_DEVICES) || '{}');
-   return !!trusted[userId];
-};
-
+export const isMfaTrustedDevice = (userId: string): boolean => !!JSON.parse(localStorage.getItem(KEYS.TRUSTED_DEVICES) || '{}')[userId];
 export const trustDevice = (userId: string) => {
-   if (typeof window === 'undefined') return;
    const trusted = JSON.parse(localStorage.getItem(KEYS.TRUSTED_DEVICES) || '{}');
    trusted[userId] = true;
    localStorage.setItem(KEYS.TRUSTED_DEVICES, JSON.stringify(trusted));
 };
 
 export const sendMfaCode = async (email: string, code: string) => {
-   const sent = await sendSystemEmail(email, 'mfa', { code }, "Your OpenStudbook Code", `Your code is ${code}`);
-   if (!sent) {
-      console.log(`[MOCK EMAIL] To: ${email}, Code: ${code}`);
-      alert(`MOCK EMAIL (SMTP Not Configured): Your verification code is ${code}`);
-   }
+   await sendSystemEmail(email, 'mfa', { code }, "Code", `Code: ${code}`);
 };
 
 export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []);
@@ -409,60 +273,38 @@ export const saveNotifications = (n: Notification[]) => set(KEYS.NOTIFICATIONS, 
 
 export const sendMockNotification = (recipientId: string, title: string, message: string, type: any = 'System') => {
    const notifs = getNotifications();
-   const newNotif: Notification = {
-      id: `n-${Date.now()}`,
-      recipientId,
-      senderOrgName: 'System',
-      title,
-      message,
-      date: new Date().toISOString().split('T')[0],
-      isRead: false,
-      type
-   };
-   saveNotifications([newNotif, ...notifs]);
+   saveNotifications([{ id: `n-${Date.now()}`, recipientId, senderOrgName: 'System', title, message, date: new Date().toISOString().split('T')[0], isRead: false, type }, ...notifs]);
 };
 
 export const exportSpeciesData = (speciesId: string): any => {
    const species = getSpecies().find(s => s.id === speciesId);
    if (!species) return null;
-   const individuals = getIndividuals().filter(i => i.speciesId === speciesId);
-   return { species, individuals, exportDate: new Date().toISOString() };
+   return { species, individuals: getIndividuals().filter(i => i.speciesId === speciesId), exportDate: new Date().toISOString() };
 };
 
 export const importSpeciesData = (data: any) => {
    if (!data.species) throw new Error("Invalid Format");
-   const allSpecies = getSpecies();
-   const existingIdx = allSpecies.findIndex(s => s.id === data.species.id);
-   if (existingIdx >= 0) allSpecies[existingIdx] = data.species; 
-   else allSpecies.push(data.species);
-   saveSpecies(allSpecies);
-
-   if (data.individuals && Array.isArray(data.individuals)) {
-      const allInds = getIndividuals();
+   const allS = getSpecies();
+   const idx = allS.findIndex(s => s.id === data.species.id);
+   if (idx >= 0) allS[idx] = data.species; else allS.push(data.species);
+   saveSpecies(allS);
+   if (data.individuals) {
+      const allI = getIndividuals();
       data.individuals.forEach((ind: Individual) => {
-         const idx = allInds.findIndex(i => i.id === ind.id);
-         if (idx >= 0) allInds[idx] = ind;
-         else allInds.push(ind);
+         const iIdx = allI.findIndex(i => i.id === ind.id);
+         if (iIdx >= 0) allI[iIdx] = ind; else allI.push(ind);
       });
-      saveIndividuals(allInds); 
+      saveIndividuals(allI);
    }
 };
 
-export const exportFullData = () => {
-   return {
-      org: getOrg(),
-      users: getUsers(),
-      species: getSpecies(),
-      individuals: getIndividuals(),
-      breedingEvents: getBreedingEvents(),
-      settings: getSystemSettings(),
-      languages: getLanguages(),
-      version: '1.0'
-   };
-};
+export const exportFullData = () => ({
+   org: getOrg(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(),
+   breedingEvents: getBreedingEvents(), settings: getSystemSettings(), languages: getLanguages(), version: '1.0'
+});
 
 export const importFullData = (data: any) => {
-   if (!data.org) throw new Error("Invalid Backup File");
+   if (!data.org) throw new Error("Invalid Backup");
    saveOrg(data.org);
    if (data.users) saveUsers(data.users);
    if (data.species) saveSpecies(data.species);
@@ -475,72 +317,35 @@ export const importFullData = (data: any) => {
 export const exportDataAsCSV = (): string => {
   const individuals = getIndividuals();
   const species = getSpecies();
-  const projects = getProjects();
-  const header = "Studbook ID,Individual Name,Common Name,Scientific Name,Type,Sex,Birth/Plant Date,Current Weight (kg),Height (cm),Status,Project,Sire ID,Dam ID,Location,Notes";
+  const header = "Studbook ID,Individual Name,Common Name,Scientific Name,Sex,Birth Date,Status";
   const rows = individuals.map(ind => {
     const sp = species.find(s => s.id === ind.speciesId);
-    const proj = projects.find(p => p.id === ind.projectId);
-    let status = 'Active';
-    if (ind.isDeceased) status = 'Deceased';
-    else if (ind.loanStatus === 'Loaned Out') status = 'Loaned Out';
-    else if (ind.loanStatus === 'On Loan') status = 'On Loan';
-    else if (ind.transferredToOrgId) status = 'Transferred';
-    const escape = (txt: any) => {
-        if (txt === undefined || txt === null) return '';
-        const str = String(txt);
-        if (str.includes(',') || str.includes('"') || str.includes('\n')) return `"${str.replace(/"/g, '""')}"`;
-        return str;
-    };
-    let latestHeight = '';
-    if (ind.growthHistory && ind.growthHistory.length > 0) {
-       const sorted = [...ind.growthHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-       latestHeight = String(sorted[0].heightCm);
-    }
-    const location = (ind.latitude && ind.longitude) ? `${ind.latitude}, ${ind.longitude}` : '';
-    return [
-      escape(ind.studbookId), escape(ind.name), escape(sp?.commonName), escape(sp?.scientificName), escape(sp?.type),
-      escape(ind.sex), escape(ind.birthDate), escape(ind.weightKg), escape(latestHeight), escape(status),
-      escape(proj?.name), escape(ind.sireId), escape(ind.damId), escape(location), escape(ind.notes)
-    ].join(",");
+    return [ind.studbookId, ind.name, sp?.commonName, sp?.scientificName, ind.sex, ind.birthDate, ind.isDeceased ? 'Deceased' : 'Active'].join(",");
   });
   return [header, ...rows].join("\n");
 };
 
 export const regenerateDemoData = async () => {
     const mockOrg: Organization = {
-      id: 'org-1',
-      name: 'Sanctuary of the Wild',
-      location: 'Sabah, Borneo',
-      latitude: 4.965, longitude: 117.805,
+      id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805,
       isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998,
-      description: 'Dedicated to the preservation of endangered species through captive breeding and education.',
-      focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
-      dashboardBlock: { enabled: true, title: 'Demo Environment', content: '<p>Welcome to the <strong>OpenStudbook Demo</strong>! Feel free to explore the features.</p>' }
+      description: 'Demo Sanctuary', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true
     };
 
-    const defaultHash = await hashPassword('password');
+    // CRITICAL: We stop pre-hashing here. The server will hash these plain-text passwords during the sync.
     const mockUsers: User[] = [
-      { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: defaultHash, allowedProjectIds: [] },
-      { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: defaultHash, allowedProjectIds: ['p-1'] },
-      { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: defaultHash, allowedProjectIds: [] }
+      { id: 'u-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
+      { id: 'u-2', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
+      { id: 'u-3', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] }
     ];
 
-    const projects: Project[] = [
-      { id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' },
-      { id: 'p-2', name: 'Conservation 2025', description: 'Special conservation initiatives', orgId: 'org-1' }
-    ];
-
-    const s1: Species = {
-       id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal',
-       conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20,
-       breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger')
-    };
-    const speciesList = [s1];
+    const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
+    const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
 
     saveOrg(mockOrg, true);
     saveUsers(mockUsers, true);
     saveProjects(projects, true);
-    saveSpecies(speciesList, true);
+    saveSpecies([s1], true);
     saveIndividuals([], true);
     saveBreedingEvents([], true);
 
@@ -548,9 +353,9 @@ export const regenerateDemoData = async () => {
 
     try {
        await syncPushOrg(mockOrg);
-       await syncPushUsers(mockUsers);
+       await syncPushUsers(mockUsers); // Server will Bcrypt these now
        await syncPushProjects(projects);
-       await syncPushSpecies(speciesList);
+       await syncPushSpecies([s1]);
        console.log("Demo Data Synced to Backend.");
     } catch(e: any) {
        console.warn("Demo Sync Failed:", e.message);

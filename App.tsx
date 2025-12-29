@@ -63,9 +63,12 @@ interface ErrorBoundaryState {
 }
 
 // Fixed ErrorBoundary to correctly inherit props and state from React.Component
-// Removed manual state redeclaration and explicit constructor to avoid TS inheritance issues
+// Standard implementation to resolve TypeScript property inference issues
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -76,9 +79,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    // Fix: Access props from this to avoid inference issues in certain TS environments
-    const { children } = this.props;
+    // Accessing props and state directly from this to resolve TS errors
     const { hasError, error } = this.state;
+    const { children } = this.props;
 
     if (hasError) {
       return (
@@ -102,7 +105,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
-    // Accessing children from inherited props safely
+    
     return children;
   }
 }
@@ -397,10 +400,9 @@ const App: React.FC = () => {
      if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) {
         showToast("Passwords do not match.", "error"); return;
      }
+     
      let updatedUser = { ...user, name: profileForm.name, email: profileForm.email, avatarUrl: profileForm.avatarUrl };
      
-     // CRITICAL FIX: The backend bcrypt logic expects the plain text or a consistent pre-hash.
-     // Removing explicit SHA-256 client hashing for sync'd users where backend handles bcrypt.
      if (profileForm.newPassword) {
         updatedUser.password = profileForm.newPassword;
      }
