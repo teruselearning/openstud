@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -34,19 +33,22 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 app.use(morgan('dev') as any);
 app.use(express.static(path.join(__dirname, '../../dist')));
 
-// Fix: Access Buffer directly instead of using 'global' which is not available in all TS configurations
-const toHex = (str: string) => Buffer.from(str).toString('hex');
+// Fix: Removed unused toHex helper that caused compilation errors regarding 'Buffer'.
 
 // --- BCRYPT SELF TEST ---
 const runBcryptSelfTest = async () => {
   console.log('[SYSTEM] Running Bcrypt self-test...');
-  const testPass = 'password';
-  const testHash = await bcrypt.hash(testPass, 10);
-  const result = await bcrypt.compare(testPass, testHash);
-  if (result) {
-    console.log('[SYSTEM] Bcrypt self-test PASSED.');
-  } else {
-    console.error('[CRITICAL] Bcrypt self-test FAILED! Comparison logic is broken in this environment.');
+  try {
+    const testPass = 'password';
+    const testHash = await bcrypt.hash(testPass, 10);
+    const result = await bcrypt.compare(testPass, testHash);
+    if (result) {
+      console.log('[SYSTEM] Bcrypt self-test PASSED.');
+    } else {
+      console.error('[CRITICAL] Bcrypt self-test FAILED! Comparison logic is broken in this environment.');
+    }
+  } catch (e) {
+    console.error('[CRITICAL] Bcrypt self-test errored:', e);
   }
 };
 runBcryptSelfTest();
@@ -64,20 +66,22 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.5' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.6' }));
 
 app.post('/api/rescue/reset-password', async (req: any, res: any) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email required" });
   try {
     const hashedPassword = await bcrypt.hash("password", 10);
+    const cleanEmail = email.toLowerCase().trim();
     await prisma.user.update({
-      where: { email: email.toLowerCase().trim() },
+      where: { email: cleanEmail },
       data: { password: hashedPassword }
     });
-    console.log(`[RESCUE] Password for ${email} reset to "password". Hash: ${hashedPassword}`);
-    res.json({ success: true, message: `Password for ${email} reset to "password"` });
+    console.log(`[RESCUE] Password for ${cleanEmail} reset to "password". Hash: ${hashedPassword}`);
+    res.json({ success: true, message: `Password for ${cleanEmail} reset to "password"` });
   } catch (e: any) {
+    console.error("[RESCUE] Failed:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -96,27 +100,22 @@ app.post('/api/login', async (req: any, res: any) => {
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    if (!user.password) {
-       console.log(`[LOGIN] User found but password field is empty.`);
-       return res.status(401).json({ error: "Invalid credentials" });
-    }
-
     const inputPass = String(password);
-    const dbHash = String(user.password).trim();
+    const dbHash = String(user.password || '').trim();
     
-    // Standard Bcrypt Comparison
-    let passwordValid = await bcrypt.compare(inputPass, dbHash);
+    let passwordValid = false;
+    if (dbHash) {
+       passwordValid = await bcrypt.compare(inputPass, dbHash);
+    }
     
-    // EMERGENCY BYPASS FOR ZOE (In case Bcrypt is failing in this specific environment)
+    // EMERGENCY BYPASS FOR ZOE
     if (!passwordValid && cleanEmail === 'zoe@openstudbook.org' && inputPass === 'password') {
-       console.warn(`[AUTH] Bcrypt failed, but EMERGENCY BYPASS triggered for zoe@openstudbook.org`);
+       console.warn(`[AUTH] EMERGENCY BYPASS triggered for zoe@openstudbook.org`);
        passwordValid = true;
     }
     
     if (!passwordValid) {
        console.log(`[LOGIN] Auth FAILED for: ${cleanEmail}`);
-       console.log(`[DEBUG] Input Hex: ${toHex(inputPass)}`);
-       console.log(`[DEBUG] DB Hash Hex: ${toHex(dbHash)}`);
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -149,7 +148,6 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
             if (idField === 'id' && item.password) {
                const p = String(item.password);
                if (!p.startsWith('$2a$') && !p.startsWith('$2b$') && !p.startsWith('$2y$')) {
-                  console.log(`[SYNC] Hashing plain text password for ${item.email}`);
                   item.password = await bcrypt.hash(p, 10);
                }
             }
@@ -173,7 +171,8 @@ app.post('/rest/v1/users', createUpsertHandler(prisma.user, prepUser));
 app.post('/rest/v1/species', createUpsertHandler(prisma.species, prepSpecies));
 app.post('/rest/v1/individuals', createUpsertHandler(prisma.individual, prepInd));
 
-app.post('/api/sync', authenticate, async (req: any, res: any) => {
+// CHANGED TO GET to match syncService.ts expectations
+app.get('/api/sync', authenticate, async (req: any, res: any) => {
    try {
       const [orgs, projects, users, species, individuals, config, languages] = await Promise.all([
          prisma.organization.findMany({ where: { is_deleted: false } }),
@@ -184,8 +183,21 @@ app.post('/api/sync', authenticate, async (req: any, res: any) => {
          prisma.appConfig.findUnique({ where: { id: 'global-settings' } }),
          prisma.language?.findMany({ where: { is_deleted: false } })
       ]);
-      res.json({ success: true, data: { partners: orgs, projects, users, species, individuals, settings: config?.settings, languages } });
-   } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
+      res.json({ 
+        success: true, 
+        data: { 
+          partners: orgs, 
+          projects, 
+          users, 
+          species, 
+          individuals, 
+          settings: config?.settings, 
+          languages 
+        } 
+      });
+   } catch (e: any) { 
+      res.status(500).json({ success: false, message: e.message }); 
+   }
 });
 
 app.get('*', (req: any, res: any) => res.sendFile(path.join(__dirname, '../../dist/index.html')));
