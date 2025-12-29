@@ -25,9 +25,9 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        const currentOrg = getOrg();
        
        // Determine initial center: Org Location -> Default World
-       const initialLat = currentOrg.latitude || 0;
-       const initialLng = currentOrg.longitude || 0;
-       const initialZoom = (currentOrg.latitude && currentOrg.longitude) ? 15 : 2;
+       const initialLat = (typeof currentOrg.latitude === 'number') ? currentOrg.latitude : 0;
+       const initialLng = (typeof currentOrg.longitude === 'number') ? currentOrg.longitude : 0;
+       const initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
 
        const map = L.map(mapContainerRef.current, {
           zoomControl: false 
@@ -45,23 +45,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        markersLayerRef.current = markersLayer;
        mapInstanceRef.current = map;
 
-       // If no Org location, try geolocation automatically once
-       if (!currentOrg.latitude || !currentOrg.longitude) {
-          if (navigator.geolocation) {
-             navigator.geolocation.getCurrentPosition((pos) => {
-                // Only fly to user if we haven't already plotted data (which might be elsewhere)
-                // For now, we just set view if we are still at world view
-                if (map.getZoom() < 5) {
-                   map.invalidateSize();
-                   map.setView([pos.coords.latitude, pos.coords.longitude], 15);
-                }
-             }, (err) => {
-                console.warn("Geolocation failed or denied", err);
-             });
-          }
-       }
-
-       // Fix for "Gray Map" - invalidate size after a short delay to allow flex layout to settle
+       // Fix for "Gray Map" - invalidate size after a short delay
        setTimeout(() => {
           map.invalidateSize();
        }, 200);
@@ -92,7 +76,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     const currentOrg = getOrg();
 
     // 2a. Add Organization Marker (Headquarters)
-    if (currentOrg.latitude && currentOrg.longitude) {
+    if (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') {
        const orgIcon = L.divIcon({
           className: 'custom-div-icon',
           html: `<div style="background-color: #3b82f6; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.3);"></div>`,
@@ -108,8 +92,8 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     // 2b. Filter Plants for Current Project
     const mappedPlants = allInds.filter(i => 
        i.projectId === currentProjectId && 
-       i.latitude && 
-       i.longitude
+       typeof i.latitude === 'number' && 
+       typeof i.longitude === 'number'
     );
 
     const plantIcon = L.divIcon({
@@ -122,7 +106,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     const leafletMarkers: any[] = [];
 
     mappedPlants.forEach(plant => {
-       if (!plant.latitude || !plant.longitude) return;
+       if (typeof plant.latitude !== 'number' || typeof plant.longitude !== 'number') return;
        const sp = allSpecies.find(s => s.id === plant.speciesId);
        
        const marker = L.marker([plant.latitude, plant.longitude], { icon: plantIcon });
@@ -132,7 +116,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           setSelectedInd(plant);
           setSelectedSpecies(sp || null);
           
-          // Fly to marker, slightly offset to account for sidebar
           map.invalidateSize();
           map.flyTo([plant.latitude, plant.longitude], 18, {
              animate: true,
@@ -144,20 +127,24 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        leafletMarkers.push(marker);
     });
 
-    // 2c. Fit Bounds ONLY if we have data. 
-    // If we have data, we prioritize seeing the data over the org location.
-    // Force a resize calculation first to avoid fitting to a 0x0 container
+    // 2c. Fit Bounds ONLY if we have valid data. 
     map.invalidateSize();
 
     if (leafletMarkers.length > 0) {
-       const group = L.featureGroup(leafletMarkers);
-       map.fitBounds(group.getBounds().pad(0.2));
-    } else if (currentOrg.latitude && currentOrg.longitude) {
-       // If no data, ensure we are at org location
+       try {
+          const group = L.featureGroup(leafletMarkers);
+          const bounds = group.getBounds();
+          if (bounds.isValid()) {
+             map.fitBounds(bounds.pad(0.2));
+          }
+       } catch (err) {
+          console.warn("FitBounds failed on Plant Map", err);
+       }
+    } else if (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') {
        map.setView([currentOrg.latitude, currentOrg.longitude], 15);
     }
 
-  }, [currentProjectId]); // Re-run whenever the project ID changes
+  }, [currentProjectId]); 
 
   const handleLocateMe = () => {
      if (!mapInstanceRef.current) return;
@@ -172,7 +159,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
               duration: 1.5
            });
            
-           // Add a temporary "You" marker
            L.popup()
              .setLatLng([pos.coords.latitude, pos.coords.longitude])
              .setContent("📍 You are here")
@@ -200,7 +186,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
 
        <div ref={mapContainerRef} className="w-full h-full z-0" />
        
-       {/* Manual Locate Button */}
        <button 
           onClick={handleLocateMe}
           className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200"
@@ -209,7 +194,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />
        </button>
 
-       {/* Plant Detail Slide-over */}
        {selectedInd && (
           <div className="absolute right-4 top-4 bottom-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
              <div className="relative h-48 bg-slate-100">

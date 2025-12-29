@@ -72,8 +72,8 @@ const OrgSettings: React.FC = () => {
     // If map already exists, don't re-init
     if (leafletMap.current) return;
 
-    const initialLat = org.latitude || 45.5152;
-    const initialLng = org.longitude || -122.6784;
+    const initialLat = (typeof org.latitude === 'number') ? org.latitude : 45.5152;
+    const initialLng = (typeof org.longitude === 'number') ? org.longitude : -122.6784;
 
     const map = L.map(mapRef.current).setView([initialLat, initialLng], 10);
     leafletMap.current = map;
@@ -83,17 +83,18 @@ const OrgSettings: React.FC = () => {
     }).addTo(map);
 
     // Initial Marker
-    if (org.latitude && org.longitude) {
+    if (typeof org.latitude === 'number' && typeof org.longitude === 'number') {
       markerRef.current = L.marker([org.latitude, org.longitude]).addTo(map);
     }
 
-    // Click handler - Disabled in Demo Mode if needed, but handled by org update check
+    // Click handler - Disabled in Demo Mode
     map.on('click', (e: any) => {
-      // Check demo mode again inside closure or use ref if needed, but isDemoOrg is derived below.
-      // We will re-derive logic for the event
       const session = getSession();
       const isSuperAdmin = session?.role === UserRole.SUPER_ADMIN;
-      if (org?.id === 'org-1' && !isSuperAdmin) return; // Prevent map updates in demo mode UNLESS Super Admin
+      if (org?.id === 'org-1' && !isSuperAdmin) return; 
+
+      // SAFETY CHECK: Ensure latlng exists on the event
+      if (!e || !e.latlng) return;
 
       const { lat, lng } = e.latlng;
       
@@ -141,7 +142,6 @@ const OrgSettings: React.FC = () => {
     }
   };
 
-  // ... (Export/Import/Project/Transfer functions) ...
   const handleExport = () => {
     const data = exportFullData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -364,7 +364,7 @@ const OrgSettings: React.FC = () => {
   
   // DEMO MODE CHECK: True if org-1 AND not a Super Admin
   const session = getSession();
-  const isSuperAdmin = session?.role === UserRole.SUPER_ADMIN;
+  const isSuperAdmin = session?.role === UserRole.SUPER_ADMIN || (session?.role as string) === 'Super Admin';
   const isDemoOrg = org.id === 'org-1' && !isSuperAdmin;
 
   return (
@@ -461,7 +461,7 @@ const OrgSettings: React.FC = () => {
                 <div className="md:col-span-2 space-y-2">
                    <div className="flex justify-between items-center">
                      <label className="text-sm font-medium text-slate-700">{t('geoLocation')}</label>
-                     {org.latitude && <span className="text-xs text-slate-500">Lat: {org.latitude.toFixed(4)}, Lng: {org.longitude?.toFixed(4)}</span>}
+                     {(typeof org.latitude === 'number') && <span className="text-xs text-slate-500">Lat: {org.latitude.toFixed(4)}, Lng: {org.longitude?.toFixed(4)}</span>}
                    </div>
                    <div className="h-[300px] w-full rounded-lg border border-slate-300 overflow-hidden relative z-0">
                      <div id="map" ref={mapRef} className="h-full w-full"></div>
@@ -907,11 +907,10 @@ const OrgSettings: React.FC = () => {
          </div>
       )}
 
-      {/* Transfer Modal, Delete Modal - (Code omitted for brevity but logic remains same) */}
+      {/* Transfer Modal */}
       {showTransferModal && (
          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 flex flex-col max-h-[90vh]">
-               {/* ... Transfer Modal Content (Same as before) ... */}
                <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100">
                   <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                      <ArrowRightLeft size={20} className="text-purple-600"/> {t('transferData')}
@@ -954,7 +953,6 @@ const OrgSettings: React.FC = () => {
                </div>
 
                <div className="flex-1 overflow-y-auto border border-slate-200 rounded-lg p-2 min-h-[200px]">
-                  {/* ... Transfer Lists ... */}
                   {transferMode === 'species' ? (
                      <div className="space-y-1">
                         <div className="flex justify-between items-center px-2 py-1 border-b border-slate-100 mb-2">
@@ -1028,7 +1026,7 @@ const OrgSettings: React.FC = () => {
          </div>
       )}
 
-      {/* Delete Project Modal - (Code omitted for brevity but logic remains same) */}
+      {/* Delete Project Modal */}
       {projectToDelete && (
          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in duration-200">
@@ -1036,8 +1034,6 @@ const OrgSettings: React.FC = () => {
                   <div className="p-2 bg-red-100 rounded-full"><AlertTriangle size={24}/></div>
                   <h3 className="text-lg font-bold">{t('deleteProject')}: {projectToDelete.name}</h3>
                </div>
-               
-               {/* ... (Delete modal contents) ... */}
                <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
                   <button onClick={() => setProjectToDelete(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('cancel')}</button>
                   <button 

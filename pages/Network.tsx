@@ -11,11 +11,14 @@ type ViewMode = 'map' | 'partners';
 // Mock Individual Generator for Partner Browsing
 const generateMockPartnerIndividuals = (speciesId: string, countStr: string) => {
    if (!countStr) return [];
-   const [m, f, u] = countStr.split('.').map(Number);
+   const parts = countStr.split('.').map(Number);
+   const m = parts[0] || 0;
+   const f = parts[1] || 0;
+   const u = parts[2] || 0;
    const inds = [];
    for(let i=0; i<m; i++) inds.push({ id: `m-${i}`, name: `Male ${i+1}`, sex: Sex.MALE, age: Math.floor(Math.random()*10)+1 });
    for(let i=0; i<f; i++) inds.push({ id: `f-${i}`, name: `Female ${i+1}`, sex: Sex.FEMALE, age: Math.floor(Math.random()*10)+1 });
-   for(let i=0; i<(u||0); i++) inds.push({ id: `u-${i}`, name: `Juv ${i+1}`, sex: Sex.UNKNOWN, age: 0.5 });
+   for(let i=0; i<u; i++) inds.push({ id: `u-${i}`, name: `Juv ${i+1}`, sex: Sex.UNKNOWN, age: 0.5 });
    return inds;
 };
 
@@ -114,9 +117,9 @@ const Network: React.FC = () => {
        return;
     }
     
-    const targetLat = myOrg?.latitude || 39.8283; // Default US center
-    const targetLng = myOrg?.longitude || -98.5795;
-    const targetZoom = myOrg?.latitude ? 10 : 4; // Zoom 10 for better local context
+    const targetLat = (typeof myOrg?.latitude === 'number') ? myOrg.latitude : 39.8283; 
+    const targetLng = (typeof myOrg?.longitude === 'number') ? myOrg.longitude : -98.5795;
+    const targetZoom = (typeof myOrg?.latitude === 'number') ? 10 : 4; 
 
     // Init map if not exists
     if (!leafletMap.current) {
@@ -136,15 +139,14 @@ const Network: React.FC = () => {
         console.error("Error initializing map:", e);
       }
     } else {
-      // Map exists, ensure it is centered on My Org if available (and not just defaulting)
-      if (myOrg && myOrg.latitude && myOrg.longitude) {
-         // Only recenter if we aren't actively searching (to avoid snapping away from results)
+      // Map exists, ensure it is centered on My Org if available
+      if (myOrg && typeof myOrg.latitude === 'number' && typeof myOrg.longitude === 'number') {
          if (!searchQuery) {
             leafletMap.current.setView([myOrg.latitude, myOrg.longitude], targetZoom);
          }
       }
     }
-  }, [viewMode, myOrg]);
+  }, [viewMode, myOrg, searchQuery]);
 
   // Update Markers
   useEffect(() => {
@@ -158,14 +160,12 @@ const Network: React.FC = () => {
     markersRef.current = [];
 
     // Add My Org Marker
-    if (myOrg && myOrg.latitude !== undefined && myOrg.longitude !== undefined) {
+    if (myOrg && typeof myOrg.latitude === 'number' && typeof myOrg.longitude === 'number') {
       const myName = myOrg.hideName ? "Anonymous Organization" : myOrg.name;
       const myMarker = L.marker([myOrg.latitude, myOrg.longitude])
         .bindPopup(`<b>${myName}</b><br>You are here.`)
         .addTo(map);
       
-      // Open popup by default for user
-      myMarker.openPopup();
       markersRef.current.push(myMarker);
     }
 
@@ -174,7 +174,7 @@ const Network: React.FC = () => {
       let lat = p.latitude;
       let lng = p.longitude;
       
-      if (lat === undefined || lng === undefined || lat === null || lng === null) return;
+      if (typeof lat !== 'number' || typeof lng !== 'number') return;
 
       // If obscured, round coordinates to 1 decimal place (approx 10km grid)
       if (p.obscureLocation) {
@@ -230,13 +230,18 @@ const Network: React.FC = () => {
 
     // Only fit bounds if we have search results and aren't just starting up
     if (searchQuery && markersRef.current.length > 0) {
-       const group = new L.featureGroup(markersRef.current);
-       map.fitBounds(group.getBounds().pad(0.1));
+       try {
+          const group = new L.featureGroup(markersRef.current);
+          const bounds = group.getBounds();
+          if (bounds.isValid()) {
+             map.fitBounds(bounds.pad(0.1));
+          }
+       } catch (err) {
+          console.warn("FitBounds failed", err);
+       }
     }
 
   }, [filteredPartners, myOrg, searchQuery, viewMode, myPartners]);
-
-  // ... (Rest of component remains largely the same, mostly safety checks updated above)
 
   const handleOpenContact = (partner: ExternalPartner) => {
     setContactPartner(partner);

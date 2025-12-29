@@ -18,7 +18,8 @@ const SuperAdmin: React.FC = () => {
   // Data Stats
   const partners = getNetworkPartners();
   const myOrg = getOrg();
-  const allOrganizations = [myOrg, ...partners];
+  // Ensure partners is an array and filter out any potential nulls
+  const allOrganizations = [myOrg, ...(partners || [])].filter(Boolean);
 
   // Database State
   const [dbConfig, setDbConfig] = useState(getSupabaseConfig());
@@ -445,7 +446,8 @@ const SuperAdmin: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                        {allOrganizations.map((org, index) => {
-                          const isSelf = org.id === myOrg.id;
+                          if (!org) return null;
+                          const isSelf = org.id === myOrg?.id;
                           const isExpanded = expandedOrgId === org.id;
                           return (
                              <React.Fragment key={org.id || index}>
@@ -628,7 +630,7 @@ const SuperAdmin: React.FC = () => {
          </div>
       )}
 
-      {/* LANGUAGES TAB - Full Implementation for default export fix */}
+      {/* LANGUAGES TAB */}
       {activeTab === 'languages' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[700px] animate-in fade-in">
            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
@@ -701,7 +703,7 @@ const SuperAdmin: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Placeholders */}
+      {/* Delete Modal */}
       {deleteTarget && (
          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
@@ -724,5 +726,4 @@ const SuperAdmin: React.FC = () => {
   );
 };
 
-// Added missing default export
 export default SuperAdmin;

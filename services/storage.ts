@@ -38,7 +38,10 @@ const get = <T>(key: string, defaultVal: T): T => {
   const item = localStorage.getItem(key);
   if (!item) return defaultVal;
   try {
-    return JSON.parse(item);
+    const parsed = JSON.parse(item);
+    // Explicitly check for null because JSON.parse("null") returns null
+    if (parsed === null) return defaultVal;
+    return parsed;
   } catch (e) {
     if (typeof defaultVal === 'string') return defaultVal as unknown as T;
     return defaultVal;
@@ -139,13 +142,20 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
    const partners = getNetworkPartners();
    const partner = explicitOrg || partners.find(p => p.id === partnerId);
    if (partner) {
-      set(KEYS.ORG, { ...partner, foundedYear: 2000, description: '', focus: 'Animals' });
+      set(KEYS.ORG, { ...partner, foundedYear: partner.foundedYear || 2000, description: partner.description || '', focus: partner.focus || 'Animals' });
       return true;
    }
    return false;
 };
 
-export const getOrg = (): Organization => get(KEYS.ORG, { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false });
+export const getOrg = (): Organization => {
+  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false };
+  const org = get(KEYS.ORG, defaultOrg);
+  // Double-safety check for null-derived objects
+  if (!org || typeof org !== 'object') return defaultOrg;
+  return org;
+};
+
 export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
   if (!skipSync) syncPushOrg(o).catch(() => {});
@@ -196,7 +206,7 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
   if (!skipSync) syncPushPartnerships(p).catch(() => {});
 };
 
-export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => !p.deleted);
+export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
 export const generatePartnerInvite = (): string => {
