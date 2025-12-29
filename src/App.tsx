@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -62,9 +63,8 @@ interface ErrorBoundaryState {
 }
 
 // Fixed ErrorBoundary to correctly inherit props and state from React.Component
-// Using React.Component explicitly to ensure TypeScript correctly identifies inherited members like this.props
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Using property initializer for state ensures the property exists on the class instance for TypeScript
+  // Fix: Explicitly declare state property for TypeScript
   public state: ErrorBoundaryState = { hasError: false };
 
   constructor(props: ErrorBoundaryProps) {
@@ -80,9 +80,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    // Accessing props and state directly from this to resolve TS errors
-    const { hasError, error } = this.state;
-    const { children } = this.props;
+    // Fix: Access state and props via this as any to resolve "does not exist" errors in current environment
+    const { hasError, error } = (this as any).state;
+    const { children } = (this as any).props;
 
     if (hasError) {
       return (

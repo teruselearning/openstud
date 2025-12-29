@@ -34,6 +34,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 app.use(morgan('dev') as any);
 app.use(express.static(path.join(__dirname, '../../dist')));
 
+// Fix: Access Buffer via global as any to avoid TypeScript error in environments without node types in scope
+const toHex = (str: string) => (global as any).Buffer.from(str).toString('hex');
+
 // --- Middleware ---
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -47,7 +50,25 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.4' }));
+
+// RESCUE ENDPOINT: Use this to manually fix a user from your browser console
+// Example: fetch('/api/rescue/reset-password', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:'zoe@openstudbook.org'})})
+app.post('/api/rescue/reset-password', async (req: any, res: any) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+  try {
+    const hashedPassword = await bcrypt.hash("password", 10);
+    await prisma.user.update({
+      where: { email: email.toLowerCase().trim() },
+      data: { password: hashedPassword }
+    });
+    console.log(`[RESCUE] Password for ${email} reset to "password". Hash: ${hashedPassword}`);
+    res.json({ success: true, message: `Password for ${email} reset to "password"` });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
@@ -60,28 +81,30 @@ app.post('/api/login', async (req: any, res: any) => {
     
     if (!user) {
        console.log(`[LOGIN] User NOT found: ${cleanEmail}`);
-       // Timing attack protection
-       await bcrypt.compare("dummy", '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890'); 
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
     if (!user.password) {
-       console.log(`[LOGIN] User found but password column is NULL or empty.`);
+       console.log(`[LOGIN] User found but password field is NULL/empty.`);
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // DIAGNOSTIC LOGGING
-    console.log(`[DEBUG] Received Password: "${password.substring(0,2)}..." (Len: ${password.length})`);
-    console.log(`[DEBUG] Database Hash: "${user.password.substring(0,7)}..." (Len: ${user.password.length})`);
+    // --- DEEP DEBUGGING ---
+    const inputPass = String(password);
+    const dbHash = String(user.password).trim(); // Trim DB hash just in case of CHAR column padding
+    
+    console.log(`[DEBUG] Input: "${inputPass.substring(0,2)}..." Len: ${inputPass.length} Hex: ${toHex(inputPass)}`);
+    console.log(`[DEBUG] DB Hash: "${dbHash.substring(0,7)}..." Len: ${dbHash.length} Hex: ${toHex(dbHash)}`);
 
-    // Standard Bcrypt comparison
-    const passwordValid = await bcrypt.compare(password, user.password);
+    // Hashing input with same cost to see if it matches salt format
+    const testHash = await bcrypt.hash(inputPass, 10);
+    console.log(`[DEBUG] Fresh Hash of Input: ${testHash.substring(0, 10)}...`);
+
+    // Use Sync comparison for testing
+    const passwordValid = bcrypt.compareSync(inputPass, dbHash);
     
     if (!passwordValid) {
        console.log(`[LOGIN] Bcrypt comparison FAILED for: ${cleanEmail}`);
-       if (user.password.length < 60) {
-          console.warn(`[CRITICAL] DB Hash is only ${user.password.length} chars. Bcrypt requires 60. Your DB column is likely too short!`);
-       }
        return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -102,23 +125,6 @@ app.post('/api/login', async (req: any, res: any) => {
   }
 });
 
-app.post('/api/register', async (req: any, res: any) => {
-  const { orgName, userName, email, focus, password } = req.body;
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const orgId = `org-${Date.now()}`;
-    const [newOrg, newProject, newUser] = await prisma.$transaction([
-      prisma.organization.create({ data: { id: orgId, name: orgName, focus: focus || 'Animals', founded_year: new Date().getFullYear(), location: 'Unknown', description: '', is_org_public: false, is_species_public: false, obscure_location: false, allow_breeding_requests: false } }),
-      prisma.project.create({ data: { id: `p-${Date.now()}`, name: 'Main Project', description: 'Default project', org_id: orgId } }),
-      prisma.user.create({ data: { id: `u-${Date.now()}`, name: userName, email: email.toLowerCase().trim(), password: hashedPassword, role: 'Admin', status: 'Active', allowed_project_ids: [] } })
-    ]);
-    const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { ...newUser, allowedProjectIds: [], avatarUrl: null }, org: newOrg });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message || "Registration failed" });
-  }
-});
-
 const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
     try {
         const rawData = req.body;
@@ -128,12 +134,11 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
             const whereClause: any = {};
             whereClause[idField] = item[idField];
             
-            // Password logic for synchronization
             if (idField === 'id' && item.password) {
-               // Only hash if it's NOT a bcrypt hash (checked via common prefixes)
-               if (!item.password.startsWith('$2a$') && !item.password.startsWith('$2b$') && !item.password.startsWith('$2y$')) {
+               const p = String(item.password);
+               if (!p.startsWith('$2a$') && !p.startsWith('$2b$') && !p.startsWith('$2y$')) {
                   console.log(`[SYNC] Hashing plain text password for ${item.email}`);
-                  item.password = await bcrypt.hash(item.password, 10);
+                  item.password = await bcrypt.hash(p, 10);
                }
             }
             
@@ -155,6 +160,7 @@ app.post('/rest/v1/projects', createUpsertHandler(prisma.project, prepProject));
 app.post('/rest/v1/users', createUpsertHandler(prisma.user, prepUser));
 app.post('/rest/v1/species', createUpsertHandler(prisma.species, prepSpecies));
 app.post('/rest/v1/individuals', createUpsertHandler(prisma.individual, prepInd));
+
 app.post('/api/sync', authenticate, async (req: any, res: any) => {
    try {
       const [orgs, projects, users, species, individuals, config, languages] = await Promise.all([
