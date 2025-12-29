@@ -62,15 +62,10 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Added property declarations for state to fix "Property 'state' does not exist on type 'ErrorBoundary'" error
+// Fixed ErrorBoundary to correctly inherit props and state from React.Component
+// Removed manual state redeclaration and explicit constructor to avoid TS inheritance issues
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState;
-
-  // Added constructor to ensure props and state are correctly initialized for TypeScript
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  public state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -103,6 +98,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
+    // Accessing children from inherited props safely
     return this.props.children;
   }
 }
@@ -397,13 +393,13 @@ const App: React.FC = () => {
      if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) {
         showToast("Passwords do not match.", "error"); return;
      }
+     
      let updatedUser = { ...user, name: profileForm.name, email: profileForm.email, avatarUrl: profileForm.avatarUrl };
      
-     // IMPORTANT: The backend 'sync' logic now expects a plaintext or pre-hashed password.
-     // We will store the client-side SHA256 hash locally for fallback auth,
-     // and the backend will wrap it in Bcrypt for server auth.
+     // CRITICAL FIX: The backend bcrypt logic expects the plain text or a consistent pre-hash.
+     // Removing explicit SHA-256 client hashing for sync'd users where backend handles bcrypt.
      if (profileForm.newPassword) {
-        updatedUser.password = await hashPassword(profileForm.newPassword);
+        updatedUser.password = profileForm.newPassword;
      }
 
      const updatedList = getUsers().map(u => u.id === user.id ? updatedUser : u);

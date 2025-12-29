@@ -358,11 +358,18 @@ export const login = async (email: string, pass: string): Promise<User | null> =
     console.warn("Server Login Failed / Offline:", e);
   }
 
-  // Fallback: Local Demo Auth (For all demo users)
-  // We use the client-side hash function to verify the stored hash if server is offline
+  // Fallback: Local Demo Auth
+  // Note: Local passwords might be SHA-256 (local default) or Bcrypt (synced from server).
+  // This fallback only works for users whose password matches the client-side SHA-256 logic.
   const users = getUsers();
   const user = users.find(u => u.email === email);
   if (user && user.password) {
+     // If the password starts with $2 (bcrypt), the client cannot verify it offline.
+     if (user.password.startsWith('$2')) {
+        console.warn("Cannot verify Bcrypt password offline.");
+        return null;
+     }
+
      const hashedInput = await hashPassword(pass);
      if (hashedInput === user.password) {
         console.log("Logged in via Local Data Hash");
