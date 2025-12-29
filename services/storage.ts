@@ -68,19 +68,34 @@ const safeParseJson = async (response: Response) => {
   throw new Error(`Server returned unexpected content (Status: ${response.status})`);
 };
 
-export const getSystemSettings = (): SystemSettings => get(KEYS.SETTINGS, {
-  smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
-  emailTemplates: {
-    mfa: { enabled: true, subject: "Your Verification Code", bodyHtml: "Code: {{code}}" },
-    invite: { enabled: true, subject: "OpenStudbook Invite", bodyHtml: "Welcome to {{orgName}}" },
-    notification: { enabled: true, subject: "New Activity", bodyHtml: "{{message}}" }
-  },
-  themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
-  aboutPage: { enabled: true, title: 'About', contentHtml: '' },
-  privacyPage: { enabled: true, title: 'Privacy', contentHtml: '' },
-  termsPage: { enabled: true, title: 'Terms', contentHtml: '' },
-  enableMfa: false
-});
+export const getSystemSettings = (): SystemSettings => {
+  const defaults: SystemSettings = {
+    smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
+    emailTemplates: {
+      mfa: { enabled: true, subject: "Your Verification Code", bodyHtml: "Code: {{code}}" },
+      invite: { enabled: true, subject: "OpenStudbook Invite", bodyHtml: "Welcome to {{orgName}}" },
+      notification: { enabled: true, subject: "New Activity", bodyHtml: "{{message}}" }
+    },
+    themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
+    aboutPage: { enabled: true, title: 'About', contentHtml: '' },
+    privacyPage: { enabled: true, title: 'Privacy', contentHtml: '' },
+    termsPage: { enabled: true, title: 'Terms', contentHtml: '' },
+    enableMfa: false
+  };
+  
+  const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
+  
+  // Explicitly merge to ensure all objects like aboutPage exist even if stored data is from an older version
+  return {
+    ...defaults,
+    ...stored,
+    emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) },
+    aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) },
+    privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) },
+    termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) },
+    landingPageConfig: stored.landingPageConfig || defaults.landingPageConfig
+  };
+};
 
 export const saveSystemSettings = (s: SystemSettings, skipSync = false) => {
   set(KEYS.SETTINGS, s);

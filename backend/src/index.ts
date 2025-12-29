@@ -77,7 +77,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.14' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.15' }));
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
   const { to, subject, html } = req.body;
@@ -172,18 +172,11 @@ app.post('/api/login', async (req: any, res: any) => {
        }
     }
 
-    // --- CRITICAL: Ensure Organization has a Project ---
     if (actualOrgId) {
        const projectCount = await (prisma as any).project.count({ where: { org_id: actualOrgId } });
        if (projectCount === 0) {
-          console.log(`[LOGIN] Creating default project for Org: ${actualOrgId}`);
           await (prisma as any).project.create({
-             data: {
-                id: `p-def-${Date.now()}`,
-                org_id: actualOrgId,
-                name: 'Main Collection',
-                description: 'Automatically created default collection.'
-             }
+             data: { id: `p-def-${Date.now()}`, org_id: actualOrgId, name: 'Main Collection', description: 'Automatically created default collection.' }
           });
        }
     }
@@ -219,25 +212,63 @@ const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id, name: p.name, des
 const prepUser = (u: any) => ({ id: u.id, org_id: u.orgId || u.org_id, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status, password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids });
 const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
 const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
+const prepEvent = (e: any) => ({ id: e.id, species_id: e.species_id, sire_id: e.sire_id, dam_id: e.dam_id, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspring_ids });
+const prepLoan = (l: any) => ({ id: l.id, partner_org_id: l.partner_org_id, proposer_org_id: l.proposer_org_id, role: l.role, start_date: l.start_date, end_date: l.end_date, status: l.status, individual_ids: l.individual_ids, terms: l.terms, notification_recipient_id: l.notification_recipient_id, change_request: l.change_request });
+const prepPartnership = (p: any) => ({ id: p.id, org_id_1: p.org_id_1, org_id_2: p.org_id_2, status: p.status, established_date: p.established_date });
+const prepLanguage = (l: any) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.is_default, manual_overrides: l.manual_overrides, is_deleted: l.is_deleted });
+const prepAppConfig = (c: any) => ({ id: c.id, settings: c.settings });
 
 app.post('/rest/v1/organizations', createUpsertHandler((prisma as any).organization, prepOrg));
 app.post('/rest/v1/projects', createUpsertHandler((prisma as any).project, prepProject));
 app.post('/rest/v1/users', createUpsertHandler((prisma as any).user, prepUser));
 app.post('/rest/v1/species', createUpsertHandler((prisma as any).species, prepSpecies));
 app.post('/rest/v1/individuals', createUpsertHandler((prisma as any).individual, prepInd));
+app.post('/rest/v1/breeding_events', createUpsertHandler((prisma as any).breedingEvent, prepEvent));
+app.post('/rest/v1/breeding_loans', createUpsertHandler((prisma as any).breedingLoan, prepLoan));
+app.post('/rest/v1/partnerships', createUpsertHandler((prisma as any).partnership, prepPartnership));
+app.post('/rest/v1/languages', createUpsertHandler((prisma as any).language, prepLanguage, 'code'));
+app.post('/rest/v1/app_config', createUpsertHandler((prisma as any).appConfig, prepAppConfig));
+
+app.patch('/rest/v1/languages', authenticate, async (req: any, res: any) => {
+   const { code } = req.query;
+   if (!code) return res.status(400).json({ error: "Code required" });
+   try {
+      await (prisma as any).language.update({ where: { code: String(code) }, data: { is_deleted: true } });
+      res.json({ success: true });
+   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/rest/v1/organizations', authenticate, async (req: any, res: any) => {
+   const { id } = req.query;
+   if (!id) return res.status(400).json({ error: "ID required" });
+   try {
+      await (prisma as any).organization.update({ where: { id: String(id) }, data: { is_deleted: true } });
+      res.json({ success: true });
+   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    try {
-      const [orgs, projects, users, species, individuals, config, languages] = await Promise.all([
+      const [orgs, projects, users, species, individuals, config, languages, events, loans, partnerships] = await Promise.all([
          (prisma as any).organization.findMany({ where: { is_deleted: false } }),
          (prisma as any).project.findMany(),
          (prisma as any).user.findMany(),
          (prisma as any).species.findMany(),
          (prisma as any).individual.findMany(),
          (prisma as any).appConfig.findUnique({ where: { id: 'global-settings' } }),
-         (prisma as any).language?.findMany({ where: { is_deleted: false } }) || []
+         (prisma as any).language?.findMany({ where: { is_deleted: false } }) || [],
+         (prisma as any).breedingEvent.findMany(),
+         (prisma as any).breedingLoan.findMany(),
+         (prisma as any).partnership.findMany()
       ]);
-      res.json({ success: true, data: { partners: orgs, projects, users, species, individuals, settings: config?.settings, languages } });
+      res.json({ 
+         success: true, 
+         data: { 
+            partners: orgs, projects, users, species, individuals, 
+            settings: config?.settings, languages, 
+            breeding_events: events, breeding_loans: loans, partnerships 
+         } 
+      });
    } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 });
 
