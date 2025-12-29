@@ -5,17 +5,8 @@ import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPush
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 
-// Improved API Configuration detection
-const getApiBaseUrl = () => {
-  if (typeof window === 'undefined') return 'http://localhost:3001';
-  const { hostname, protocol } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
-    return `${protocol}//${hostname}:3001`;
-  }
-  return '';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+// Simplified API Base URL - handled by Vite Proxy
+const API_BASE_URL = '';
 
 export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage };
 
@@ -239,7 +230,7 @@ export const login = async (email: string, pass: string): Promise<User | null> =
       return user;
     }
   } catch (e: any) {
-    console.warn(`[LOGIN DEBUG] Server unreachable:`, e.message);
+    console.warn(`[LOGIN DEBUG] Server unreachable or proxy fail:`, e.message);
   }
 
   // Local Fallback (Only works if DB has standard plain-text from old local-only mode)
@@ -340,6 +331,7 @@ export const regenerateDemoData = async () => {
     ];
 
     const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
+    // Fix: correct property name from life_expectancy_years to lifeExpectancyYears
     const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
 
     saveOrg(mockOrg, true);
