@@ -1,3 +1,4 @@
+
 import { LanguageConfig } from "../types";
 
 export const BASE_TRANSLATIONS = {
@@ -353,7 +354,7 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       add: "Tambah",
       overview: "Ringkasan",
       totalSpecies: "Total Spesies",
-      totalIndividuals: "Total Individu"
+      totalIndividu: "Total Individu"
     }
   }
 ];
