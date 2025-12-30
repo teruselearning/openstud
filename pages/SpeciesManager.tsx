@@ -52,7 +52,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     setImageStatus('FETCHING DATA...');
     
     try {
-      // 1. Fetch Biological Data
       const data = await fetchSpeciesData(formData.commonName, formData.type as SpeciesType, org?.location || '');
       let finalScientificName = formData.scientificName;
 
@@ -69,13 +68,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         });
       }
 
-      // 2. Automated Image Search (Wikimedia Priority)
       const searchQueryForImage = finalScientificName || formData.commonName;
       setImageStatus('SEARCHING WIKIMEDIA...');
       
       let finalImageUrl = await fetchWikimediaImage(searchQueryForImage);
 
-      // 3. Fallback to AI Image Generation
       if (!finalImageUrl) {
         setImageStatus('GENERATING AI ILLUSTRATION...');
         finalImageUrl = await generateSpeciesImage(formData.commonName, finalScientificName || '', formData.type as SpeciesType);
@@ -241,8 +238,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           
           <form onSubmit={handleSubmit} className="p-6 space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-               
-               {/* Left Column: Media */}
                <div className="md:col-span-4 space-y-6">
                   <div className="space-y-2">
                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Representative Image</label>
@@ -311,10 +306,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                   </div>
                </div>
 
-               {/* Right Column: Fields */}
                <div className="md:col-span-8 space-y-6">
-                  
-                  {/* Basic Taxonomy */}
                   <div className="space-y-4">
                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Core Taxonomy</h4>
@@ -345,16 +337,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      </div>
                   </div>
 
-                  {/* Biological Metrics */}
                   <div className="space-y-4 pt-4 border-t border-slate-100">
                      <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> Biological Metrics</h4>
                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-1">
-                           <label className="text-xs font-bold text-slate-500 uppercase">{formData.type === 'Plant' ? 'Years to Maturity' : 'Sexual Maturity (Yrs)'}</label>
+                           <label className="text-xs font-bold text-slate-500 uppercase">{formData.type === 'Plant' ? t('maturityFlowering') : t('sexualMaturity')}</label>
                            <input type="number" step="0.1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.sexualMaturityAgeYears} onChange={e => setFormData({...formData, sexualMaturityAgeYears: parseFloat(e.target.value)})} />
                         </div>
                         <div className="space-y-1">
-                           <label className="text-xs font-bold text-slate-500 uppercase">{t('lifeExpectancy')} (Yrs)</label>
+                           <label className="text-xs font-bold text-slate-500 uppercase">{t('lifeExpectancy')}</label>
                            <input type="number" step="1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.lifeExpectancyYears} onChange={e => setFormData({...formData, lifeExpectancyYears: parseFloat(e.target.value)})} />
                         </div>
                         {formData.type === 'Animal' ? (
@@ -377,7 +368,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      </div>
                   </div>
 
-                  {/* Seasonal Cycle */}
                   <div className="space-y-4 pt-4 border-t border-slate-100">
                      <h4 className="font-bold text-slate-800 flex items-center gap-2"><Calendar size={18} className="text-amber-500"/> {formData.type === 'Plant' ? t('floweringSeason') : t('breedingSeason')}</h4>
                      <div className="grid grid-cols-2 gap-4">
@@ -411,7 +401,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         </div>
       )}
 
-      {/* Species Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedSpecies.map(species => (
           <div key={species.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full">
@@ -436,11 +425,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
               <div className="grid grid-cols-2 gap-3 mb-5">
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
                     <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Maturity</span>
-                    <span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} yrs</span>
+                    <span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} {t('years')}</span>
                  </div>
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
                     <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Lifespan</span>
-                    <span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} yrs</span>
+                    <span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} {t('years')}</span>
                  </div>
               </div>
 
@@ -461,10 +450,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
          </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
          <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center animate-in zoom-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-8 text-center animate-in zoom-in duration-200">
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                   <AlertTriangle size={40}/>
                </div>

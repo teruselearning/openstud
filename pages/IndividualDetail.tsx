@@ -1,16 +1,16 @@
 
-
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg } from '../services/storage';
 import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, BreedingEvent, ExternalPartner, Partnership } from '../types';
 import { ArrowLeft, Scale, Activity, Syringe, Calendar, Save, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, Building2, ExternalLink } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
 
 const IndividualDetail: React.FC = () => {
+  const { t } = useContext(LanguageContext);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [individual, setIndividual] = useState<Individual | null>(null);
@@ -73,19 +73,16 @@ const IndividualDetail: React.FC = () => {
       const sp = allSpecies.find(s => s.id === ind.speciesId);
       setSpecies(sp || null);
 
-      // Load Breeding History
       const allEvents = getBreedingEvents();
       const relevantEvents = allEvents.filter(e => e.sireId === ind.id || e.damId === ind.id)
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setBreedingHistory(relevantEvents);
     }
     
-    // Load Partners for Transfer Modal
     setPartners(getNetworkPartners());
     setMyPartnerships(getPartnerships());
   }, [id]);
 
-  // Gallery Keyboard Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (galleryIndex === -1) return;
@@ -95,9 +92,8 @@ const IndividualDetail: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [galleryIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [galleryIndex]); 
 
-  // Geolocation for Plants
   useEffect(() => {
     if (species?.type === 'Plant' && navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
@@ -114,7 +110,6 @@ const IndividualDetail: React.FC = () => {
     }
   }, [species]);
 
-  // Initialize Map for Plants
   useEffect(() => {
     if (species?.type !== 'Plant' || !individual?.latitude || !individual?.longitude || !mapRef.current) return;
 
@@ -129,14 +124,12 @@ const IndividualDetail: React.FC = () => {
 
     const map = leafletMap.current;
     
-    // Clear existing layers to avoid duplicates on re-renders
     map.eachLayer((layer: any) => {
       if (layer instanceof L.Marker) {
         map.removeLayer(layer);
       }
     });
 
-    // Plant Marker (Green)
     const plantIcon = L.divIcon({
       className: 'custom-div-icon',
       html: `<div style="background-color: #16a34a; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></div>`,
@@ -148,7 +141,6 @@ const IndividualDetail: React.FC = () => {
       .addTo(map)
       .bindPopup(`<b>${individual.name}</b><br>Plant Location`);
 
-    // User Marker (Blue Pulse) if available
     if (userLocation) {
       const userIcon = L.divIcon({
         className: 'custom-div-icon',
@@ -161,18 +153,15 @@ const IndividualDetail: React.FC = () => {
         .addTo(map)
         .bindPopup("You are here");
 
-      // Fit bounds to show both
       const bounds = L.latLngBounds([
         [individual.latitude, individual.longitude],
         [userLocation.lat, userLocation.lng]
       ]);
       map.fitBounds(bounds.pad(0.2));
     } else {
-      // Just center on plant if no user loc yet
       map.setView([individual.latitude, individual.longitude], 15);
     }
 
-    // Fix rendering issues
     setTimeout(() => map.invalidateSize(), 200);
 
   }, [individual, userLocation, species]);
@@ -185,10 +174,8 @@ const IndividualDetail: React.FC = () => {
     setIndividual(updatedInd);
   };
   
-  // Helper to send notification if individual is part of a loan with a nominated recipient
   const checkAndNotifyLoanRecipient = (ind: Individual, logType: string, detail: string) => {
      const loans = getBreedingLoans();
-     // Find active loan where this individual is included AND a recipient is set
      const activeLoan = loans.find(l => 
         l.individualIds.includes(ind.id) && 
         l.status === 'Active' && 
@@ -230,21 +217,16 @@ const IndividualDetail: React.FC = () => {
       imageUrl: weightForm.imageUrl
     };
 
-    // Sort chronologically
     const newHistory = [...(individual.weightHistory || []), newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     const updatedInd = {
       ...individual,
-      // Only update current weight if a new weight was provided
       weightKg: hasWeight ? Number(weightForm.weightKg) : individual.weightKg,
       weightHistory: newHistory
     };
 
     saveUpdate(updatedInd);
-    
-    // Notify if needed
     checkAndNotifyLoanRecipient(updatedInd, 'Weight Log', `${newRecord.weightKg} kg recorded on ${newRecord.date}`);
-    
     setShowWeightModal(false);
     setWeightForm({ date: new Date().toISOString().split('T')[0], weightKg: '', note: '', imageUrl: '' });
   };
@@ -269,10 +251,7 @@ const IndividualDetail: React.FC = () => {
     };
 
     saveUpdate(updatedInd);
-    
-    // Notify
     checkAndNotifyLoanRecipient(updatedInd, 'Growth Log', `${newRecord.heightCm} cm recorded on ${newRecord.date}`);
-
     setShowGrowthModal(false);
     setGrowthForm({ date: new Date().toISOString().split('T')[0], heightCm: '', note: '', imageUrl: '' });
   };
@@ -289,7 +268,7 @@ const IndividualDetail: React.FC = () => {
       performedBy: healthForm.performedBy
     };
 
-    const newHistory = [...(individual.healthHistory || []), newRecord].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const newHistory = [...(individual.healthHistory || []), newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     const updatedInd = {
       ...individual,
@@ -297,10 +276,7 @@ const IndividualDetail: React.FC = () => {
     };
 
     saveUpdate(updatedInd);
-    
-    // Notify
     checkAndNotifyLoanRecipient(updatedInd, 'Health Record', `${newRecord.type}: ${newRecord.description}`);
-
     setShowHealthModal(false);
     setHealthForm({ date: new Date().toISOString().split('T')[0], type: 'Checkup', description: '', performedBy: '' });
   };
@@ -333,36 +309,30 @@ const IndividualDetail: React.FC = () => {
 
   const handleEditProfile = () => {
     if (individual) {
-      // Pass returnTo path in state so IndividualManager knows where to send us back
       navigate('/individuals', { 
         state: { 
           editId: individual.id, 
-          returnTo: window.location.hash.substring(1) // Get current hash path
+          returnTo: window.location.hash.substring(1) 
         } 
       });
     }
   };
 
-  // Helper to determine the best image to show
   const getDisplayImage = () => {
     if (!individual) return '';
     const sp = species;
     const isPattern = (url?: string) => !url || url.startsWith('data:image/svg+xml');
     
-    // 1. Real Main Image (User uploaded)
     if (individual.imageUrl && !isPattern(individual.imageUrl)) return individual.imageUrl;
     
-    // 2. Real History Image (from logs)
     const logs = [...(individual.weightHistory || []), ...(individual.growthHistory || [])]
       .filter(r => r.imageUrl && !isPattern(r.imageUrl))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     if (logs.length > 0) return logs[0].imageUrl!;
 
-    // 3. Real Species Image
     if (sp?.imageUrl && !isPattern(sp.imageUrl)) return sp.imageUrl;
 
-    // 4. Fallbacks: Main Pattern -> Species Pattern -> Generated
     return individual.imageUrl || sp?.imageUrl || generatePattern(individual.name);
   };
 
@@ -373,7 +343,6 @@ const IndividualDetail: React.FC = () => {
   const displayImage = getDisplayImage();
   const myOrg = getOrg();
 
-  // Filter my partners for transfer dropdown
   const myActivePartners = partners.filter(p => 
      myPartnerships.some(rel => 
         (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || 
@@ -381,7 +350,6 @@ const IndividualDetail: React.FC = () => {
      )
   );
 
-  // Prepare chart data
   const weightData = individual.weightHistory
       ?.filter(w => w.weightKg !== undefined && w.weightKg !== null)
       .map(w => ({ date: w.date, value: w.weightKg })) || [];
@@ -390,7 +358,6 @@ const IndividualDetail: React.FC = () => {
   const chartData = isPlant ? growthData : weightData;
   const showGraph = chartData.length >= 2;
 
-  // Prepare Gallery Data
   const historySource = isPlant ? individual.growthHistory : individual.weightHistory;
   const galleryRecords = [...(historySource || [])]
     .reverse() 
@@ -410,7 +377,6 @@ const IndividualDetail: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button onClick={() => navigate('/individuals')} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-600">
@@ -474,10 +440,7 @@ const IndividualDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column: Stats & Profile */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
              <div className="h-64 bg-slate-100 relative">
@@ -529,7 +492,7 @@ const IndividualDetail: React.FC = () => {
                    <span className="text-slate-500 text-sm">Age</span>
                    <span className="text-slate-900 font-medium text-sm">
                      {individual.birthDate 
-                       ? (new Date(individual.isDeceased && individual.deathDate ? individual.deathDate : Date.now()).getFullYear() - new Date(individual.birthDate).getFullYear()) + ' yrs' 
+                       ? (new Date(individual.isDeceased && individual.deathDate ? individual.deathDate : Date.now()).getFullYear() - new Date(individual.birthDate).getFullYear()) + ' years' 
                        : 'Unknown'}
                    </span>
                 </div>
@@ -555,7 +518,6 @@ const IndividualDetail: React.FC = () => {
              </div>
           </div>
 
-          {/* Location Map for Plants */}
           {isPlant && individual.latitude && individual.longitude && (
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                <div className="flex items-center gap-2 mb-3 text-slate-900 font-bold text-sm">
@@ -582,10 +544,8 @@ const IndividualDetail: React.FC = () => {
           )}
         </div>
 
-        {/* Center/Right: Charts & Logs */}
         <div className="lg:col-span-2 space-y-6">
           
-          {/* Weight / Growth Section */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
              <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center space-x-2 text-emerald-700">
@@ -624,7 +584,6 @@ const IndividualDetail: React.FC = () => {
 
              <div className="max-h-64 overflow-y-auto border-t border-slate-100 pt-4">
                 {isPlant ? (
-                  // Plant Growth List
                   <div className="space-y-3">
                     {[...(individual.growthHistory || [])].reverse().map(rec => (
                       <div key={rec.id} className="flex gap-4 items-start p-3 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-100 transition-all">
@@ -654,7 +613,6 @@ const IndividualDetail: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  // Animal Weight List
                   <div className="space-y-3">
                     {[...(individual.weightHistory || [])].reverse().map(rec => (
                       <div key={rec.id} className="flex gap-4 items-start p-3 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-100 transition-all">
@@ -691,7 +649,6 @@ const IndividualDetail: React.FC = () => {
              </div>
           </div>
 
-          {/* Breeding History Card */}
           {!isPlant && (
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 <div className="flex items-center gap-2 text-pink-600 mb-6">
@@ -704,7 +661,7 @@ const IndividualDetail: React.FC = () => {
                       <p className="text-center text-slate-400 italic py-4">No breeding events recorded.</p>
                    ) : (
                       breedingHistory.map(evt => {
-                         const partner = partners.find(p => p.speciesIds.includes(evt.speciesId)); // Basic inference, technically event should store loc
+                         const partner = partners.find(p => p.speciesIds.includes(evt.speciesId)); 
                          const isLoanEvent = individual.loanStatus === 'Loaned Out'; 
                          
                          return (
@@ -731,7 +688,6 @@ const IndividualDetail: React.FC = () => {
              </div>
           )}
 
-          {/* Health Section - Only for Animals */}
           {!isPlant && (
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                <div className="flex justify-between items-center mb-6">
@@ -780,10 +736,8 @@ const IndividualDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Gallery Modal */}
       {galleryIndex !== -1 && galleryRecords[galleryIndex] && (
         <div className="fixed inset-0 bg-black/95 z-[3000] flex flex-col justify-center items-center animate-in fade-in duration-200">
-           {/* Close Button */}
            <button 
              onClick={() => setGalleryIndex(-1)}
              className="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 p-2 rounded-full backdrop-blur transition-colors z-[3010]"
@@ -791,7 +745,6 @@ const IndividualDetail: React.FC = () => {
              <X size={24} />
            </button>
 
-           {/* Navigation Buttons */}
            <button 
              onClick={() => navigateGallery(-1)}
              disabled={galleryIndex === 0}
@@ -808,7 +761,6 @@ const IndividualDetail: React.FC = () => {
              <ChevronRight size={32} />
            </button>
 
-           {/* Main Image */}
            <div className="w-full h-full flex items-center justify-center p-4 md:p-12">
               <img 
                 src={galleryRecords[galleryIndex].imageUrl} 
@@ -817,7 +769,6 @@ const IndividualDetail: React.FC = () => {
               />
            </div>
 
-           {/* Caption / Details */}
            <div className="absolute bottom-6 bg-black/60 backdrop-blur-md text-white px-6 py-4 rounded-xl max-w-md text-center border border-white/10 z-[3010]">
               <div className="font-bold text-lg mb-1">
                  {galleryRecords[galleryIndex].date}
@@ -844,10 +795,9 @@ const IndividualDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Transfer Modal */}
       {showTransferModal && (
          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="bg-white rounded-xl shadow-xl max-md w-full p-6">
                <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><ArrowRightLeft size={20}/></div>
                   <h3 className="text-lg font-bold text-slate-900">Transfer to Partner</h3>
@@ -913,7 +863,6 @@ const IndividualDetail: React.FC = () => {
          </div>
       )}
 
-      {/* Weight Modal */}
       {showWeightModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
@@ -967,7 +916,6 @@ const IndividualDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Growth Modal */}
       {showGrowthModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
@@ -1022,7 +970,6 @@ const IndividualDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Health Modal */}
       {showHealthModal && !isPlant && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">

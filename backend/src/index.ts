@@ -24,10 +24,12 @@ dotenv.config();
 });
 
 const prisma = new PrismaClient();
-/* Fixed: Cast app to any to resolve multiple overload resolution errors for use() and get() */
 const app: any = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
+
+// Simple in-memory store for reset codes (In prod, use a DB table)
+const resetCodes = new Map<string, { code: string, expires: number }>();
 
 // 1. Core Middleware
 app.use(cors({ origin: '*' }));
@@ -37,7 +39,7 @@ app.use(morgan('dev'));
 
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return next();
+  if (!authHeader) return res.status(401).json({ error: "No token provided" });
   const token = authHeader.split(' ')[1];
   try {
     (req as any).user = jwt.verify(token, JWT_SECRET);
@@ -45,6 +47,22 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   } catch (e) {
     return res.status(401).json({ error: "Invalid token" });
   }
+};
+
+// Helper for dynamic SMTP transporter
+const getTransporter = async () => {
+  const config = await (prisma as any).appConfig.findUnique({ where: { id: 'global-settings' } });
+  const s = config?.settings || {};
+  if (!s.smtpHost) return null;
+  return nodemailer.createTransport({
+    host: s.smtpHost,
+    port: s.smtpPort || 587,
+    secure: s.smtpSecure || false,
+    auth: {
+      user: s.smtpUser,
+      pass: s.smtpPass
+    }
+  });
 };
 
 const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
@@ -65,7 +83,7 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
     }
 };
 
-// ... prep helpers ...
+// --- Mappers ---
 const prepOrg = (o: any) => ({ 
   id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, 
   founded_year: o.founded_year, description: o.description, focus: o.focus, 
@@ -88,10 +106,27 @@ const prepPartnership = (p: any) => ({ id: p.id, org_id_1: p.org_id_1, org_id_2:
 const prepLanguage = (l: any) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.is_default, manual_overrides: l.manual_overrides, is_deleted: l.is_deleted });
 const prepAppConfig = (c: any) => ({ id: c.id, settings: c.settings });
 
-// 2. Register API Routes explicitly before static serving
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.18' }));
+// 2. Auth & Registration Routes
+app.post('/api/register', async (req: any, res: any) => {
+    const { orgName, userName, email, focus, password } = req.body;
+    const orgId = `org-${Date.now()}`;
+    const userId = `u-${Date.now()}`;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    try {
+        const org = await (prisma as any).organization.create({
+            data: { id: orgId, name: orgName, focus, location: 'Unknown', is_org_public: false, is_species_public: false, obscure_location: false, founded_year: new Date().getFullYear(), description: '', allow_breeding_requests: false }
+        });
+        const user = await (prisma as any).user.create({
+            data: { id: userId, org_id: orgId, name: userName, email: email.toLowerCase().trim(), role: 'Admin', status: 'Active', password: hashedPassword }
+        });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: orgId }, JWT_SECRET, { expiresIn: '30d' });
+        res.json({ token, user, org });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
-// ... auth routes ...
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
   const cleanEmail = email?.toLowerCase().trim();
@@ -111,7 +146,55 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// 3. REST Data Endpoints
+app.post('/api/auth/forgot-password', async (req: any, res: any) => {
+   const { email } = req.body;
+   const user = await (prisma as any).user.findUnique({ where: { email: email.toLowerCase().trim() } });
+   if (!user) return res.json({ success: true, message: "If that email exists, a code has been sent." });
+
+   const code = Math.floor(100000 + Math.random() * 900000).toString();
+   resetCodes.set(email.toLowerCase().trim(), { code, expires: Date.now() + 3600000 });
+   
+   console.log(`[AUTH] Password reset code for ${email}: ${code}`);
+   res.json({ success: true, message: "Recovery code generated. Check server logs in this environment." });
+});
+
+app.post('/api/auth/reset-password', async (req: any, res: any) => {
+    const { email, code, newPassword } = req.body;
+    const entry = resetCodes.get(email.toLowerCase().trim());
+    if (!entry || entry.code !== code || entry.expires < Date.now()) {
+        return res.status(400).json({ success: false, error: "Invalid or expired code." });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await (prisma as any).user.update({
+        where: { email: email.toLowerCase().trim() },
+        data: { password: hashedPassword }
+    });
+    resetCodes.delete(email.toLowerCase().trim());
+    res.json({ success: true });
+});
+
+// 3. Email Routes
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, subject, html } = req.body;
+    const transporter = await getTransporter();
+    if (!transporter) return res.status(400).json({ error: "SMTP not configured" });
+    try {
+        await transporter.sendMail({ from: process.env.SMTP_FROM || 'no-reply@openstudbook.org', to, subject, html });
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const { to } = req.body;
+    const transporter = await getTransporter();
+    if (!transporter) return res.status(400).json({ error: "SMTP not configured" });
+    try {
+        await transporter.sendMail({ from: process.env.SMTP_FROM || 'no-reply@openstudbook.org', to, subject: "SMTP Test Connection", text: "Connection successful!" });
+        res.json({ success: true, message: "Test email sent!" });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// 4. REST Data Endpoints
 app.post('/rest/v1/organizations', createUpsertHandler((prisma as any).organization, prepOrg));
 app.post('/rest/v1/projects', createUpsertHandler((prisma as any).project, prepProject));
 app.post('/rest/v1/users', createUpsertHandler((prisma as any).user, prepUser));
@@ -143,6 +226,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       });
    } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 });
+
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.19' }));
 
 // 4. Static Serving
 app.use(express.static(path.join(__dirname, '../../dist')));
