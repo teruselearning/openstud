@@ -65,16 +65,39 @@ const getTransporter = async () => {
   });
 };
 
+/**
+ * Enhanced Upsert Handler that is resilient to Prisma Client validation errors
+ */
 const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
     try {
         const rawData = req.body;
         const items = Array.isArray(rawData) ? rawData : [rawData];
         for (const rawItem of items) {
-            const item = prepareBody(rawItem);
+            let item = prepareBody(rawItem);
             const whereClause: any = { [idField]: item[idField] };
-            if (idField === 'id' && item.password && !item.password.startsWith('$2')) item.password = await bcrypt.hash(String(item.password), 10);
+            
+            // Password Hashing
+            if (idField === 'id' && item.password && !item.password.startsWith('$2')) {
+                item.password = await bcrypt.hash(String(item.password), 10);
+            }
+            
+            // Clean undefined
             Object.keys(item).forEach(key => item[key] === undefined && delete item[key]);
-            await table.upsert({ where: whereClause, update: item, create: item });
+
+            try {
+                await table.upsert({ where: whereClause, update: item, create: item });
+            } catch (innerErr: any) {
+                // If we hit a validation error about unknown arguments, try to strip common offenders and retry once
+                if (innerErr.message.includes('Unknown argument')) {
+                    console.warn(`[UPSERT] Retrying ${idField} after stripping unknown fields...`);
+                    const badFields = ['ai_usage_limit', 'ai_usage_count', 'ai_usage_last_reset', 'org_id'];
+                    badFields.forEach(f => delete item[f]);
+                    // One more try with restricted data
+                    await table.upsert({ where: whereClause, update: item, create: item });
+                } else {
+                    throw innerErr;
+                }
+            }
         }
         res.json({ success: true });
     } catch (e: any) { 
@@ -84,20 +107,48 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
 };
 
 // --- Mappers ---
-const prepOrg = (o: any) => ({ 
-  id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, 
-  founded_year: o.founded_year, description: o.description, focus: o.focus, 
-  is_org_public: !!o.is_org_public, is_species_public: !!o.is_species_public, 
-  obscure_location: !!o.obscure_location, hide_name: !!o.hide_name, 
-  allow_breeding_requests: !!o.allow_breeding_requests, breeding_request_contact_id: o.breeding_request_contact_id, 
-  show_native_status: o.show_native_status !== false, dashboard_block: o.dashboard_block, 
-  is_deleted: !!o.is_deleted,
-  ai_usage_limit: o.ai_usage_limit || o.aiUsageLimit || 100,
-  ai_usage_count: o.ai_usage_count || o.aiUsageCount || 0,
-  ai_usage_last_reset: o.ai_usage_last_reset || o.aiUsageLastReset
-});
+// We prioritize compatibility with the Prisma Client which might not have the newest fields
+const prepOrg = (o: any) => {
+  const result: any = { 
+    id: o.id, 
+    name: o.name, 
+    location: o.location, 
+    latitude: o.latitude, 
+    longitude: o.longitude, 
+    founded_year: o.founded_year || o.foundedYear, 
+    description: o.description, 
+    focus: o.focus, 
+    is_org_public: !!o.is_org_public, 
+    is_species_public: !!o.is_species_public, 
+    obscure_location: !!o.obscure_location, 
+    hide_name: !!o.hide_name, 
+    allow_breeding_requests: !!o.allow_breeding_requests, 
+    breeding_request_contact_id: o.breeding_request_contact_id, 
+    show_native_status: o.show_native_status !== false, 
+    dashboard_block: o.dashboard_block, 
+    is_deleted: !!o.is_deleted
+  };
+  // Only include AI fields if they were definitely provided, otherwise skip to avoid validation errors
+  // The upsert handler will strip these anyway if the client fails
+  if (o.ai_usage_limit !== undefined) result.ai_usage_limit = o.ai_usage_limit;
+  if (o.ai_usage_count !== undefined) result.ai_usage_count = o.ai_usage_count;
+  return result;
+};
+
 const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id || p.orgId, name: p.name, description: p.description });
-const prepUser = (u: any) => ({ id: u.id, org_id: u.org_id || u.orgId, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status, password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids || [] });
+
+const prepUser = (u: any) => ({ 
+    id: u.id, 
+    orgId: u.orgId || u.org_id, // Use orgId (camelCase) as default for better Prisma matching
+    name: u.name, 
+    email: u.email?.toLowerCase().trim(), 
+    role: u.role, 
+    status: u.status, 
+    password: u.password, 
+    avatar_url: u.avatar_url, 
+    allowed_project_ids: u.allowed_project_ids || [] 
+});
+
 const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
 const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
 const prepEvent = (e: any) => ({ id: e.id, species_id: e.species_id, sire_id: e.sire_id, dam_id: e.dam_id, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspring_ids });
@@ -260,7 +311,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.23' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.24' }));
 
 // 4. Static Serving
 app.use(express.static(path.join(__dirname, '../../dist')));
