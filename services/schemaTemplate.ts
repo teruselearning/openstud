@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS public.organizations (
   breeding_request_contact_id text,
   show_native_status boolean,
   dashboard_block jsonb,
+  ai_usage_limit integer DEFAULT 100,
+  ai_usage_count integer DEFAULT 0,
+  ai_usage_last_reset text,
   is_deleted boolean DEFAULT false
 );
 
