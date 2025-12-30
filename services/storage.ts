@@ -1,4 +1,5 @@
-import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig } from '../types';
+
+import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
 import { hashPassword } from './crypto';
@@ -47,59 +48,43 @@ const get = <T>(key: string, defaultVal: T): T => {
 };
 
 const set = <T>(key: string, val: T) => {
-  if (typeof window !== 'undefined') localStorage.setItem(key, JSON.stringify(val));
-};
-
-// Helper for parsing JSON safely from fetch responses
-const safeParseJson = async (response: Response) => {
-  const contentType = response.headers.get("content-type");
-  if (contentType && contentType.includes("application/json")) {
-     try {
-        return await response.json();
-     } catch (e) {
-        console.error("[STORAGE] JSON parse error:", e);
-        throw new Error("Invalid response from server.");
-     }
-  }
-  const text = await response.text();
-  console.warn("[STORAGE] Non-JSON response received:", text.substring(0, 200));
-  throw new Error(`Server returned unexpected content (Status: ${response.status})`);
-};
-
-export const exportFullData = () => {
-  const data: any = {};
-  Object.keys(KEYS).forEach(k => {
-    data[k] = get((KEYS as any)[k], null);
-  });
-  return data;
-};
-
-export const importFullData = (data: any) => {
-  Object.keys(data).forEach(k => {
-    if ((KEYS as any)[k]) {
-      set((KEYS as any)[k], data[k]);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(key, JSON.stringify(val));
+    } catch (e) {
+      if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+         console.warn("Storage quota exceeded. Attempting to clear non-essential data.");
+         localStorage.removeItem(KEYS.BACKUP); // Clear backups to make room
+         localStorage.setItem(key, JSON.stringify(val));
+      }
     }
-  });
-};
-
-export const exportDataAsCSV = () => {
-  const species = getSpecies();
-  const individuals = getIndividuals();
-  let csv = "Type,Common Name,Scientific Name,ID,Name,Sex,Birth Date,Weight\n";
-  individuals.forEach(i => {
-    const s = species.find(sp => sp.id === i.speciesId);
-    csv += `Individual,${s?.commonName || ''},${s?.scientificName || ''},${i.studbookId},${i.name},${i.sex},${i.birthDate},${i.weightKg}\n`;
-  });
-  return csv;
+  }
 };
 
 export const getSystemSettings = (): SystemSettings => {
   const defaults: SystemSettings = {
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
     emailTemplates: {
-      mfa: { enabled: true, subject: "Your Verification Code", bodyHtml: "Code: {{code}}" },
-      invite: { enabled: true, subject: "OpenStudbook Invite", bodyHtml: "Welcome to {{orgName}}" },
-      notification: { enabled: true, subject: "New Activity", bodyHtml: "{{message}}" }
+      registration: { 
+        enabled: true, 
+        subject: "Verify your OpenStudbook account", 
+        bodyHtml: "<h3>Welcome!</h3><p>Your verification code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>" 
+      },
+      mfa: { 
+        enabled: true, 
+        subject: "Your Login Code", 
+        bodyHtml: "<p>Your security code is: <strong>{{code}}</strong></p>" 
+      },
+      invite: { 
+        enabled: true, 
+        subject: "You've been invited to join {{orgName}}", 
+        bodyHtml: "<h3>Invitation</h3><p>You have been invited to join the studbook management team at {{orgName}}.</p>" 
+      },
+      notification: { 
+        enabled: true, 
+        subject: "OpenStudbook Activity Alert", 
+        bodyHtml: "<p>New activity in your project:</p><blockquote>{{message}}</blockquote>" 
+      }
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
     aboutPage: { enabled: true, title: 'About', contentHtml: '' },
@@ -283,13 +268,78 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
 export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
+// Fix error in pages/OrgSettings.tsx on line 4: Module '"../services/storage"' has no exported member 'exportFullData'.
+/**
+ * Exports all organization data from local storage for backup.
+ */
+export const exportFullData = () => {
+  return {
+    org: getOrg(),
+    projects: getProjects(),
+    users: getUsers(),
+    species: getSpecies(),
+    individuals: getIndividuals(),
+    breedingEvents: getBreedingEvents(),
+    breedingLoans: getBreedingLoans(),
+    partnerships: getPartnerships(),
+    settings: getSystemSettings(),
+    languages: getLanguages()
+  };
+};
+
+// Fix error in pages/OrgSettings.tsx on line 4: Module '"../services/storage"' has no exported member 'importFullData'.
+/**
+ * Imports organization data into local storage.
+ */
+export const importFullData = (data: any) => {
+  if (data.org) saveOrg(data.org);
+  if (data.projects) saveProjects(data.projects);
+  if (data.users) saveUsers(data.users);
+  if (data.species) saveSpecies(data.species);
+  if (data.individuals) saveIndividuals(data.individuals);
+  if (data.breedingEvents) saveBreedingEvents(data.breedingEvents);
+  if (data.breedingLoans) saveBreedingLoans(data.breedingLoans);
+  if (data.partnerships) savePartnerships(data.partnerships);
+  if (data.settings) saveSystemSettings(data.settings);
+  if (data.languages) saveLanguages(data.languages);
+};
+
+// Fix error in pages/OrgSettings.tsx on line 4: Module '"../services/storage"' has no exported member 'exportDataAsCSV'.
+/**
+ * Exports species and individuals data as a CSV string.
+ */
+export const exportDataAsCSV = (): string => {
+  const species = getSpecies();
+  const individuals = getIndividuals();
+  
+  let csv = "Type,Common Name,Scientific Name,Studbook ID,Name,Sex,Birth Date,Weight (kg),Conservation Status\n";
+  
+  individuals.forEach(ind => {
+    const sp = species.find(s => s.id === ind.speciesId);
+    const row = [
+      sp?.type || 'Unknown',
+      sp?.commonName || 'Unknown',
+      sp?.scientificName || 'Unknown',
+      ind.studbookId,
+      ind.name,
+      ind.sex,
+      ind.birthDate || '',
+      ind.weightKg,
+      sp?.conservationStatus || ''
+    ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(",");
+    csv += row + "\n";
+  });
+  
+  return csv;
+};
+
 export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string = 'en-GB'): Promise<any> => {
   const response = await fetch(`${API_BASE_URL}/api/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orgName, userName, email, focus, password, lang })
   });
-  const data = await safeParseJson(response);
+  const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Registration failed");
   return data;
 };
@@ -300,7 +350,7 @@ export const confirmRegistration = async (email: string, code: string): Promise<
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: email.toLowerCase().trim(), code })
   });
-  const data = await safeParseJson(response);
+  const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Verification failed");
   
   const { token, user, org } = data;
@@ -334,7 +384,6 @@ export const login = async (email: string, pass: string): Promise<User | null> =
      if (user.password.startsWith('$2')) return null;
      const hashedInput = await hashPassword(pass);
      if (hashedInput === user.password) {
-        // CRITICAL: Ensure active organization context matches the user being logged into
         const partners = getNetworkPartners();
         const foundOrg = partners.find(p => p.id === user.orgId);
         if (foundOrg) {
@@ -353,7 +402,7 @@ export const forgotPassword = async (email: string): Promise<any> => {
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ email: email.toLowerCase().trim() })
       });
-      return await safeParseJson(response);
+      return await response.json();
    } catch (e: any) {
       return { success: false, error: e.message };
    }
@@ -366,7 +415,7 @@ export const resetPassword = async (email: string, code: string, newPassword: st
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ email: email.toLowerCase().trim(), code, newPassword })
       });
-      return await safeParseJson(response);
+      return await response.json();
    } catch (e: any) {
       return { success: false, error: e.message };
    }
@@ -396,17 +445,10 @@ export const sendMockNotification = (recipientId: string, title: string, message
    saveNotifications([{ id: `n-${Date.now()}`, recipientId, senderOrgName: 'System', title, message, date: new Date().toISOString().split('T')[0], isRead: false, type }, ...notifs]);
 };
 
-// Fix for Network.tsx error: Added generatePartnerInvite and redeemPartnerInvite
-/**
- * Generates a mock partnership invite code.
- */
 export const generatePartnerInvite = (): string => {
   return Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 };
 
-/**
- * Redeems a partnership code by linking the current org with an available external partner.
- */
 export const redeemPartnerInvite = (code: string): { success: boolean, message: string } => {
   const myOrg = getOrg();
   const partners = getNetworkPartners();
@@ -452,7 +494,6 @@ export const regenerateDemoData = async () => {
     const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
     const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
 
-    // Update Network Partners list to include the demo org so it can be found during local login
     const partners = getNetworkPartners();
     if (!partners.some(p => p.id === 'org-1')) {
        saveNetworkPartners([...partners, mockOrg as any]);

@@ -22,9 +22,9 @@ const speciesSchema = {
   required: ["scientificName", "conservationStatus"],
 };
 
-/* Correct Initialization as per guidelines: Always use process.env.API_KEY directly */
+// Fixed initialization of GoogleGenAI to use process.env.API_KEY directly as per guidelines.
 const getAiClient = (): GoogleGenAI => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 /**
@@ -88,7 +88,7 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
 
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
-    const apiKey = process.env.API_KEY || '';
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
       throw new Error("Gemini API Key is not configured in the host environment. Please check your .env file or hosting provider secrets.");
     }

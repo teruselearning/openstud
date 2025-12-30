@@ -41,33 +41,16 @@ const SuperAdmin: React.FC = () => {
     setSettings(current);
     setLanguages(getLanguages());
     
-    // Ensure Registration is the starting template
-    const regTpl = current.emailTemplates?.registration || {
-        subject: 'Verify your OpenStudbook account',
-        bodyHtml: `<div style="font-family: sans-serif; padding: 40px; background: #f8fafc;">
-            <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                <div style="padding: 32px; background: #059669; color: white; text-align: center;">
-                    <h1 style="margin: 0; font-size: 24px;">Welcome to OpenStudbook</h1>
-                </div>
-                <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
-                    <p>Hello {{userName}},</p>
-                    <p>To complete the registration for <strong>{{orgName}}</strong>, please enter the following verification code in your browser:</p>
-                    <div style="font-size: 32px; font-weight: bold; background: #f0fdf4; padding: 24px; text-align: center; border-radius: 12px; border: 2px dashed #059669; margin: 32px 0; color: #065f46; letter-spacing: 4px;">
-                        {{code}}
-                    </div>
-                    <p style="color: #64748b; font-size: 14px; margin-top: 32px;">If you didn't request this code, you can safely ignore this email.</p>
-                </div>
-            </div>
-        </div>`,
-        enabled: true
-    };
-    setEditingTemplate(regTpl);
+    // Default to currently selected template content from storage
+    const tpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
+    if (tpl) {
+       setEditingTemplate(tpl);
+    }
   }, []);
 
   const handleSaveAllEmailSettings = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
-    // Merge the currently editing template into the main settings object
     const finalSettings: SystemSettings = {
       ...settings,
       emailTemplates: {
@@ -83,16 +66,21 @@ const SuperAdmin: React.FC = () => {
   };
   
   const handleTemplateChange = (type: string) => {
-     // Persist current edits to the settings state before swapping view
-     const currentWithEdits = { 
-        ...settings, 
-        emailTemplates: { ...settings.emailTemplates, [selectedTemplate]: editingTemplate } 
+     // Persist local state of the current editor to settings state before switching
+     const updatedTemplates = { 
+        ...settings.emailTemplates, 
+        [selectedTemplate]: editingTemplate 
      };
-     setSettings(currentWithEdits);
      
      setSelectedTemplate(type);
-     const nextTpl = currentWithEdits.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true };
-     setEditingTemplate(nextTpl);
+     
+     // Load the new template data from the settings state
+     const nextTpl = updatedTemplates[type as keyof typeof updatedTemplates];
+     if (nextTpl) {
+        setEditingTemplate(nextTpl);
+     }
+     
+     setSettings(prev => ({ ...prev, emailTemplates: updatedTemplates }));
   };
 
   const handleRunSmtpTest = async () => {
@@ -100,7 +88,6 @@ const SuperAdmin: React.FC = () => {
     setIsTestingSmtp(true);
     setTestResult(null);
     
-    // Auto-save current SMTP settings before testing
     handleSaveAllEmailSettings();
 
     try {
@@ -186,24 +173,21 @@ const SuperAdmin: React.FC = () => {
                </div>
                
                <form onSubmit={handleSaveAllEmailSettings} className="grid grid-cols-1 gap-4 flex-1">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Host</label>
-                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. 127.0.0.1" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Host</label>
+                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.example.com" />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Port</label>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Port</label>
                       <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpPort || 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} />
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Username</label>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Username</label>
                       <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Password</label>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Password</label>
                       <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} />
                     </div>
                   </div>
@@ -222,7 +206,7 @@ const SuperAdmin: React.FC = () => {
                     <div className="flex gap-2">
                        <input 
                          className="flex-1 px-4 py-1.5 border border-slate-300 rounded-lg bg-white text-xs outline-none focus:ring-1 focus:ring-blue-500"
-                         placeholder="Test recipient email..."
+                         placeholder="Recipient email..."
                          value={testEmail}
                          onChange={e => setTestEmail(e.target.value)}
                        />
