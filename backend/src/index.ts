@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -40,10 +39,10 @@ app.use(morgan('dev'));
 
 /**
  * AUTO-INITIALIZE DATABASE
- * Ensures tables exist without requiring Prisma Push
+ * Ensures tables exist and initial config is present
  */
 const initDatabase = async () => {
-    console.log("Checking database tables...");
+    console.log("Initializing database...");
     try {
         await prisma.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS organizations (
@@ -166,15 +165,17 @@ const initDatabase = async () => {
             )
         `);
 
+        // Ensure default config row exists
+        await prisma.$executeRawUnsafe(`
+            INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')
+        `);
+
         console.log("Database initialized successfully.");
     } catch (e: any) {
-        console.error("Database initialization failed. Please verify your connection string in .env");
+        console.error("Database initialization failed. Check your connection string.");
         console.error(e.message);
     }
 };
-
-// Run init on start
-initDatabase();
 
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -191,7 +192,10 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 const getTransporter = async () => {
   const config: any = await prisma.$queryRawUnsafe(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
   const s = config?.[0]?.settings || {};
-  if (!s.smtpHost) return null;
+  if (!s.smtpHost) {
+      console.log("[SMTP] Outgoing mail skipped: Host not configured in System Admin settings.");
+      return null;
+  }
   return nodemailer.createTransport({
     host: s.smtpHost,
     port: s.smtpPort || 587,
@@ -216,20 +220,24 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
             expires: Date.now() + 1800000
         });
 
-        console.log(`[REGISTRATION] Code for ${cleanEmail}: ${code}`);
+        console.log(`[REGISTRATION] Verification Code for ${cleanEmail}: ${code}`);
         const transporter = await getTransporter();
         if (transporter) {
-            await transporter.sendMail({
-                from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
-                to: cleanEmail,
-                subject: "Verify your OpenStudbook account",
-                html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                        <h2 style="color: #059669;">Welcome to OpenStudbook!</h2>
-                        <p>To complete your registration for <strong>${orgName}</strong>, please enter the following verification code:</p>
-                        <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; padding: 15px; background: #f0fdf4; color: #065f46; text-align: center; border-radius: 5px; margin: 20px 0;">${code}</div>
-                        <p style="color: #666; font-size: 12px;">This code will expire in 30 minutes.</p>
-                    </div>`
-            });
+            try {
+                await transporter.sendMail({
+                    from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+                    to: cleanEmail,
+                    subject: "Verify your OpenStudbook account",
+                    html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                            <h2 style="color: #059669;">Welcome to OpenStudbook!</h2>
+                            <p>To complete your registration for <strong>${orgName}</strong>, please enter the following verification code:</p>
+                            <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; padding: 15px; background: #f0fdf4; color: #065f46; text-align: center; border-radius: 5px; margin: 20px 0;">${code}</div>
+                            <p style="color: #666; font-size: 12px;">This code will expire in 30 minutes.</p>
+                        </div>`
+                });
+            } catch (mailErr: any) {
+                console.error("[SMTP] Failed to send registration email:", mailErr.message);
+            }
         }
         res.json({ success: true, needsVerification: true, message: "Verification code sent to email." });
     } catch (e: any) {
@@ -242,7 +250,10 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
     const cleanEmail = email.toLowerCase().trim();
     const pending = pendingRegistrations.get(cleanEmail);
 
-    if (!pending || pending.code !== code || pending.expires < Date.now()) {
+    if (!pending) {
+        return res.status(400).json({ error: "No pending registration found for this email." });
+    }
+    if (pending.code !== code || pending.expires < Date.now()) {
         return res.status(400).json({ error: "Invalid or expired verification code." });
     }
 
@@ -253,29 +264,29 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Use Pure Raw SQL to insert, bypassing Client validation
+        // Execute inserts inside a transaction-like flow manually with raw SQL
+        // Using 0/1 for booleans to be extra safe with MySQL drivers in raw queries
         await prisma.$executeRawUnsafe(`
             INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public, obscure_location, is_deleted, ai_usage_limit, ai_usage_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, orgId, orgName, focus, 'Unknown', new Date().getFullYear(), false, false, false, false, 100, 0);
+            VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 100, 0)
+        `, orgId, orgName, focus, 'Unknown', new Date().getFullYear());
 
         await prisma.$executeRawUnsafe(`
             INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, userId, orgId, userName, cleanEmail, 'Admin', 'Active', hashedPassword, '[]');
+            VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')
+        `, userId, orgId, userName, cleanEmail, hashedPassword);
 
         pendingRegistrations.delete(cleanEmail);
 
         const token = jwt.sign({ id: userId, email: cleanEmail, role: 'Admin', orgId: orgId }, JWT_SECRET, { expiresIn: '30d' });
         
-        // Fetch created records via raw SQL
         const users: any = await prisma.$queryRawUnsafe(`SELECT * FROM users WHERE id = ?`, userId);
         const orgs: any = await prisma.$queryRawUnsafe(`SELECT * FROM organizations WHERE id = ?`, orgId);
 
         res.json({ token, user: users[0], org: orgs[0] });
     } catch (e: any) {
-        console.error("Verification DB Error:", e);
-        res.status(500).json({ error: "Database error during registration. Please ensure your connection is valid." });
+        console.error("DATABASE REGISTRATION ERROR:", e);
+        res.status(500).json({ error: `Database error during registration: ${e.message}. Please verify your MySQL connection.` });
     }
 });
 
@@ -301,7 +312,6 @@ app.post('/api/login', async (req: any, res: any, next: express.NextFunction) =>
   } catch (e: any) { next(e); }
 });
 
-// Generic UPSERT that is schema-agnostic (using Raw SQL)
 const rawUpsert = async (table: string, idField: string, item: any) => {
     const keys = Object.keys(item);
     const values = Object.values(item);
@@ -320,15 +330,12 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     
     try {
         for (const item of items) {
-            // Clean up incoming camelCase if needed, but assuming frontend sends snake_case for /rest/
             if (item.password && !item.password.startsWith('$2')) {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
-            // Allow JSON to be strings or objects
             Object.keys(item).forEach(k => {
                 if (typeof item[k] === 'object') item[k] = JSON.stringify(item[k]);
             });
-
             await rawUpsert(table, 'id', item);
         }
         res.json({ success: true });
@@ -356,7 +363,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.1.0-rawsql' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.1.1-rawsql' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 
@@ -368,9 +375,13 @@ app.get('*', (req: any, res: any) => {
 });
 
 app.use((err: any, req: any, res: any, next: any) => {
-  console.error("API ERROR:", err);
+  console.error("EXPRESS ERROR:", err);
   const status = err.status || 500;
   res.status(status).json({ error: err.message || "Internal Server Error", success: false });
 });
 
-app.listen(PORT, () => console.log(`Backend running on port ${PORT} in Raw SQL Mode`));
+// START SERVER
+(async () => {
+    await initDatabase();
+    app.listen(PORT, () => console.log(`Backend running on port ${PORT} in Raw SQL Mode`));
+})();
