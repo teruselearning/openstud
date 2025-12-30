@@ -8,18 +8,19 @@ const speciesSchema = {
   type: Type.OBJECT,
   properties: {
     scientificName: { type: Type.STRING, description: "The scientific (Latin) name of the species." },
+    type: { type: Type.STRING, description: "Whether this is an 'Animal' or a 'Plant'.", enum: ["Animal", "Plant"] },
     conservationStatus: { type: Type.STRING, description: "IUCN conservation status (e.g., Endangered, Vulnerable)." },
     sexualMaturityAgeYears: { type: Type.NUMBER, description: "Average age of sexual maturity in years." },
-    averageAdultWeightKg: { type: Type.NUMBER, description: "Average weight of an adult in Kilograms." },
+    averageAdultWeightKg: { type: Type.NUMBER, description: "Average weight of an adult in Kilograms (if Animal)." },
     lifeExpectancyYears: { type: Type.NUMBER, description: "Average life expectancy in years in captivity." },
-    breedingSeasonStart: { type: Type.INTEGER, description: "Start month of breeding season (1-12)." },
-    breedingSeasonEnd: { type: Type.INTEGER, description: "End month of breeding season (1-12)." },
+    breedingSeasonStart: { type: Type.INTEGER, description: "Start month of breeding season or flowering season (1-12)." },
+    breedingSeasonEnd: { type: Type.INTEGER, description: "End month of breeding season or flowering season (1-12)." },
     plantClassification: { type: Type.STRING, description: "If plant, 'Dioecious' or 'Monoecious'. Else 'N/A'." },
-    nativeStatusCountry: { type: Type.STRING, description: "Status in the organization's country (Native, Invasive, Introduced)." },
-    nativeStatusLocal: { type: Type.STRING, description: "Status in the local region (Native, Invasive, Introduced)." },
-    description: { type: Type.STRING, description: "Brief description." }
+    nativeStatusCountry: { type: Type.STRING, description: "Is this species Native, Introduced, or Invasive to the organization's country?" },
+    nativeStatusLocal: { type: Type.STRING, description: "Is this species Native, Introduced, or Invasive to the specific local city/region/area?" },
+    description: { type: Type.STRING, description: "Brief biological description." }
   },
-  required: ["scientificName", "conservationStatus"],
+  required: ["scientificName", "conservationStatus", "type"],
 };
 
 // Fixed initialization of GoogleGenAI to use process.env.API_KEY directly as per guidelines.
@@ -99,13 +100,14 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
     }
 
     const ai = getAiClient();
+    
     const locationPrompt = locationContext 
-      ? `The organization tracking this species is located in "${locationContext}".`
-      : `No location context provided.`;
+      ? `The organization tracking this species is located in "${locationContext}". Please determine if this species is Native, Invasive, or Introduced to that specific country AND that specific local area/region.`
+      : `No organization location context provided. Use general native range information.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Provide biological data for the ${type.toLowerCase()} "${commonName}". ${locationPrompt}. Return as JSON matching the schema.`,
+      contents: `Provide biological data for the species "${commonName}". Determine automatically if it is an Animal or a Plant. ${locationPrompt}. Return as JSON matching the schema.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,

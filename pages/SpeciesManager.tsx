@@ -54,13 +54,16 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     try {
       const data = await fetchSpeciesData(formData.commonName, formData.type as SpeciesType, org?.location || '');
       let finalScientificName = formData.scientificName;
+      let finalType = formData.type || 'Animal';
 
       if (data) {
         setFormData(prev => {
           finalScientificName = data.scientificName || prev.scientificName;
+          finalType = data.type || prev.type || 'Animal';
           return { 
             ...prev, 
             ...data,
+            type: finalType as SpeciesType,
             nativeStatusCountry: (data.nativeStatusCountry as any) || 'Unknown',
             nativeStatusLocal: (data.nativeStatusLocal as any) || 'Unknown',
             plantClassification: (data.plantClassification as any)
@@ -75,7 +78,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
       if (!finalImageUrl) {
         setImageStatus('GENERATING AI ILLUSTRATION...');
-        finalImageUrl = await generateSpeciesImage(formData.commonName, finalScientificName || '', formData.type as SpeciesType);
+        finalImageUrl = await generateSpeciesImage(formData.commonName, finalScientificName || '', finalType as SpeciesType);
       }
 
       if (finalImageUrl) {
