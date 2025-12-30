@@ -25,6 +25,7 @@ const SuperAdmin: React.FC = () => {
 
   const [settings, setSettings] = useState<SystemSettings>(getSystemSettings());
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   // Email Template State
   const [selectedTemplate, setSelectedTemplate] = useState<string>('registration');
@@ -47,17 +48,16 @@ const SuperAdmin: React.FC = () => {
     setSettings(current);
     setLanguages(getLanguages());
     
-    // Load default or saved template based on the current selection
     const initialTpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
     if (initialTpl) {
        setEditingTemplate(initialTpl);
     }
   }, [selectedTemplate]);
 
-  const handleSaveAllSettings = (e?: React.FormEvent) => {
+  const handleSaveAllSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setIsSaving(true);
     
-    // Merge current editor state into settings before saving
     const finalSettings: SystemSettings = {
       ...settings,
       emailTemplates: {
@@ -66,29 +66,28 @@ const SuperAdmin: React.FC = () => {
       }
     };
     
-    saveSystemSettings(finalSettings);
-    setSettings(finalSettings);
-    setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 3000);
+    try {
+      await saveSystemSettings(finalSettings);
+      setSettings(finalSettings);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+    } catch (err) {
+      console.error("Save settings failed", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
   
   const handleTemplateChange = (type: string) => {
-     // Save the one we are currently leaving
      const currentTemplates = { 
         ...settings.emailTemplates, 
         [selectedTemplate]: editingTemplate 
      };
-     
-     // Update selected key
      setSelectedTemplate(type);
-     
-     // Load the new one from state
      const nextTpl = currentTemplates[type as keyof typeof currentTemplates];
      if (nextTpl) {
         setEditingTemplate(nextTpl);
      }
-     
-     // Sync back to local settings state
      setSettings(prev => ({ ...prev, emailTemplates: currentTemplates }));
   };
 
@@ -97,8 +96,8 @@ const SuperAdmin: React.FC = () => {
     setIsTestingSmtp(true);
     setTestResult(null);
     
-    // Attempt to save settings before testing
-    handleSaveAllSettings();
+    // CRITICAL: Ensure settings are saved to backend before testing
+    await handleSaveAllSettings();
 
     try {
       await testSmtpConnection(testEmail);
@@ -244,8 +243,8 @@ const SuperAdmin: React.FC = () => {
                   </div>
                </form>
                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <button onClick={handleSaveAllSettings} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
-                     {settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
+                  <button onClick={handleSaveAllSettings} disabled={isSaving} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                     {isSaving ? <Loader2 size={16} className="animate-spin" /> : settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
                      <span>{settingsSaved ? 'Saved Successfully' : 'Save Mail Config'}</span>
                   </button>
                </div>
@@ -286,8 +285,8 @@ const SuperAdmin: React.FC = () => {
                   </div>
                </div>
                <div className="mt-6">
-                  <button onClick={handleSaveAllSettings} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
-                     {settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
+                  <button onClick={handleSaveAllSettings} disabled={isSaving} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                     {isSaving ? <Loader2 size={16} className="animate-spin" /> : settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
                      <span>{settingsSaved ? 'Saved Successfully' : 'Save Email Config'}</span>
                   </button>
                </div>
@@ -363,91 +362,11 @@ const SuperAdmin: React.FC = () => {
                </div>
             </div>
 
-            {/* STATIC PAGES */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 lg:col-span-2">
-               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
-                  <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><FileText size={20}/></div>
-                  <h3 className="font-extrabold text-lg text-slate-900">Static Pages (About / Privacy / Terms)</h3>
-               </div>
-               
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {['aboutPage', 'privacyPage', 'termsPage'].map((pKey) => {
-                     const page = settings[pKey as 'aboutPage' | 'privacyPage' | 'termsPage'];
-                     return (
-                        <div key={pKey} className="space-y-4">
-                           <div className="flex items-center justify-between">
-                              <h4 className="font-bold text-slate-800 capitalize">{pKey.replace('Page', '')} Page</h4>
-                              <input type="checkbox" checked={page.enabled} onChange={e => updateStaticPage(pKey as any, 'enabled', e.target.checked)} className="rounded text-amber-600" />
-                           </div>
-                           <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase block">Title</label>
-                              <input className="w-full px-3 py-1.5 border border-slate-300 rounded text-sm font-bold" value={page.title} onChange={e => updateStaticPage(pKey as any, 'title', e.target.value)} />
-                           </div>
-                           <div className="h-64 border border-slate-200 rounded-lg overflow-hidden">
-                              <RichTextEditor value={page.contentHtml} onChange={v => updateStaticPage(pKey as any, 'contentHtml', v)} height="100%" />
-                           </div>
-                        </div>
-                     )
-                  })}
-               </div>
-            </div>
-
-            {/* SECURITY & AI */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 lg:col-span-2">
-               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
-                  <div className="p-2 bg-red-100 text-red-600 rounded-lg"><Lock size={20}/></div>
-                  <h3 className="font-extrabold text-lg text-slate-900">Security & Integration</h3>
-               </div>
-               
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                     <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
-                        <div>
-                           <p className="font-bold text-slate-800">Two-Factor Authentication</p>
-                           <p className="text-xs text-slate-500">Require email codes for all logins</p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                           <input type="checkbox" className="sr-only peer" checked={settings.enableMfa} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
-                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                        </label>
-                     </div>
-                     <div className="space-y-3">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Google reCAPTCHA v2</h4>
-                        <div className="space-y-1">
-                           <label className="text-[10px] font-bold text-slate-500 uppercase block">Site Key</label>
-                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm" value={settings.recaptchaSiteKey || ''} onChange={e => setSettings({...settings, recaptchaSiteKey: e.target.value})} />
-                        </div>
-                        <div className="space-y-1">
-                           <label className="text-[10px] font-bold text-slate-500 uppercase block">Secret Key</label>
-                           <input type="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm" value={settings.recaptchaSecretKey || ''} onChange={e => setSettings({...settings, recaptchaSecretKey: e.target.value})} />
-                        </div>
-                     </div>
-                  </div>
-
-                  <div className="space-y-4">
-                     <div className="flex items-center gap-2 text-indigo-600">
-                        <Sparkles size={18}/>
-                        <h4 className="text-xs font-bold uppercase tracking-widest">AI Content Generation</h4>
-                     </div>
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block">Preferred Model</label>
-                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none" value={settings.aiModel || 'gemini-3-flash-preview'} onChange={e => setSettings({...settings, aiModel: e.target.value})}>
-                           <option value="gemini-3-flash-preview">Gemini 3 Flash (Fast & Cheap)</option>
-                           <option value="gemini-3-pro-preview">Gemini 3 Pro (Complex Reasoning)</option>
-                        </select>
-                     </div>
-                     <p className="text-xs text-slate-500 bg-indigo-50 p-3 rounded-lg leading-relaxed">
-                        AI features utilize the built-in Gemini API. Organisations have monthly limits configurable in their individual profiles.
-                     </p>
-                  </div>
-               </div>
-               
-               <div className="pt-6 border-t border-slate-100 flex justify-end">
-                  <button onClick={handleSaveAllSettings} className="bg-slate-900 hover:bg-slate-800 text-white px-10 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
-                     {settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
-                     <span>{settingsSaved ? 'All Settings Saved' : 'Save System Configuration'}</span>
-                  </button>
-               </div>
+            <div className="pt-6 lg:col-span-2 flex justify-end">
+               <button onClick={handleSaveAllSettings} disabled={isSaving} className="bg-slate-900 hover:bg-slate-800 text-white px-10 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
+                  <span>{settingsSaved ? 'All Settings Saved' : 'Save System Configuration'}</span>
+               </button>
             </div>
          </div>
       )}

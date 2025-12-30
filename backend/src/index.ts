@@ -252,33 +252,7 @@ const initDatabase = async () => {
 
         console.log("Database schema reconciliation complete. Tables ready.");
     } catch (e: any) {
-        if (e.message.includes('auth_gssapi_client')) {
-           console.error("\n==================================================================");
-           console.error("DATABASE AUTHENTICATION ERROR: 'auth_gssapi_client'");
-           console.error("Your database is using a plugin that is incompatible with Node.js.");
-           console.error("To fix this, run the following SQL command in your DB manager:");
-           console.error("\nALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '';");
-           console.error("FLUSH PRIVILEGES;");
-           console.error("==================================================================\n");
-        } 
-        else if (e.code === 'ER_ACCESS_DENIED_ERROR' || e.message.includes('Access denied')) {
-           console.error("\n==================================================================");
-           console.error("DATABASE ACCESS DENIED");
-           console.error(`User '${dbConfig.user}' could not connect (Password provided: ${dbConfig.password ? 'YES' : 'NO'})`);
-           console.error("\nFIX: Create a file named 'backend/.env' and add:");
-           console.error(`DATABASE_PASSWORD=your_actual_password`);
-           console.error("==================================================================\n");
-        }
-        else if (e.code === 'ER_BAD_DB_ERROR' || e.message.includes('Unknown database')) {
-            console.error("\n==================================================================");
-            console.error(`DATABASE '${dbConfig.database}' NOT FOUND`);
-            console.error("\nFIX: Run this SQL command in your database manager:");
-            console.error(`CREATE DATABASE ${dbConfig.database};`);
-            console.error("==================================================================\n");
-        }
-        else {
-           console.error("Critical: Database Schema Init Failed!", e.message);
-        }
+        console.error("Critical: Database Schema Init Failed!", e.message);
         process.exit(1);
     }
 };
@@ -299,7 +273,12 @@ const getTransporter = async () => {
   const db = getDb();
   try {
     const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
-    const s = rows?.[0]?.settings || {};
+    let s = rows?.[0]?.settings || {};
+    
+    // If settings comes back as a string (LONGTEXT fallback), parse it
+    if (typeof s === 'string') {
+       try { s = JSON.parse(s); } catch (e) { s = {}; }
+    }
     
     const host = s.smtpHost || process.env.SMTP_HOST;
     const port = s.smtpPort || Number(process.env.SMTP_PORT) || 587;
@@ -307,11 +286,14 @@ const getTransporter = async () => {
     const pass = s.smtpPass || process.env.SMTP_PASS;
     const secure = s.smtpSecure ?? (process.env.SMTP_SECURE === 'true');
 
-    if (!host) return null;
+    if (!host || host === '') return null;
     
     return nodemailer.createTransport({
       host, port, secure,
-      auth: (user && pass) ? { user, pass } : undefined
+      auth: (user && pass && user !== '' && pass !== '') ? { user, pass } : undefined,
+      tls: {
+         rejectUnauthorized: false
+      }
     });
   } catch (e) { return null; }
 };
@@ -352,7 +334,8 @@ app.post('/api/register', async (req: any, res: any) => {
         if (transporter) {
             try {
                 const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
-                const settings = configRows?.[0]?.settings || {};
+                let settings = configRows?.[0]?.settings || {};
+                if (typeof settings === 'string') settings = JSON.parse(settings);
                 const globalTpl = settings.emailTemplates?.registration;
 
                 const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ?`, [targetLang]);
@@ -411,7 +394,6 @@ app.post('/api/register/verify', async (req: any, res: any) => {
            VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')
         `, [userId, orgId, userName, cleanEmail, hashedPassword]);
 
-        // Create Default Project
         await db.execute(`
            INSERT INTO projects (id, org_id, name, description) 
            VALUES (?, ?, 'Default', 'Primary organization project')
@@ -454,7 +436,7 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
    const { to } = req.body;
    try {
       const transporter = await getTransporter();
-      if (!transporter) return res.status(400).json({ error: "SMTP not configured." });
+      if (!transporter) return res.status(400).json({ error: "SMTP not configured. Host is empty." });
       
       await transporter.sendMail({
          from: process.env.SMTP_FROM || '"OpenStudbook Test" <no-reply@openstudbook.org>',
@@ -465,6 +447,7 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
       });
       res.json({ success: true });
    } catch (e: any) {
+      console.error("SMTP Test Error:", e.message);
       res.status(500).json({ error: e.message });
    }
 });
@@ -501,12 +484,17 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
       
+      let settings = config[0]?.settings;
+      if (typeof settings === 'string') {
+         try { settings = JSON.parse(settings); } catch (e) {}
+      }
+
       res.json({ 
          success: true, 
          data: { 
            partners: orgs, projects, users, species, individuals, 
            breeding_events: events, breeding_loans: loans, partnerships,
-           languages: langs, settings: config[0]?.settings 
+           languages: langs, settings
          } 
       });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -519,14 +507,11 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     
     try {
         for (const item of data) {
-            // Password hashing logic
             if (item.password && !item.password.startsWith('$2')) {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
             
             const keys = Object.keys(item);
-            
-            // Value cleaning and JSON stringification
             const vals = keys.map(k => {
                const val = item[k];
                if (val === undefined) return null;
@@ -535,8 +520,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             });
             
             const placeholders = keys.map(() => '?').join(', ');
-            
-            // ON DUPLICATE KEY UPDATE logic: avoid updating the primary key itself
             const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
             const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
             

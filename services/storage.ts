@@ -112,9 +112,16 @@ export const getSystemSettings = (): SystemSettings => {
   };
 };
 
-export const saveSystemSettings = (s: SystemSettings, skipSync = false) => {
+export const saveSystemSettings = async (s: SystemSettings, skipSync = false) => {
   set(KEYS.SETTINGS, s);
-  if (!skipSync) syncPushSettings(s).catch(() => {});
+  if (!skipSync) {
+    try {
+      await syncPushSettings(s);
+    } catch (e) {
+      console.error("Failed to sync system settings:", e);
+      throw e;
+    }
+  }
 };
 
 export const getLanguages = (): LanguageConfig[] => {
@@ -142,17 +149,20 @@ export const deleteLanguage = async (code: string) => {
 export const generatePattern = (text: string): string => {
   const settings = getSystemSettings();
   const baseColor = settings.themePrimaryColor || '#059669';
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="${baseColor}"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="24" fill="white">${text}</text></svg>`)}`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 400 300"><rect width="400" height="300" fill="${baseColor}"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="24" fill="white">${text}</text></svg>`)}`;
 };
 
 export const getSession = (): User | null => get(KEYS.SESSION, null);
 export const saveSession = (u: User) => set(KEYS.SESSION, u);
+
 export const logout = () => {
    if (typeof window === 'undefined') return;
    localStorage.removeItem(KEYS.SESSION);
    localStorage.removeItem(KEYS.TOKEN);
    localStorage.removeItem(KEYS.IMPERSONATING);
    localStorage.removeItem(KEYS.BACKUP);
+   localStorage.removeItem(KEYS.ORG);
+   localStorage.removeItem(KEYS.CURRENT_PROJECT);
 };
 
 export const isImpersonating = () => typeof window !== 'undefined' && !!localStorage.getItem(KEYS.IMPERSONATING);
