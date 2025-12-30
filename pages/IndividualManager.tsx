@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, sendMockNotification, getSession, getOrg } from '../services/storage';
+import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, ArrowDownAZ, ArrowUpAZ, Calendar, Hash, Briefcase, RefreshCw, Sprout, Loader2, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, Scale, FileText, ChevronDown, User as UserIcon } from 'lucide-react';
+/* Added User as UserIcon to the lucide-react imports to fix line 569 error */
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 type StatusFilter = 'current' | 'deceased' | 'all';
@@ -65,7 +66,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     damId: '',
     notes: '',
     imageUrl: '',
-    dnaSequence: undefined,
+    dnaSequence: '',
     isDeceased: false,
     deathDate: '',
     latitude: undefined,
@@ -121,7 +122,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       birthDate: new Date().toISOString().split('T')[0],
       source: 'Bred in house',
       notes: '',
-      imageUrl: ''
+      imageUrl: '',
+      dnaSequence: ''
     });
   };
 
@@ -137,7 +139,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const handleEdit = (ind: Individual) => {
     setEditingId(ind.id);
     setIsAutoSpecies(false);
-    // Check if parents are in collection or were manual entries
     const sireExists = ind.sireId ? allIndividuals.some(i => i.id === ind.sireId) : false;
     const damExists = ind.damId ? allIndividuals.some(i => i.id === ind.damId) : false;
     setIsManualSire(!!ind.sireId && !sireExists);
@@ -204,8 +205,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const nameToSave = (isPlant && !formData.name) ? formData.studbookId : formData.name;
     if (!isPlant && !nameToSave) { alert("Name is required for animals."); setIsSubmitting(false); return; }
     
-    const imageToSave = formData.imageUrl || generatePattern(nameToSave!);
-
     const entry: Individual = {
         ...formData as Individual,
         id: editingId || `ind-${Date.now()}`,
@@ -213,8 +212,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         speciesId: finalSpeciesId!,
         name: nameToSave!,
         weightKg: Number(formData.weightKg || 0),
-        imageUrl: imageToSave,
-        // Reset parents for plants just in case
         sireId: isPlant ? undefined : formData.sireId,
         damId: isPlant ? undefined : formData.damId,
     };
@@ -251,7 +248,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const isPlant = isAutoSpecies ? newSpeciesType === 'Plant' : selectedSpecies?.type === 'Plant';
   const showSexField = !isPlant || (isPlant && (isAutoSpecies ? true : selectedSpecies?.plantClassification === 'Dioecious'));
 
-  // Get eligible parents for the selected species
   const eligibleSires = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.sex === Sex.MALE && i.id !== editingId);
   const eligibleDams = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.sex === Sex.FEMALE && i.id !== editingId);
 
@@ -274,7 +270,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
            <Search className="text-slate-400 ml-2" size={20} />
@@ -293,7 +288,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       </div>
 
-      {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 backdrop-blur-sm">
           <div className="flex min-h-full items-start justify-center p-4">
@@ -304,7 +298,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              </div>
              
              <form onSubmit={handleSubmit} className="p-8 space-y-8">
-               {/* 1. Species Identification */}
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-emerald-700 border-b border-emerald-50 pb-2">
                      <Dna size={20}/>
@@ -338,7 +331,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                </div>
 
-               {/* 2. Core Identity */}
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-blue-700 border-b border-blue-50 pb-2">
                      <Briefcase size={20}/>
@@ -380,7 +372,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                </div>
 
-               {/* 3. Parentage - ONLY FOR ANIMALS */}
                {!isPlant && (
                  <div className="space-y-4">
                     <div className="flex items-center gap-2 text-purple-700 border-b border-purple-50 pb-2">
@@ -424,7 +415,24 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                  </div>
                )}
 
-               {/* 4. Notes & Photo */}
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-indigo-700 border-b border-indigo-50 pb-2">
+                     <Fingerprint size={20}/>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">Genetics</h4>
+                  </div>
+                  <div className="space-y-2">
+                     <label className="text-sm font-bold text-slate-700">DNA Sequence / Genetic Data</label>
+                     <textarea 
+                        className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 font-mono text-sm" 
+                        rows={4} 
+                        value={formData.dnaSequence || ''} 
+                        onChange={e => setFormData({...formData, dnaSequence: e.target.value})} 
+                        placeholder="Paste FASTA sequence or genetic markers here..."
+                     />
+                     <p className="text-[10px] text-slate-400 italic">Supports plain text and standardized sequence formats.</p>
+                  </div>
+               </div>
+
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-slate-700 border-b border-slate-50 pb-2">
                      <FileText size={20}/>
@@ -469,18 +477,18 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       )}
 
-      {/* Records Display */}
       <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
         {sortedIndividuals.map(ind => {
            const sp = allSpecies.find(s => s.id === ind.speciesId);
            const isIndPlant = sp?.type === 'Plant';
+           const displayImg = ind.imageUrl || sp?.imageUrl;
            
            if (viewMode === 'grid') {
              return (
                 <div key={ind.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden group hover:shadow-xl transition-all flex flex-col h-full">
                    <div className="relative h-48 bg-slate-100">
-                      {ind.imageUrl ? (
-                        <img src={ind.imageUrl} alt={ind.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      {displayImg ? (
+                        <img src={displayImg} alt={ind.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50"><PawPrint size={40} /></div>
                       )}
@@ -515,6 +523,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       <div className="mt-auto pt-4 flex gap-2">
                         {ind.isDeceased && <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded">Deceased</span>}
                         {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
+                        {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> DNA</span>}
                       </div>
                    </div>
                 </div>
@@ -524,7 +533,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
            return (
               <div key={ind.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4 group hover:border-emerald-200 hover:shadow-md transition-all">
                  <div className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden">
-                    {ind.imageUrl ? <img src={ind.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><PawPrint size={20}/></div>}
+                    {displayImg ? <img src={displayImg} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><PawPrint size={20}/></div>}
                  </div>
                  <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
@@ -566,7 +575,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
       {showDeleteConfirm && (
          <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-8 text-center">
+            <div className="bg-white rounded-xl shadow-2xl max-sm w-full p-8 text-center">
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                   <AlertTriangle size={40}/>
                </div>
