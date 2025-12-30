@@ -1,6 +1,7 @@
+
 import express from 'express';
 import cors from 'cors';
-import mysql from 'mysql2/promise';
+import * as mysql from 'mysql2/promise';
 import jwt from 'jsonwebtoken';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
@@ -85,24 +86,23 @@ const initDatabase = async () => {
             )
         `);
 
-        // Aggressive column check to fix "Unknown column" errors
-        const ensureCols = async (table: string, columns: {name: string, type: string}[]) => {
-           const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${table}`);
-           const existing = rows.map((r: any) => r.Field);
-           for (const col of columns) {
-              if (!existing.includes(col.name)) {
-                 console.log(`Adding missing column ${col.name} to ${table}`);
-                 await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
-              }
-           }
+        // FIX: Mandatory Column Check for Organizations
+        const checkAndAddColumn = async (colName: string, colDef: string) => {
+            try {
+                const [rows]: any = await db.execute(`SHOW COLUMNS FROM organizations LIKE ?`, [colName]);
+                if (rows.length === 0) {
+                    console.log(`Adding missing column: ${colName}`);
+                    await db.execute(`ALTER TABLE organizations ADD COLUMN ${colName} ${colDef}`);
+                }
+            } catch (e: any) {
+                console.warn(`Could not verify/add column ${colName}:`, e.message);
+            }
         };
 
-        await ensureCols('organizations', [
-           { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
-           { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
-           { name: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
-           { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
-        ]);
+        await checkAndAddColumn('ai_usage_limit', 'INT DEFAULT 100');
+        await checkAndAddColumn('ai_usage_count', 'INT DEFAULT 0');
+        await checkAndAddColumn('ai_usage_last_reset', 'VARCHAR(255)');
+        await checkAndAddColumn('is_deleted', 'BOOLEAN DEFAULT FALSE');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -239,9 +239,9 @@ const initDatabase = async () => {
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
 
-        console.log("Database schema initialized.");
+        console.log("Database schema ready.");
     } catch (e: any) {
-        console.error("Schema Init Failed:", e.message);
+        console.error("Critical Schema Failure:", e.message);
     }
 };
 
@@ -303,19 +303,19 @@ app.post('/api/register', async (req: any, res: any) => {
             expires: Date.now() + 1800000
         });
 
-        console.log("----------------------------------------");
-        console.log(`VERIFICATION CODE FOR ${cleanEmail}: ${code}`);
-        console.log("----------------------------------------");
+        // CRITICAL: Always log code clearly to console for local testing
+        console.log("\n========================================");
+        console.log(`NEW REGISTRATION: ${cleanEmail}`);
+        console.log(`VERIFICATION CODE: ${code}`);
+        console.log("========================================\n");
 
         const transporter = await getTransporter();
         if (transporter) {
             try {
-                // 1. Fetch Global Settings for Template Override
                 const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
                 const settings = configRows?.[0]?.settings || {};
                 const globalTpl = settings.emailTemplates?.registration;
 
-                // 2. Fetch Language Translations for localized default
                 const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ?`, [targetLang]);
                 const translations = langRows?.[0]?.translations || {};
                 
@@ -338,7 +338,7 @@ app.post('/api/register', async (req: any, res: any) => {
                     html: replacePlaceholders(bodyTpl, dataToFill)
                 });
             } catch (mailErr: any) {
-                console.error("Mail Send Fail:", mailErr.message);
+                console.error("Mail Dispatch Failure:", mailErr.message);
             }
         }
         res.json({ success: true, needsVerification: true });
@@ -352,7 +352,7 @@ app.post('/api/register/verify', async (req: any, res: any) => {
     const db = getDb();
 
     if (!pending || pending.code !== code || pending.expires < Date.now()) {
-        return res.status(400).json({ error: "Invalid/Expired code" });
+        return res.status(400).json({ error: "Invalid or expired verification code." });
     }
 
     const { orgName, userName, focus, password } = pending.data;
@@ -362,10 +362,10 @@ app.post('/api/register/verify', async (req: any, res: any) => {
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // We explicitly specify columns to avoid errors if extra columns exist
+        // FIX: Be extremely explicit about columns to prevent unknown column errors
         await db.execute(`
-           INSERT INTO organizations (id, name, focus, location, founded_year, is_deleted) 
-           VALUES (?, ?, ?, 'Unknown', ?, FALSE)
+           INSERT INTO organizations (id, name, focus, location, founded_year, is_deleted, ai_usage_limit, ai_usage_count) 
+           VALUES (?, ?, ?, 'Unknown', ?, FALSE, 100, 0)
         `, [orgId, orgName, focus, new Date().getFullYear()]);
         
         await db.execute(`
@@ -380,7 +380,10 @@ app.post('/api/register/verify', async (req: any, res: any) => {
         const [o]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
 
         res.json({ token, user: u[0], org: o[0] });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error("DB Error during verification:", e.message);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 app.post('/api/login', async (req: any, res: any) => {
@@ -401,7 +404,7 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- DATA ROUTES ---
+// --- DATA SYNC ---
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
@@ -459,5 +462,5 @@ app.get('*', (req: any, res: any) => {
 
 (async () => {
     await initDatabase();
-    app.listen(PORT, () => console.log(`Backend running on ${PORT}`));
+    app.listen(PORT, () => console.log(`\n>>> OpenStudbook Server Running on Port ${PORT} <<<\n`));
 })();
