@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -306,20 +305,43 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Final Database Insertion using Raw SQL
-        await (prisma as any).$executeRawUnsafe(`
-            INSERT INTO organizations (
-                id, name, focus, location, is_org_public, is_species_public, 
-                obscure_location, founded_year, description, allow_breeding_requests, 
-                is_deleted, ai_usage_limit, ai_usage_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        `, orgId, orgName, focus, 'Unknown', false, false, false, new Date().getFullYear(), '', false, false, 100, 0);
-        
-        await (prisma as any).$executeRawUnsafe(`
-            INSERT INTO users (
-                id, org_id, name, email, role, status, password, allowed_project_ids
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `, userId, orgId, userName, cleanEmail, 'Admin', 'Active', hashedPassword, []);
+        // Final Database Insertion using Raw SQL with '?' for MySQL compatibility
+        try {
+            await (prisma as any).$executeRawUnsafe(`
+                INSERT INTO organizations (
+                    id, name, focus, location, is_org_public, is_species_public, 
+                    obscure_location, founded_year, description, allow_breeding_requests, 
+                    is_deleted, ai_usage_limit, ai_usage_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, orgId, orgName, focus, 'Unknown', false, false, false, new Date().getFullYear(), '', false, false, 100, 0);
+            
+            await (prisma as any).$executeRawUnsafe(`
+                INSERT INTO users (
+                    id, org_id, name, email, role, status, password, allowed_project_ids
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, userId, orgId, userName, cleanEmail, 'Admin', 'Active', hashedPassword, JSON.stringify([]));
+        } catch (sqlErr: any) {
+            console.warn("[VERIFICATION] Raw SQL failed, falling back to Prisma create...", sqlErr.message);
+            // Fallback to standard Prisma API if raw SQL fails (handles different placeholder formats)
+            const orgData: any = {
+                id: orgId, name: orgName, focus: focus, location: 'Unknown', founded_year: new Date().getFullYear(),
+                is_org_public: false, is_species_public: false, obscure_location: false, is_deleted: false,
+                ai_usage_limit: 100, ai_usage_count: 0
+            };
+            const userData: any = {
+                id: userId, org_id: orgId, name: userName, email: cleanEmail, role: 'Admin', status: 'Active',
+                password: hashedPassword, allowed_project_ids: []
+            };
+            
+            await (prisma as any).organization.create({ data: orgData }).catch((e: any) => {
+                console.warn("[VERIFICATION] Prisma Org Create failed, stripping extra fields...");
+                delete orgData.ai_usage_limit;
+                delete orgData.ai_usage_count;
+                return (prisma as any).organization.create({ data: orgData });
+            });
+            
+            await (prisma as any).user.create({ data: userData });
+        }
 
         const user = await (prisma as any).user.findUnique({ where: { id: userId } });
         const org = await (prisma as any).organization.findUnique({ where: { id: orgId } });
@@ -438,7 +460,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.27' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.29' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 
