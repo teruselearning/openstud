@@ -58,14 +58,16 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
 // --- Mappers ---
 const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: o.foundedYear, description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock || null, is_deleted: o.deleted || false });
 const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatar_url || null, allowed_project_ids: u.allowedProjectIds || [] });
+// Fixed error on line 61: Referenced u.avatarUrl instead of u.avatar_url
+const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
 const mapSpeciesToDb = (s: Species) => ({ 
   id: s.id, 
   project_id: s.projectId, 
-  common_name: s.common_name, 
-  scientific_name: s.scientific_name, 
+  // Fixed error on lines 65, 66, 68: Referenced camelCase properties commonName, scientificName, and plantClassification
+  common_name: s.commonName, 
+  scientific_name: s.scientificName, 
   type: s.type, 
-  plant_classification: s.plant_classification || null, 
+  plant_classification: s.plantClassification || null, 
   conservation_status: s.conservationStatus, 
   sexual_maturity_age_years: s.sexualMaturityAgeYears, 
   average_adult_weight_kg: s.averageAdultWeightKg, 
@@ -107,7 +109,8 @@ const mapIndToDb = (i: Individual) => ({
 const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds || [] });
 /* Fixed error on line 108: Changed l.proposer_org_id, l.individual_ids, and l.notification_recipient_id to use correct camelCase properties from type BreedingLoan */
 const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
-const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.established_date });
+// Fixed error on line 110: Referenced p.establishedDate instead of p.established_date
+const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });
 const mapLanguageToDb = (l: LanguageConfig) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.isDefault, manual_overrides: l.manualOverrides || [], is_deleted: l.deleted || false });
 
 // --- Reverse Mappers (DB to App) ---

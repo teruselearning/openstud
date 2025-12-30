@@ -61,10 +61,8 @@ const initDatabase = async () => {
     console.log(`Attempting to connect to database '${dbConfig.database}' as '${dbConfig.user}'...`);
     const db = getDb();
     try {
-        // Test connection first
         await db.query('SELECT 1');
         
-        // 1. Create tables if they don't exist
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -164,7 +162,6 @@ const initDatabase = async () => {
             )
         `);
 
-        // Aggressive column reconciliation for existing tables
         const ensureCols = async (table: string, columns: {name: string, type: string}[]) => {
            const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${table}`);
            const existing = rows.map((r: any) => r.Field.toLowerCase());
@@ -176,7 +173,6 @@ const initDatabase = async () => {
            }
         };
 
-        // Fix organization columns
         await ensureCols('organizations', [
            { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
            { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
@@ -184,13 +180,11 @@ const initDatabase = async () => {
            { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
         ]);
 
-        // FIX: Ensure users table has org_id
         await ensureCols('users', [
            { name: 'org_id', type: 'VARCHAR(255)' },
            { name: 'allowed_project_ids', type: 'JSON' }
         ]);
 
-        // FIX: Ensure projects table has org_id
         await ensureCols('projects', [
            { name: 'org_id', type: 'VARCHAR(255)' }
         ]);
@@ -445,6 +439,43 @@ app.post('/api/login', async (req: any, res: any) => {
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user, organization: orgs[0] });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// --- ADMIN & SYSTEM ---
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+   const { to } = req.body;
+   try {
+      const transporter = await getTransporter();
+      if (!transporter) return res.status(400).json({ error: "SMTP not configured." });
+      
+      await transporter.sendMail({
+         from: process.env.SMTP_FROM || '"OpenStudbook Test" <no-reply@openstudbook.org>',
+         to: to,
+         subject: "OpenStudbook SMTP Test",
+         text: "This is a test email from your OpenStudbook configuration. If you received this, your settings are correct!",
+         html: "<h3>SMTP Test Successful</h3><p>This is a test email from your OpenStudbook configuration. If you received this, your settings are correct!</p>"
+      });
+      res.json({ success: true });
+   } catch (e: any) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+   const { to, subject, html } = req.body;
+   try {
+      const transporter = await getTransporter();
+      if (!transporter) return res.status(400).json({ error: "SMTP not configured." });
+      
+      await transporter.sendMail({
+         from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+         to, subject, html
+      });
+      res.json({ success: true });
+   } catch (e: any) {
+      res.status(500).json({ error: e.message });
+   }
 });
 
 // --- DATA SYNC ---

@@ -1,7 +1,9 @@
 
 import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages } from '../services/storage';
-import { Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2 } from 'lucide-react';
+import { testSmtpConnection } from '../services/emailService';
+// Added RefreshCw to imports
+import { Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, Send, AlertCircle, Trash2, X, RefreshCw } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
@@ -23,6 +25,11 @@ const SuperAdmin: React.FC = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('registration');
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate>({ subject: '', bodyHtml: '', enabled: true });
   
+  // SMTP Test State
+  const [testEmail, setTestEmail] = useState('');
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [testResult, setTestResult] = useState<{success: boolean, message: string} | null>(null);
+
   // Language States
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [editingLang, setEditingLang] = useState<LanguageConfig | null>(null);
@@ -58,17 +65,20 @@ const SuperAdmin: React.FC = () => {
     setEditingTemplate(regTpl);
   }, []);
 
-  const handleSaveEmailConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    const updated: SystemSettings = {
+  const handleSaveAllEmailSettings = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    
+    // Merge the currently editing template into the main settings object
+    const finalSettings: SystemSettings = {
       ...settings,
       emailTemplates: {
          ...settings.emailTemplates,
          [selectedTemplate]: editingTemplate
       }
     };
-    saveSystemSettings(updated);
-    setSettings(updated);
+    
+    saveSystemSettings(finalSettings);
+    setSettings(finalSettings);
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 3000);
   };
@@ -84,6 +94,24 @@ const SuperAdmin: React.FC = () => {
      setSelectedTemplate(type);
      const nextTpl = currentWithEdits.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true };
      setEditingTemplate(nextTpl);
+  };
+
+  const handleRunSmtpTest = async () => {
+    if (!testEmail) return;
+    setIsTestingSmtp(true);
+    setTestResult(null);
+    
+    // Auto-save current SMTP settings before testing
+    handleSaveAllEmailSettings();
+
+    try {
+      await testSmtpConnection(testEmail);
+      setTestResult({ success: true, message: "Test email sent successfully! Please check your inbox." });
+    } catch (e: any) {
+      setTestResult({ success: false, message: e.message || "SMTP Connection Failed" });
+    } finally {
+      setIsTestingSmtp(false);
+    }
   };
 
   const handleUpdateTranslation = (key: string, value: string) => {
@@ -115,7 +143,7 @@ const SuperAdmin: React.FC = () => {
         </div>
         <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap">
            <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>Network</button>
-           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email Templates</button>
+           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email & SMTP</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> Localisation</button>
         </div>
       </div>
@@ -151,26 +179,75 @@ const SuperAdmin: React.FC = () => {
       {activeTab === 'email' && (
          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in fade-in">
             <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 flex flex-col h-full">
-               <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Mail size={24}/></div>
-                  <h3 className="font-extrabold text-xl text-slate-900">SMTP Server Configuration</h3>
+               <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Mail size={24}/></div>
+                     <h3 className="font-extrabold text-xl text-slate-900">SMTP Server</h3>
+                  </div>
                </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
-                  <div className="md:col-span-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Host</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.postmarkapp.com" /></div>
-                  <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Port</label><input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpPort || 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} /></div>
-                  <div className="flex items-center pt-5"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={settings.smtpSecure || false} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} className="rounded text-blue-600" /> <span className="text-sm font-bold text-slate-600">Secure (TLS/SSL)</span></label></div>
-                  <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Username</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} /></div>
-                  <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Password</label><input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} /></div>
-               </div>
+               
+               <form onSubmit={handleSaveAllEmailSettings} className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Host</label>
+                    <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.postmarkapp.com" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Port</label>
+                    <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpPort || 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} />
+                  </div>
+                  <div className="flex items-center pt-5">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={settings.smtpSecure || false} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} className="rounded text-blue-600" /> 
+                      <span className="text-sm font-bold text-slate-600">Secure (TLS/SSL)</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Username</label>
+                    <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Password</label>
+                    <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2 pt-4 border-t border-slate-100">
+                    <div className="flex items-center gap-2 mb-2">
+                       <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Send size={14}/> Test Connection</h4>
+                    </div>
+                    <div className="flex gap-2">
+                       <input 
+                         className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm outline-none"
+                         placeholder="Test recipient email..."
+                         value={testEmail}
+                         onChange={e => setTestEmail(e.target.value)}
+                       />
+                       <button 
+                         type="button" 
+                         onClick={handleRunSmtpTest}
+                         disabled={isTestingSmtp || !testEmail}
+                         className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                       >
+                          {isTestingSmtp ? <Loader2 className="animate-spin" size={16}/> : <RefreshCw size={16}/>}
+                          Test
+                       </button>
+                    </div>
+                    {testResult && (
+                       <div className={`mt-3 p-3 rounded-lg border flex items-start gap-2 text-sm animate-in fade-in slide-in-from-top-1 ${testResult.success ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-red-50 border-red-100 text-red-800'}`}>
+                          {testResult.success ? <CheckCircle2 size={16} className="mt-0.5" /> : <AlertCircle size={16} className="mt-0.5" />}
+                          <p>{testResult.message}</p>
+                          <button onClick={() => setTestResult(null)} className="ml-auto opacity-50 hover:opacity-100"><X size={14}/></button>
+                       </div>
+                    )}
+                  </div>
+               </form>
                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 leading-relaxed">
-                  <strong>Developer Note:</strong> If SMTP is not configured, registration codes will still be logged to the server terminal/logs for testing.
+                  <strong>Developer Note:</strong> Save your SMTP settings before testing. If SMTP is not configured, registration codes will be logged to the server terminal.
                </div>
             </div>
 
             <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[700px]">
                <div className="flex items-center gap-3 mb-6">
                   <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><PenTool size={24}/></div>
-                  <h3 className="font-extrabold text-xl text-slate-900">System-Wide Messaging</h3>
+                  <h3 className="font-extrabold text-xl text-slate-900">Email Templates</h3>
                </div>
                <div className="flex gap-2 mb-6 bg-slate-100 p-1.5 rounded-xl">
                   {['registration', 'mfa', 'invite', 'notification'].map(tKey => (
@@ -203,9 +280,9 @@ const SuperAdmin: React.FC = () => {
                   </div>
                </div>
                <div className="mt-6">
-                  <button onClick={handleSaveEmailConfig} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                  <button onClick={handleSaveAllEmailSettings} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
                      {settingsSaved ? <CheckCircle2 size={18}/> : <Save size={18} />}
-                     <span>{settingsSaved ? 'Configuration Updated' : 'Save Email Configuration'}</span>
+                     <span>{settingsSaved ? 'All Settings Updated' : 'Save Email Configuration'}</span>
                   </button>
                </div>
             </div>
