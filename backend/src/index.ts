@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 // @ts-ignore
@@ -42,8 +43,9 @@ app.use(morgan('dev'));
  * Ensures tables exist and initial config is present
  */
 const initDatabase = async () => {
-    console.log("Initializing database...");
+    console.log("Checking database schema...");
     try {
+        // Create base tables
         await prisma.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -68,6 +70,23 @@ const initDatabase = async () => {
                 is_deleted BOOLEAN DEFAULT FALSE
             )
         `);
+
+        // FIX: Ensure missing columns are added if table was created by an older version
+        const colsToAdd = [
+            { table: 'organizations', col: 'ai_usage_limit', type: 'INT DEFAULT 100' },
+            { table: 'organizations', col: 'ai_usage_count', type: 'INT DEFAULT 0' },
+            { table: 'organizations', col: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
+            { table: 'organizations', col: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
+        ];
+
+        for (const c of colsToAdd) {
+            try {
+                await prisma.$executeRawUnsafe(`ALTER TABLE ${c.table} ADD COLUMN ${c.col} ${c.type}`);
+                console.log(`Added missing column ${c.col} to ${c.table}`);
+            } catch (e) {
+                // Ignore errors (column likely already exists)
+            }
+        }
 
         await prisma.$executeRawUnsafe(`
             CREATE TABLE IF NOT EXISTS users (
@@ -181,7 +200,7 @@ const initDatabase = async () => {
             INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')
         `);
 
-        console.log("Database initialized successfully.");
+        console.log("Database schema is up to date.");
     } catch (e: any) {
         console.error("Database initialization failed. Check your connection string.");
         console.error(e.message);
@@ -203,15 +222,23 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 const getTransporter = async () => {
   const config: any = await prisma.$queryRawUnsafe(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
   const s = config?.[0]?.settings || {};
-  if (!s.smtpHost) {
-      console.log("[SMTP] Outgoing mail skipped: Host not configured in System Admin settings.");
+  
+  // Use DB settings if available, otherwise fallback to ENV variables
+  const host = s.smtpHost || process.env.SMTP_HOST;
+  const port = s.smtpPort || Number(process.env.SMTP_PORT) || 587;
+  const user = s.smtpUser || process.env.SMTP_USER;
+  const pass = s.smtpPass || process.env.SMTP_PASS;
+  const secure = s.smtpSecure ?? (process.env.SMTP_SECURE === 'true');
+
+  if (!host) {
       return null;
   }
+  
   return nodemailer.createTransport({
-    host: s.smtpHost,
-    port: s.smtpPort || 587,
-    secure: s.smtpSecure || false,
-    auth: (s.smtpUser && s.smtpPass) ? { user: s.smtpUser, pass: s.smtpPass } : undefined
+    host,
+    port,
+    secure,
+    auth: (user && pass) ? { user, pass } : undefined
   });
 };
 
@@ -240,7 +267,11 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
             expires: Date.now() + 1800000
         });
 
-        console.log(`[REGISTRATION] Verification Code for ${cleanEmail}: ${code}`);
+        console.log("========================================");
+        console.log(`NEW REGISTRATION FOR: ${cleanEmail}`);
+        console.log(`VERIFICATION CODE: ${code}`);
+        console.log("========================================");
+
         const transporter = await getTransporter();
         
         if (transporter) {
@@ -250,7 +281,7 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
                 const translations = langData?.[0]?.translations || {};
                 
                 const subjectTpl = translations.emailVerifySubject || "Verify your OpenStudbook account";
-                const bodyTpl = translations.emailVerifyBody || "<p>Your verification code is: <strong>{{code}}</strong></p>";
+                const bodyTpl = translations.emailVerifyBody || "<p>Welcome to OpenStudbook! Your verification code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>";
                 
                 const dataToFill = { orgName, userName, code };
                 const subject = replacePlaceholders(subjectTpl, dataToFill);
@@ -262,11 +293,14 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
                     subject,
                     html
                 });
+                console.log(`[SMTP] Verification email sent to ${cleanEmail}`);
             } catch (mailErr: any) {
                 console.error("[SMTP] Failed to send registration email:", mailErr.message);
             }
+        } else {
+            console.log("[SMTP] Email not sent: SMTP is not configured in .env or System Admin settings.");
         }
-        res.json({ success: true, needsVerification: true, message: "Verification code sent to email." });
+        res.json({ success: true, needsVerification: true, message: "Verification code sent to email (and logged to server console)." });
     } catch (e: any) {
         next(e);
     }
@@ -291,10 +325,11 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
+        // Pure raw SQL insert - explicit mapping to handle possible schema mismatches
         await prisma.$executeRawUnsafe(`
             INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public, obscure_location, is_deleted, ai_usage_limit, ai_usage_count)
-            VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 100, 0)
-        `, orgId, orgName, focus, 'Unknown', new Date().getFullYear());
+            VALUES (?, ?, ?, 'Unknown', ?, 0, 0, 0, 0, 100, 0)
+        `, orgId, orgName, focus, new Date().getFullYear());
 
         await prisma.$executeRawUnsafe(`
             INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids)
@@ -311,7 +346,7 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
         res.json({ token, user: users[0], org: orgs[0] });
     } catch (e: any) {
         console.error("DATABASE REGISTRATION ERROR:", e);
-        res.status(500).json({ error: `Database error during registration: ${e.message}. Please verify your MySQL connection.` });
+        res.status(500).json({ error: `Database error during registration: ${e.message}.` });
     }
 });
 
@@ -359,7 +394,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
             Object.keys(item).forEach(k => {
-                if (typeof item[k] === 'object') item[k] = JSON.stringify(item[k]);
+                if (typeof item[k] === 'object' && item[k] !== null) item[k] = JSON.stringify(item[k]);
             });
             await rawUpsert(table, 'id', item);
         }
@@ -389,7 +424,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.1.2-rawsql' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.1.3-rawsql' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 
