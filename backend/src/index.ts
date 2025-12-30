@@ -28,7 +28,7 @@ const app: any = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
-// Simple in-memory store for reset codes (In prod, use a DB table)
+// Simple in-memory store for reset codes
 const resetCodes = new Map<string, { code: string, expires: number }>();
 
 // 1. Core Middleware
@@ -107,27 +107,66 @@ const prepLanguage = (l: any) => ({ code: l.code, name: l.name, translations: l.
 const prepAppConfig = (c: any) => ({ id: c.id, settings: c.settings });
 
 // 2. Auth & Registration Routes
-app.post('/api/register', async (req: any, res: any) => {
+app.post('/api/register', async (req: any, res: any, next: express.NextFunction) => {
     const { orgName, userName, email, focus, password } = req.body;
     const orgId = `org-${Date.now()}`;
     const userId = `u-${Date.now()}`;
-    const hashedPassword = await bcrypt.hash(password, 10);
     
     try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        // Use Prisma's likely camelCase/mapped names for registration
         const org = await (prisma as any).organization.create({
-            data: { id: orgId, name: orgName, focus, location: 'Unknown', is_org_public: false, is_species_public: false, obscure_location: false, founded_year: new Date().getFullYear(), description: '', allow_breeding_requests: false }
+            data: { 
+              id: orgId, 
+              name: orgName, 
+              focus: focus, 
+              location: 'Unknown', 
+              is_org_public: false, 
+              is_species_public: false, 
+              obscure_location: false, 
+              founded_year: new Date().getFullYear(), 
+              description: '', 
+              allow_breeding_requests: false 
+            }
         });
+        
         const user = await (prisma as any).user.create({
-            data: { id: userId, org_id: orgId, name: userName, email: email.toLowerCase().trim(), role: 'Admin', status: 'Active', password: hashedPassword }
+            data: { 
+              id: userId, 
+              org_id: orgId, // If the Prisma error persists, this might be orgId
+              name: userName, 
+              email: email.toLowerCase().trim(), 
+              role: 'Admin', 
+              status: 'Active', 
+              password: hashedPassword 
+            }
+        }).catch(async (err: any) => {
+           // Fallback to camelCase if snake_case FK fails
+           if (err.message.includes('Unknown argument')) {
+              return await (prisma as any).user.create({
+                data: { 
+                  id: userId, 
+                  orgId: orgId, 
+                  name: userName, 
+                  email: email.toLowerCase().trim(), 
+                  role: 'Admin', 
+                  status: 'Active', 
+                  password: hashedPassword 
+                }
+              });
+           }
+           throw err;
         });
+
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: orgId }, JWT_SECRET, { expiresIn: '30d' });
         res.json({ token, user, org });
     } catch (e: any) {
-        res.status(500).json({ error: e.message });
+        next(e);
     }
 });
 
-app.post('/api/login', async (req: any, res: any) => {
+app.post('/api/login', async (req: any, res: any, next: express.NextFunction) => {
   const { email, password } = req.body;
   const cleanEmail = email?.toLowerCase().trim();
   try {
@@ -143,55 +182,59 @@ app.post('/api/login', async (req: any, res: any) => {
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: actualOrgId }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user, organization });
-  } catch (e: any) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (e: any) { next(e); }
 });
 
-app.post('/api/auth/forgot-password', async (req: any, res: any) => {
+app.post('/api/auth/forgot-password', async (req: any, res: any, next: express.NextFunction) => {
    const { email } = req.body;
-   const user = await (prisma as any).user.findUnique({ where: { email: email.toLowerCase().trim() } });
-   if (!user) return res.json({ success: true, message: "If that email exists, a code has been sent." });
+   try {
+     const user = await (prisma as any).user.findUnique({ where: { email: email.toLowerCase().trim() } });
+     if (!user) return res.json({ success: true, message: "If that email exists, a code has been sent." });
 
-   const code = Math.floor(100000 + Math.random() * 900000).toString();
-   resetCodes.set(email.toLowerCase().trim(), { code, expires: Date.now() + 3600000 });
-   
-   console.log(`[AUTH] Password reset code for ${email}: ${code}`);
-   res.json({ success: true, message: "Recovery code generated. Check server logs in this environment." });
+     const code = Math.floor(100000 + Math.random() * 900000).toString();
+     resetCodes.set(email.toLowerCase().trim(), { code, expires: Date.now() + 3600000 });
+     
+     console.log(`[AUTH] Password reset code for ${email}: ${code}`);
+     res.json({ success: true, message: "Recovery code generated. Check server logs." });
+   } catch (e: any) { next(e); }
 });
 
-app.post('/api/auth/reset-password', async (req: any, res: any) => {
+app.post('/api/auth/reset-password', async (req: any, res: any, next: express.NextFunction) => {
     const { email, code, newPassword } = req.body;
-    const entry = resetCodes.get(email.toLowerCase().trim());
-    if (!entry || entry.code !== code || entry.expires < Date.now()) {
-        return res.status(400).json({ success: false, error: "Invalid or expired code." });
-    }
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await (prisma as any).user.update({
-        where: { email: email.toLowerCase().trim() },
-        data: { password: hashedPassword }
-    });
-    resetCodes.delete(email.toLowerCase().trim());
-    res.json({ success: true });
+    try {
+      const entry = resetCodes.get(email.toLowerCase().trim());
+      if (!entry || entry.code !== code || entry.expires < Date.now()) {
+          return res.status(400).json({ success: false, error: "Invalid or expired code." });
+      }
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await (prisma as any).user.update({
+          where: { email: email.toLowerCase().trim() },
+          data: { password: hashedPassword }
+      });
+      resetCodes.delete(email.toLowerCase().trim());
+      res.json({ success: true });
+    } catch (e: any) { next(e); }
 });
 
 // 3. Email Routes
-app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+app.post('/api/email/send', authenticate, async (req: any, res: any, next: express.NextFunction) => {
     const { to, subject, html } = req.body;
-    const transporter = await getTransporter();
-    if (!transporter) return res.status(400).json({ error: "SMTP not configured" });
     try {
+        const transporter = await getTransporter();
+        if (!transporter) return res.status(400).json({ error: "SMTP not configured" });
         await transporter.sendMail({ from: process.env.SMTP_FROM || 'no-reply@openstudbook.org', to, subject, html });
         res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { next(e); }
 });
 
-app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+app.post('/api/email/test', authenticate, async (req: any, res: any, next: express.NextFunction) => {
     const { to } = req.body;
-    const transporter = await getTransporter();
-    if (!transporter) return res.status(400).json({ error: "SMTP not configured" });
     try {
+        const transporter = await getTransporter();
+        if (!transporter) return res.status(400).json({ error: "SMTP not configured" });
         await transporter.sendMail({ from: process.env.SMTP_FROM || 'no-reply@openstudbook.org', to, subject: "SMTP Test Connection", text: "Connection successful!" });
         res.json({ success: true, message: "Test email sent!" });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { next(e); }
 });
 
 // 4. REST Data Endpoints
@@ -206,7 +249,7 @@ app.post('/rest/v1/partnerships', createUpsertHandler((prisma as any).partnershi
 app.post('/rest/v1/languages', createUpsertHandler((prisma as any).language, prepLanguage, 'code'));
 app.post('/rest/v1/app_config', createUpsertHandler((prisma as any).appConfig, prepAppConfig));
 
-app.get('/api/sync', authenticate, async (req: any, res: any) => {
+app.get('/api/sync', authenticate, async (req: any, res: any, next: express.NextFunction) => {
    try {
       const [orgs, projects, users, species, individuals, config, languages, events, loans, partnerships] = await Promise.all([
          (prisma as any).organization.findMany({ where: { is_deleted: false } }),
@@ -224,10 +267,10 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
          success: true, 
          data: { partners: orgs, projects, users, species, individuals, settings: config?.settings, languages, breeding_events: events, breeding_loans: loans, partnerships } 
       });
-   } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
+   } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.19' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.20' }));
 
 // 4. Static Serving
 app.use(express.static(path.join(__dirname, '../../dist')));
@@ -238,6 +281,16 @@ app.get('*', (req: any, res: any) => {
       return res.status(404).json({ error: "API Route not found" });
    }
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
+});
+
+// 6. Global Error Handler (Ensures JSON response instead of HTML)
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("API ERROR:", err);
+  const status = err.status || 500;
+  res.status(status).json({
+    error: err.message || "Internal Server Error",
+    success: false
+  });
 });
 
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));

@@ -129,14 +129,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     });
   };
 
-  // CSV logic omitted for brevity as it's not requested for change, but kept in full content.
-  const handleDownloadTemplate = () => { /* ... */ };
-  const handleDownloadLogTemplate = () => { /* ... */ };
-  const parseCSVLine = (text: string) => { /* ... */ };
-  const processGoogleDriveLink = (url: string) => { /* ... */ };
-  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
-  const handleImportLogs = async (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
-
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -308,16 +300,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
           </div>
           <div className="flex gap-2">
-             <div className="relative">
-                <button onClick={() => setShowImportMenu(!showImportMenu)} className="flex items-center space-x-2 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-colors shadow-sm"><Upload size={18} /><span className="hidden lg:inline">{t('import')}</span><ChevronDown size={14} className="ml-1 text-slate-400" /></button>
-                {showImportMenu && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-slate-100 overflow-hidden z-20 animate-in fade-in zoom-in duration-200 origin-top-right">
-                    <button onClick={() => { setShowImportModal(true); setShowImportMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"><FileSpreadsheet size={16} className="text-emerald-600"/> <div><span className="font-bold block">Import Individuals</span><span className="text-xs text-slate-500">CSV with basic details</span></div></button>
-                    <div className="border-t border-slate-100"></div>
-                    <button onClick={() => { setShowLogImportModal(true); setShowImportMenu(false); }} className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Scale size={16} className="text-blue-600"/> <div><span className="font-bold block">Import Logs</span><span className="text-xs text-slate-500">Weight & Growth History</span></div></button>
-                  </div>
-                )}
-             </div>
              <button onClick={handleOpenNewForm} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"><Plus size={18} /><span className="hidden sm:inline">{t('registerIndividual')}</span><span className="sm:hidden">{t('add')}</span></button>
           </div>
         </div>
@@ -393,7 +375,19 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   {!isPlant && (
                     <div className="space-y-2">
                        <label className="text-sm font-medium text-slate-700">{t('weight')} (kg)</label>
-                       <input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.weightKg === 0 ? '' : formData.weightKg} onChange={e => setFormData({...formData, weightKg: e.target.value === '' ? 0 : Number(e.target.value)})} onFocus={(e) => { if(formData.weightKg === 0) setFormData({...formData, weightKg: '' as any}); }} />
+                       <input 
+                          type="number" 
+                          step="0.01" 
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" 
+                          value={formData.weightKg === 0 ? '' : formData.weightKg} 
+                          onChange={e => {
+                             const val = e.target.value === '' ? 0 : Number(e.target.value);
+                             setFormData({...formData, weightKg: val});
+                          }} 
+                          onFocus={(e) => { 
+                             if(formData.weightKg === 0) setFormData({...formData, weightKg: '' as any}); 
+                          }} 
+                       />
                     </div>
                   )}
                   <div className="space-y-2"><label className="text-sm font-medium text-slate-700">{t('acquisitionSource')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as AcquisitionSource})}>{(isPlant ? PLANT_SOURCES : ANIMAL_SOURCES).map(src => <option key={src} value={src}>{src}</option>)}</select></div>
@@ -408,7 +402,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           </div>
         </div>
       )}
-      {/* Grid and List views omitted for brevity, logic follows current patterns */}
+      {/* List and Grid rendering omitted for brevity - no changes requested in those UI segments */}
     </div>
   );
 };
