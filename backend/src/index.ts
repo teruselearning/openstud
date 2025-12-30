@@ -58,10 +58,12 @@ app.use(morgan('dev'));
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
-    console.log("Checking database schema...");
+    console.log("Starting Database Schema Check...");
     const db = getDb();
     try {
-        // 1. Create Base Organizations Table
+        // Test connection first
+        await db.query('SELECT 1');
+        
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -87,27 +89,25 @@ const initDatabase = async () => {
             )
         `);
 
-        // 2. Aggressive Column Checker (Fixes "Unknown Column" errors)
-        const ensureColumns = async (tableName: string, cols: { name: string, type: string }[]) => {
-            const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${tableName}`);
-            const existingFields = rows.map((r: any) => r.Field.toLowerCase());
-            
-            for (const col of cols) {
-                if (!existingFields.includes(col.name.toLowerCase())) {
-                    console.log(`MIGRATION: Adding column '${col.name}' to '${tableName}'`);
-                    await db.execute(`ALTER TABLE ${tableName} ADD COLUMN ${col.name} ${col.type}`);
-                }
-            }
+        // Aggressive column check for older table versions
+        const ensureCols = async (table: string, columns: {name: string, type: string}[]) => {
+           const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${table}`);
+           const existing = rows.map((r: any) => r.Field.toLowerCase());
+           for (const col of columns) {
+              if (!existing.includes(col.name.toLowerCase())) {
+                 console.log(`[MIGRATION] Adding missing column ${col.name} to ${table}`);
+                 await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
+              }
+           }
         };
 
-        await ensureColumns('organizations', [
-            { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
-            { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
-            { name: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
-            { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
+        await ensureCols('organizations', [
+           { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
+           { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
+           { name: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
+           { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
         ]);
 
-        // 3. Create Other Tables
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
@@ -241,12 +241,21 @@ const initDatabase = async () => {
             )
         `);
 
-        // Seed global settings if missing
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
 
-        console.log("Database schema synchronized.");
+        console.log("Database tables verified and ready.");
     } catch (e: any) {
-        console.error("Database initialization failed:", e.message);
+        if (e.message.includes('auth_gssapi_client')) {
+           console.error("\n==================================================================");
+           console.error("DATABASE AUTHENTICATION ERROR: 'auth_gssapi_client'");
+           console.error("Your database is using a plugin that is incompatible with Node.js.");
+           console.error("To fix this, run the following SQL command in your DB manager:");
+           console.error("\nALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '';");
+           console.error("FLUSH PRIVILEGES;");
+           console.error("==================================================================\n");
+        } else {
+           console.error("Critical: Database Schema Init Failed!", e.message);
+        }
     }
 };
 
@@ -264,21 +273,23 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 
 const getTransporter = async () => {
   const db = getDb();
-  const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
-  const s = rows?.[0]?.settings || {};
-  
-  const host = s.smtpHost || process.env.SMTP_HOST;
-  const port = s.smtpPort || Number(process.env.SMTP_PORT) || 587;
-  const user = s.smtpUser || process.env.SMTP_USER;
-  const pass = s.smtpPass || process.env.SMTP_PASS;
-  const secure = s.smtpSecure ?? (process.env.SMTP_SECURE === 'true');
+  try {
+    const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
+    const s = rows?.[0]?.settings || {};
+    
+    const host = s.smtpHost || process.env.SMTP_HOST;
+    const port = s.smtpPort || Number(process.env.SMTP_PORT) || 587;
+    const user = s.smtpUser || process.env.SMTP_USER;
+    const pass = s.smtpPass || process.env.SMTP_PASS;
+    const secure = s.smtpSecure ?? (process.env.SMTP_SECURE === 'true');
 
-  if (!host) return null;
-  
-  return nodemailer.createTransport({
-    host, port, secure,
-    auth: (user && pass) ? { user, pass } : undefined
-  });
+    if (!host) return null;
+    
+    return nodemailer.createTransport({
+      host, port, secure,
+      auth: (user && pass) ? { user, pass } : undefined
+    });
+  } catch (e) { return null; }
 };
 
 const replacePlaceholders = (text: string, data: Record<string, string>) => {
@@ -305,38 +316,43 @@ app.post('/api/register', async (req: any, res: any) => {
         pendingRegistrations.set(cleanEmail, {
             data: { orgName, userName, email: cleanEmail, focus, password },
             code,
-            expires: Date.now() + 1800000 // 30 mins
+            expires: Date.now() + 1800000
         });
 
-        // LOG CODE TO TERMINAL FOR EASY ACCESS
-        console.log("\n==========================================");
-        console.log(`REGISTRATION CODE FOR ${cleanEmail}: ${code}`);
-        console.log("==========================================\n");
+        console.log("\n========================================");
+        console.log(`NEW REGISTRATION FOR: ${cleanEmail}`);
+        console.log(`VERIFICATION CODE: ${code}`);
+        console.log("========================================\n");
 
         const transporter = await getTransporter();
         if (transporter) {
             try {
-                // Fetch template from global config
-                const [cfg]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-                const s = cfg[0]?.settings || {};
-                const tpl = s.emailTemplates?.registration;
+                const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
+                const settings = configRows?.[0]?.settings || {};
+                const globalTpl = settings.emailTemplates?.registration;
 
-                let subject = "Verify your OpenStudbook account";
-                let body = `<p>Welcome to OpenStudbook! Your verification code for <strong>{{orgName}}</strong> is: <br/><h1>{{code}}</h1></p>`;
+                const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ?`, [targetLang]);
+                const translations = langRows?.[0]?.translations || {};
+                
+                let subjectTpl = "Verify your OpenStudbook account";
+                let bodyTpl = "<p>Your code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>";
 
-                if (tpl?.enabled) {
-                   subject = tpl.subject || subject;
-                   body = tpl.bodyHtml || body;
+                if (globalTpl?.enabled && globalTpl.subject) {
+                   subjectTpl = globalTpl.subject;
+                   bodyTpl = globalTpl.bodyHtml;
+                } else if (translations.emailVerifySubject) {
+                   subjectTpl = translations.emailVerifySubject;
+                   bodyTpl = translations.emailVerifyBody;
                 }
-
+                
                 await transporter.sendMail({
                     from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
                     to: cleanEmail,
-                    subject: replacePlaceholders(subject, { orgName, userName, code }),
-                    html: replacePlaceholders(body, { orgName, userName, code })
+                    subject: replacePlaceholders(subjectTpl, { orgName, userName, code }),
+                    html: replacePlaceholders(bodyTpl, { orgName, userName, code })
                 });
             } catch (mailErr: any) {
-                console.error("Email dispatch failed:", mailErr.message);
+                console.error("SMTP Failed (registration code is still in console):", mailErr.message);
             }
         }
         res.json({ success: true, needsVerification: true });
@@ -360,10 +376,9 @@ app.post('/api/register/verify', async (req: any, res: any) => {
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Explicit SQL column list to avoid "Unknown Column" errors from table state
         await db.execute(`
-           INSERT INTO organizations (id, name, focus, location, founded_year, ai_usage_limit, ai_usage_count, is_deleted) 
-           VALUES (?, ?, ?, 'Unknown', ?, 100, 0, FALSE)
+           INSERT INTO organizations (id, name, focus, location, founded_year, is_deleted, ai_usage_limit, ai_usage_count) 
+           VALUES (?, ?, ?, 'Unknown', ?, FALSE, 100, 0)
         `, [orgId, orgName, focus, new Date().getFullYear()]);
         
         await db.execute(`
@@ -379,7 +394,7 @@ app.post('/api/register/verify', async (req: any, res: any) => {
 
         res.json({ token, user: u[0], org: o[0] });
     } catch (e: any) { 
-        console.error("Verification failed:", e.message);
+        console.error("Database Insert Error during verification:", e.message);
         res.status(500).json({ error: e.message }); 
     }
 });
@@ -393,15 +408,8 @@ app.post('/api/login', async (req: any, res: any) => {
     const user = users[0];
     if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-    // Handle demo account specifically
-    if (cleanEmail === 'zoe@openstudbook.org' && password === 'password') {
-        const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
-        return res.json({ token, user, organization: orgs[0] });
-    }
-
     const passwordValid = await bcrypt.compare(String(password), user.password || '');
-    if (!passwordValid) return res.status(401).json({ error: "Invalid credentials" });
+    if (!passwordValid && !(cleanEmail === 'zoe@openstudbook.org' && password === 'password')) return res.status(401).json({ error: "Invalid credentials" });
 
     const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
@@ -409,7 +417,7 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- SYNC & REST ---
+// --- DATA SYNC ---
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
@@ -443,17 +451,11 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     
     try {
         for (const item of data) {
-            // Hash password if being saved directly
             if (item.password && !item.password.startsWith('$2')) {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
-            
             const keys = Object.keys(item);
-            const vals = keys.map(k => {
-                const v = item[k];
-                if (typeof v === 'object' && v !== null) return JSON.stringify(v);
-                return v;
-            });
+            const vals = keys.map(k => typeof item[k] === 'object' && item[k] !== null ? JSON.stringify(item[k]) : item[k]);
             const placeholders = keys.map(() => '?').join(', ');
             const updates = keys.map(k => `${k} = VALUES(${k})`).join(', ');
             
@@ -465,7 +467,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', engine: 'mysql2-direct' }));
 
-// Static frontend serving
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
    if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Not Found" });
@@ -474,5 +475,5 @@ app.get('*', (req: any, res: any) => {
 
 (async () => {
     await initDatabase();
-    app.listen(PORT, () => console.log(`Backend server ready on port ${PORT}`));
+    app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`));
 })();
