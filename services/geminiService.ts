@@ -15,8 +15,8 @@ const speciesSchema = {
     breedingSeasonStart: { type: Type.INTEGER, description: "Start month of breeding season (1-12)." },
     breedingSeasonEnd: { type: Type.INTEGER, description: "End month of breeding season (1-12)." },
     plantClassification: { type: Type.STRING, description: "If plant, 'Dioecious' or 'Monoecious'. Else 'N/A'." },
-    nativeStatusCountry: { type: Type.STRING, description: "Status in the organization's country." },
-    nativeStatusLocal: { type: Type.STRING, description: "Status in the local region." },
+    nativeStatusCountry: { type: Type.STRING, description: "Status in the organization's country (Native, Invasive, Introduced)." },
+    nativeStatusLocal: { type: Type.STRING, description: "Status in the local region (Native, Invasive, Introduced)." },
     description: { type: Type.STRING, description: "Brief description." }
   },
   required: ["scientificName", "conservationStatus"],
@@ -50,7 +50,7 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
     // Check Usage Limits
     if (!checkAndIncrementAiUsage()) {
-       throw new Error("Organization AI usage limit reached for this month. Please contact an administrator to increase your quota.");
+       throw new Error("Organization AI usage limit reached for this month.");
     }
 
     const ai = getAiClient();
@@ -78,9 +78,39 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
   }
 };
 
+/**
+ * Generates a scientific illustration for a species.
+ */
+export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
+  try {
+    if (!checkAndIncrementAiUsage()) {
+       throw new Error("AI usage limit reached.");
+    }
+
+    const ai = getAiClient();
+    const prompt = `A professional scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, isolated on a clean white background, high detail, studio lighting.`;
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: [{ text: prompt }]
+    });
+
+    for (const candidate of response.candidates) {
+      for (const part of candidate.content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Image Generation Error:", error);
+    throw error;
+  }
+};
+
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<Record<string, string>> => {
   try {
-    // Check Usage Limits
     if (!checkAndIncrementAiUsage()) {
        throw new Error("AI usage limit reached.");
     }

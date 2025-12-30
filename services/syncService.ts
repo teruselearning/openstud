@@ -50,16 +50,15 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
 };
 
 // --- Mappers ---
-/* Fixed camelCase property access for Organization in mapOrgToDb */
-const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: o.foundedYear, description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboard_block || null, is_deleted: o.deleted || false });
+/* Corrected dashboard_block access to camelCase dashboardBlock for Organization mapping */
+const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: o.foundedYear, description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock || null, is_deleted: o.deleted || false });
 const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-/* Fixed Property 'allowed_project_ids' does not exist on type 'User'. Corrected to camelCase allowedProjectIds */
+/* Mapping User camelCase to DB snake_case */
 const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
 const mapSpeciesToDb = (s: Species) => ({ 
   id: s.id, 
   project_id: s.projectId, 
   common_name: s.commonName, 
-  /* Fixed Property 'scientific_name' does not exist on type 'Species'. Did you mean 'scientificName'? */
   scientific_name: s.scientificName, 
   type: s.type, 
   plant_classification: s.plantClassification || null, 
@@ -67,8 +66,9 @@ const mapSpeciesToDb = (s: Species) => ({
   sexual_maturity_age_years: s.sexualMaturityAgeYears, 
   average_adult_weight_kg: s.averageAdultWeightKg, 
   life_expectancy_years: s.lifeExpectancyYears, 
-  breeding_season_start: s.breeding_season_start || null, 
-  breeding_season_end: s.breeding_season_end || null, 
+  /* Corrected breeding_season access to camelCase properties for Species mapping */
+  breeding_season_start: s.breedingSeasonStart || null, 
+  breeding_season_end: s.breedingSeasonEnd || null, 
   image_url: s.imageUrl || null, 
   native_status_country: s.nativeStatusCountry || null, 
   native_status_local: s.nativeStatusLocal || null 
@@ -95,29 +95,29 @@ const mapIndToDb = (i: Individual) => ({
   death_date: i.deathDate || null, 
   loan_status: i.loanStatus || null, 
   transferred_to_org_id: i.transferredToOrgId || null, 
-  transfer_date: i.transfer_date || null, 
-  transfer_note: i.transfer_note || null, 
+  /* Corrected transfer and history access to camelCase properties for Individual mapping */
+  transfer_date: i.transferDate || null, 
+  transfer_note: i.transferNote || null, 
   weight_history: i.weightHistory || [], 
-  growth_history: i.growth_history || [], 
-  health_history: i.health_history || [] 
+  growth_history: i.growthHistory || [], 
+  health_history: i.healthHistory || [] 
 });
-/* Fixed property name mismatches for BreedingEvent in mapEventToDb */
+/* Mapping BreedingEvent camelCase to DB snake_case */
 const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds || [] });
-/* Fixed property name mismatches for BreedingLoan in mapLoanToDb */
-const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.change_request || null });
-/* Fixed property name mismatch for Partnership in mapPartnershipToDb */
+/* Corrected change_request access to camelCase for BreedingLoan mapping */
+const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
+/* Mapping Partnership camelCase to DB snake_case */
 const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });
-/* Fixed Property 'manual_overrides' does not exist on type 'LanguageConfig'. Did you mean 'manualOverrides'? */
+/* Corrected manual_overrides access to camelCase for LanguageConfig mapping */
 const mapLanguageToDb = (l: LanguageConfig) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.isDefault, manual_overrides: l.manualOverrides || [], is_deleted: l.deleted || false });
 
 // --- Reverse Mappers (DB to App) ---
-/* Fixed Object literal key mismatches for Organization in fromDbOrg */
-const fromDbOrg = (o: any): Organization => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, foundedYear: o.founded_year, description: o.description, focus: o.focus, isOrgPublic: o.is_org_public, isSpeciesPublic: o.is_species_public, obscureLocation: o.obscure_location, hideName: o.hide_name, allowBreedingRequests: o.allow_breeding_requests, breedingRequestContactId: o.breeding__request_contact_id, showNativeStatus: o.show_native_status, dashboardBlock: o.dashboard_block, deleted: o.is_deleted });
+const fromDbOrg = (o: any): Organization => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, foundedYear: o.founded_year, description: o.description, focus: o.focus, isOrgPublic: o.is_org_public, isSpeciesPublic: o.is_species_public, obscureLocation: o.obscure_location, hideName: o.hide_name, allowBreedingRequests: o.allow_breeding_requests, breedingRequestContactId: o.breeding_request_contact_id, showNativeStatus: o.show_native_status, dashboardBlock: o.dashboard_block, deleted: o.is_deleted });
 const fromDbProject = (p: any): Project => ({ id: p.id, name: p.name, description: p.description, orgId: p.org_id });
 const fromDbUser = (u: any): User => ({ id: u.id, orgId: u.org_id || u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, avatarUrl: u.avatar_url, allowedProjectIds: u.allowed_project_ids || [] });
 const fromDbSpecies = (s: any): Species => ({ id: s.id, projectId: s.project_id, commonName: s.common_name, scientificName: s.scientific_name, type: s.type, plantClassification: s.plant_classification, conservationStatus: s.conservation_status, sexualMaturityAgeYears: s.sexual_maturity_age_years, averageAdultWeightKg: s.average_adult_weight_kg, lifeExpectancyYears: s.life_expectancy_years, breedingSeasonStart: s.breeding_season_start, breedingSeasonEnd: s.breeding_season_end, imageUrl: s.image_url, nativeStatusCountry: s.native_status_country, nativeStatusLocal: s.native_status_local });
-/* Fixed Object literal key 'source_details' does not exist in type 'Individual'. Did you mean to write 'sourceDetails'? */
-const fromDbInd = (i: any): Individual => ({ id: i.id, projectId: i.project_id, speciesId: i.species_id, studbookId: i.studbook_id, name: i.name, sex: i.sex, birthDate: i.birth_date, weightKg: i.weight_kg, sireId: i.sire_id, damId: i.dam_id, imageUrl: i.image_url, dnaSequence: i.dna_sequence, notes: i.notes, source: i.source, sourceDetails: i.source_details, latitude: i.latitude, longitude: i.longitude, isDeceased: i.is_deceased, deathDate: i.death_date, loanStatus: i.loan_status, transferredToOrgId: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weightHistory: i.weight_history || [], growthHistory: i.growth_history || [], healthHistory: i.health_history || [] });
+/* Corrected transfer key names in Individual literal for mapping from DB snake_case to app camelCase */
+const fromDbInd = (i: any): Individual => ({ id: i.id, projectId: i.project_id, speciesId: i.species_id, studbookId: i.studbook_id, name: i.name, sex: i.sex, birthDate: i.birth_date, weightKg: i.weight_kg, sireId: i.sire_id, damId: i.dam_id, imageUrl: i.image_url, dnaSequence: i.dna_sequence, notes: i.notes, source: i.source, sourceDetails: i.source_details, latitude: i.latitude, longitude: i.longitude, isDeceased: i.is_deceased, deathDate: i.death_date, loanStatus: i.loan_status, transferredToOrgId: i.transferred_to_org_id, transferDate: i.transfer_date, transferNote: i.transfer_note, weightHistory: i.weight_history || [], growthHistory: i.growth_history || [], healthHistory: i.health_history || [] });
 const fromDbEvent = (e: any): BreedingEvent => ({ id: e.id, speciesId: e.species_id, sireId: e.sire_id, damId: e.dam_id, date: e.date, offspringCount: e.offspring_count, successfulBirths: e.successful_births, losses: e.losses, notes: e.notes, offspringIds: e.offspring_ids || [] });
 const fromDbLoan = (l: any): BreedingLoan => ({ id: l.id, partnerOrgId: l.partner_org_id, proposerOrgId: l.proposer_org_id, role: l.role, startDate: l.start_date, endDate: l.end_date, status: l.status, individualIds: l.individual_ids || [], terms: l.terms, notificationRecipientId: l.notification_recipient_id, changeRequest: l.change_request });
 const fromDbPartnership = (p: any): Partnership => ({ id: p.id, orgId1: p.org_id_1, orgId2: p.org_id_2, status: p.status, establishedDate: p.established_date });
