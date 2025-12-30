@@ -96,7 +96,7 @@ const prepOrg = (o: any) => ({
   ai_usage_count: o.aiUsageCount,
   ai_usage_last_reset: o.aiUsageLastReset
 });
-const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id, name: p.name, description: p.description });
+const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id || p.orgId, name: p.name, description: p.description });
 const prepUser = (u: any) => ({ id: u.id, org_id: u.orgId || u.org_id, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status, password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids });
 const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
 const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
@@ -115,7 +115,7 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Use Prisma's likely camelCase/mapped names for registration
+        // 1. Create Organization
         const org = await (prisma as any).organization.create({
             data: { 
               id: orgId, 
@@ -131,32 +131,26 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
             }
         });
         
+        // 2. Create User - Using a robust attempt at the organization ID field name
+        const userData: any = {
+            id: userId,
+            name: userName,
+            email: email.toLowerCase().trim(),
+            role: 'Admin',
+            status: 'Active',
+            password: hashedPassword
+        };
+
+        // Try org_id first, then orgId
         const user = await (prisma as any).user.create({
-            data: { 
-              id: userId, 
-              org_id: orgId, // If the Prisma error persists, this might be orgId
-              name: userName, 
-              email: email.toLowerCase().trim(), 
-              role: 'Admin', 
-              status: 'Active', 
-              password: hashedPassword 
-            }
+            data: { ...userData, org_id: orgId }
         }).catch(async (err: any) => {
-           // Fallback to camelCase if snake_case FK fails
-           if (err.message.includes('Unknown argument')) {
-              return await (prisma as any).user.create({
-                data: { 
-                  id: userId, 
-                  orgId: orgId, 
-                  name: userName, 
-                  email: email.toLowerCase().trim(), 
-                  role: 'Admin', 
-                  status: 'Active', 
-                  password: hashedPassword 
-                }
-              });
-           }
-           throw err;
+            if (err.message.includes('Unknown argument')) {
+                return await (prisma as any).user.create({
+                    data: { ...userData, orgId: orgId }
+                });
+            }
+            throw err;
         });
 
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: orgId }, JWT_SECRET, { expiresIn: '30d' });
