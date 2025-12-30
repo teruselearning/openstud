@@ -4,8 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-/* Added User as UserIcon to the lucide-react imports to fix line 569 error */
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 type StatusFilter = 'current' | 'deceased' | 'all';
@@ -53,6 +52,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [newSpeciesName, setNewSpeciesName] = useState('');
   const [newSpeciesType, setNewSpeciesType] = useState<SpeciesType>('Animal');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Individual>>({
@@ -67,6 +67,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     notes: '',
     imageUrl: '',
     dnaSequence: '',
+    dnaFileName: '',
+    dnaFileType: '',
     isDeceased: false,
     deathDate: '',
     latitude: undefined,
@@ -123,7 +125,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       source: 'Bred in house',
       notes: '',
       imageUrl: '',
-      dnaSequence: ''
+      dnaSequence: '',
+      dnaFileName: '',
+      dnaFileType: '',
+      latitude: undefined,
+      longitude: undefined
     });
   };
 
@@ -134,6 +140,57 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       reader.onloadend = () => setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleDnaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    const extension = file.name.split('.').pop()?.toUpperCase() || 'DNA';
+    
+    const textFormats = ['FASTA', 'FA', 'FASTQ', 'FQ', 'VCF', 'GB', 'GBK', 'SAM', 'TXT'];
+    const isText = textFormats.includes(extension);
+
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setFormData(prev => ({
+        ...prev,
+        dnaSequence: content,
+        dnaFileName: file.name,
+        dnaFileType: extension
+      }));
+    };
+
+    if (isText) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setFormData(prev => ({
+          ...prev,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        }));
+        setIsLocating(false);
+      },
+      (error) => {
+        console.error("GPS Error:", error);
+        alert("Failed to get location: " + error.message);
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const handleEdit = (ind: Individual) => {
@@ -214,6 +271,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         weightKg: Number(formData.weightKg || 0),
         sireId: isPlant ? undefined : formData.sireId,
         damId: isPlant ? undefined : formData.damId,
+        latitude: formData.latitude ? Number(formData.latitude) : undefined,
+        longitude: formData.longitude ? Number(formData.longitude) : undefined
     };
 
     let updatedIndividuals = editingId 
@@ -372,6 +431,53 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                </div>
 
+               {isPlant && (
+                 <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-green-700 border-b border-green-50 pb-2">
+                       <MapPin size={20}/>
+                       <h4 className="font-bold uppercase tracking-wider text-sm">Geo-Location</h4>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                          <p className="text-xs text-slate-500 max-w-md">Assign specific coordinates for tracking the individual in the project's Plant Map.</p>
+                          <button 
+                             type="button" 
+                             onClick={handleGetCurrentLocation}
+                             disabled={isLocating}
+                             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
+                          >
+                             {isLocating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
+                             Use Device GPS
+                          </button>
+                       </div>
+                       <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-bold text-slate-400 uppercase">Latitude</label>
+                             <input 
+                                type="number" 
+                                step="any" 
+                                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
+                                value={formData.latitude || ''} 
+                                onChange={e => setFormData({...formData, latitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} 
+                                placeholder="e.g. 45.5152"
+                             />
+                          </div>
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-bold text-slate-400 uppercase">Longitude</label>
+                             <input 
+                                type="number" 
+                                step="any" 
+                                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
+                                value={formData.longitude || ''} 
+                                onChange={e => setFormData({...formData, longitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} 
+                                placeholder="e.g. -122.6784"
+                             />
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+               )}
+
                {!isPlant && (
                  <div className="space-y-4">
                     <div className="flex items-center gap-2 text-purple-700 border-b border-purple-50 pb-2">
@@ -418,18 +524,38 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-indigo-700 border-b border-indigo-50 pb-2">
                      <Fingerprint size={20}/>
-                     <h4 className="font-bold uppercase tracking-wider text-sm">Genetics</h4>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">Genetic Data</h4>
                   </div>
-                  <div className="space-y-2">
-                     <label className="text-sm font-bold text-slate-700">DNA Sequence / Genetic Data</label>
-                     <textarea 
-                        className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 font-mono text-sm" 
-                        rows={4} 
-                        value={formData.dnaSequence || ''} 
-                        onChange={e => setFormData({...formData, dnaSequence: e.target.value})} 
-                        placeholder="Paste FASTA sequence or genetic markers here..."
-                     />
-                     <p className="text-[10px] text-slate-400 italic">Supports plain text and standardized sequence formats.</p>
+                  <div className="space-y-4">
+                     <label className="text-sm font-bold text-slate-700 block">DNA Data File (FASTA, FASTQ, VCF, BAM, GBK, etc.)</label>
+                     <div className="flex flex-col gap-4">
+                        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-indigo-200 rounded-xl bg-indigo-50/30 cursor-pointer hover:bg-indigo-50 transition-all group">
+                           <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                              <Upload className="w-8 h-8 mb-3 text-indigo-400 group-hover:scale-110 transition-transform" />
+                              <p className="mb-1 text-sm text-indigo-600 font-bold">Click to upload DNA sequence</p>
+                              <p className="text-xs text-indigo-400">FASTA, FASTQ, VCF, BAM, GBK, SAM, TXT</p>
+                           </div>
+                           <input type="file" className="hidden" accept=".fasta,.fa,.fastq,.fq,.vcf,.bam,.sam,.gb,.gbk,.txt" onChange={handleDnaUpload} />
+                        </label>
+
+                        {formData.dnaFileName && (
+                           <div className="bg-white border border-indigo-100 rounded-lg p-3 flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2">
+                              <div className="flex items-center gap-3">
+                                 <div className="p-2 bg-indigo-100 text-indigo-600 rounded">
+                                    <FileCode size={20} />
+                                 </div>
+                                 <div>
+                                    <p className="text-sm font-bold text-slate-900">{formData.dnaFileName}</p>
+                                    <p className="text-[10px] text-indigo-500 font-mono uppercase">{formData.dnaFileType} File Loaded</p>
+                                 </div>
+                              </div>
+                              <button type="button" onClick={() => setFormData(prev => ({...prev, dnaSequence: '', dnaFileName: '', dnaFileType: ''}))} className="text-slate-400 hover:text-red-500 p-1">
+                                 <X size={16} />
+                              </button>
+                           </div>
+                        )}
+                     </div>
+                     <p className="text-[10px] text-slate-400 italic">Upload raw genetic data for analysis and long-term storage.</p>
                   </div>
                </div>
 
@@ -524,6 +650,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         {ind.isDeceased && <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded">Deceased</span>}
                         {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
                         {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> DNA</span>}
+                        {ind.latitude !== undefined && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><MapPin size={10}/> Mapped</span>}
                       </div>
                    </div>
                 </div>

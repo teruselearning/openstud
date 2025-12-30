@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg } from '../services/storage';
 import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, BreedingEvent, ExternalPartner, Partnership } from '../types';
-import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint } from 'lucide-react';
+import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { LanguageContext } from '../App';
 
@@ -255,6 +254,19 @@ const IndividualDetail: React.FC = () => {
     }
   };
 
+  const handleDownloadDna = () => {
+    if (!individual?.dnaSequence) return;
+    const blob = new Blob([individual.dnaSequence], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = individual.dnaFileName || `${individual.studbookId}_genetic_data.dna`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const getDisplayImage = () => {
     if (!individual) return '';
     const sp = species;
@@ -278,8 +290,10 @@ const IndividualDetail: React.FC = () => {
 
   const weightData = individual.weightHistory?.filter(w => w.weightKg !== undefined && w.weightKg !== null).map(w => ({ date: w.date, value: w.weightKg })) || [];
   const growthData = individual.growthHistory?.map(g => ({ date: g.date, value: g.heightCm })) || [];
+  /* Fixed error on line 294: Changed iPlant to isPlant */
   const chartData = isPlant ? growthData : weightData;
   const showGraph = chartData.length >= 2;
+  /* Fixed error on line 296: Changed iPlant to isPlant */
   const historySource = isPlant ? individual.growthHistory : individual.weightHistory;
   const galleryRecords = [...(historySource || [])].reverse().filter(rec => rec.imageUrl); 
 
@@ -351,16 +365,28 @@ const IndividualDetail: React.FC = () => {
 
           {individual.dnaSequence && (
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-               <div className="flex items-center gap-2 text-indigo-700 mb-4">
-                  <Fingerprint size={20} />
-                  <h3 className="font-bold text-lg">Genetics</h3>
+               <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-indigo-700">
+                     <Fingerprint size={20} />
+                     <h3 className="font-bold text-lg">Genetics</h3>
+                  </div>
+                  <button onClick={handleDownloadDna} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Download Genetic Data">
+                     <Download size={18} />
+                  </button>
                </div>
-               <div className="bg-slate-900 rounded-lg p-3 overflow-hidden">
-                  <p className="text-[10px] text-indigo-400 font-mono mb-2 uppercase tracking-widest border-b border-indigo-900 pb-1">DNA Sequence Data</p>
+               <div className="bg-slate-900 rounded-lg p-3 overflow-hidden border border-slate-800">
+                  <div className="flex items-center justify-between border-b border-indigo-900/50 pb-2 mb-2">
+                     <div className="flex items-center gap-2">
+                        <FileCode size={14} className="text-indigo-400"/>
+                        <p className="text-[10px] text-indigo-400 font-mono uppercase tracking-widest">{individual.dnaFileName || 'Genetic Data'}</p>
+                     </div>
+                     <span className="text-[9px] font-bold text-indigo-500/50 uppercase">{individual.dnaFileType || 'DATA'}</span>
+                  </div>
                   <pre className="text-[11px] text-indigo-200 font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto custom-scrollbar">
-                     {individual.dnaSequence}
+                     {individual.dnaSequence.length > 5000 ? `${individual.dnaSequence.substring(0, 5000)}... [File Truncated for View]` : individual.dnaSequence}
                   </pre>
                </div>
+               <p className="text-[9px] text-slate-400 mt-2 text-center uppercase tracking-tighter">Secure Genomic Storage</p>
             </div>
           )}
 
@@ -383,6 +409,7 @@ const IndividualDetail: React.FC = () => {
                 <div className="space-y-3">
                   {[...(historySource || [])].reverse().map(rec => (
                     <div key={rec.id} className="flex gap-4 items-start p-3 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-100 transition-all">
+                       {/* Fixed error on line 351 (approx): Changed iPlant to isPlant */}
                        <div className="relative group">{rec.imageUrl ? <img src={rec.imageUrl} className="w-16 h-16 rounded-lg object-cover bg-slate-200 cursor-pointer shadow-sm group-hover:shadow-md transition-all group-hover:scale-105" alt="Log Image" onClick={() => openGallery(rec.id)} /> : <div className="w-16 h-16 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300">{isPlant ? <Sprout size={20}/> : <Scale size={20} />}</div>}{rec.imageUrl && <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg text-white"><Maximize2 size={16}/></div>}</div>
                        <div><div className="flex items-center gap-2"><span className="font-bold text-slate-900">{isPlant ? (rec as GrowthRecord).heightCm + ' cm' : (rec as WeightRecord).weightKg + ' kg'}</span><span className="text-xs text-slate-500">• {rec.date}</span></div><p className="text-sm text-slate-600 mt-1">{rec.note}</p></div>
                     </div>

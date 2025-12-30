@@ -45,12 +45,10 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-/* Fixed error on line 263: Added syncPushLanguages to the imports from storage */
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners } from './services/storage';
 import { fetchRemoteData } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
-import { hashPassword } from './services/crypto';
 
 // --- Components ---
 
@@ -192,11 +190,11 @@ const App: React.FC = () => {
   const [initialLandingView, setInitialLandingView] = useState<ViewMode>('landing');
   const [projects, setProjects] = useState<Project[]>(getProjects());
   const [currentProjectId, setCurrentProjectIdState] = useState<string>(getCurrentProjectId());
+  const [showBreeding, setShowBreeding] = useState(true);
+  const [showPlantMap, setShowPlantMap] = useState(false);
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
-  const [showBreeding, setShowBreeding] = useState(true);
-  const [showPlantMap, setShowPlantMap] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [pendingEmail, setPendingEmail] = useState('');
@@ -238,10 +236,21 @@ const App: React.FC = () => {
   }, [systemSettings]);
 
   const calculateFeatureVisibility = (pid: string) => {
+     if (!pid) return;
      const allSpecies = getSpecies();
+     const allInds = getIndividuals();
      const projectSpecies = allSpecies.filter(s => s.projectId === pid);
+     const projectInds = allInds.filter(i => i.projectId === pid);
+     
      setShowBreeding(getOrg().focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
-     setShowPlantMap(getIndividuals().filter(i => i.projectId === pid).some(i => i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant'));
+     
+     // Robust Plant Map visibility: Current project has at least 1 individual with valid coordinates belonging to a plant species
+     const hasMappedPlants = projectInds.some(i => {
+        if (typeof i.latitude !== 'number' || typeof i.longitude !== 'number') return false;
+        const sp = allSpecies.find(s => s.id === i.speciesId);
+        return sp?.type === 'Plant';
+     });
+     setShowPlantMap(hasMappedPlants);
   };
 
   const performSync = async () => {
@@ -264,7 +273,10 @@ const App: React.FC = () => {
               await syncPushLanguages(getLanguages());
            } else {
               if (data.org) saveOrg(data.org, true);
-              if (data.settings) { saveSystemSettings(data.settings, true); setSystemSettings(data.settings); }
+              if (data.settings && Object.keys(data.settings).length > 2) { 
+                 saveSystemSettings(data.settings, true); 
+                 setSystemSettings(data.settings); 
+              }
               if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);
@@ -275,11 +287,11 @@ const App: React.FC = () => {
               if (data.partnerships) savePartnerships(data.partnerships, true);
               if (data.partners) saveNetworkPartners(data.partners); 
            }
-           // IMPORTANT: Filter by active org ID immediately after sync
+           
            const activeOrg = getOrg();
-           const filtered = getProjects().filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
-           setProjects(filtered);
            setCurrentOrg(activeOrg);
+           setProjects(getProjects().filter(p => (p.orgId || (p as any).org_id) === activeOrg.id));
+           calculateFeatureVisibility(getCurrentProjectId());
         } else if (!result.success) {
            setSyncError(result.message || "Unknown sync error");
            if (result.message.includes('Unexpected response (404)') || result.message.includes('Failed to fetch')) setShowBackendSetup(true);
@@ -292,21 +304,29 @@ const App: React.FC = () => {
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
     
-    const isSuper = session.role === UserRole.SUPER_ADMIN || (session.role as string) === 'Super Admin';
-    setImpersonating(isSuper ? false : isImpersonating());
+    const isSuper = session.role === UserRole.SUPER_ADMIN || (user?.role as string) === 'Super Admin';
+    const isImpersonatingSession = isImpersonating();
+    setImpersonating(isSuper ? false : isImpersonatingSession);
     
-    const activeOrg = getOrg();
+    let activeOrg = getOrg();
+    
+    if (!isImpersonatingSession && activeOrg.id !== session.orgId) {
+       const allPartners = getNetworkPartners();
+       const matchedOrg = allPartners.find(p => p.id === session.orgId);
+       if (matchedOrg) {
+          saveOrg(matchedOrg as any, true);
+          activeOrg = matchedOrg as any;
+       }
+    }
+    
     setCurrentOrg(activeOrg);
     
     const allProjects = getProjects();
-    
-    // Filter projects strictly by the current organization context
     let availableProjects = allProjects.filter(p => {
        const projectOrgId = p.orgId || (p as any).org_id;
        return projectOrgId === activeOrg.id;
     });
 
-    // Handle project selection logic
     let savedPid = getCurrentProjectId();
     if (!availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
@@ -342,7 +362,6 @@ const App: React.FC = () => {
     const allProjects = [...getProjects(), newProject];
     saveProjects(allProjects);
     
-    // Refresh the local filtered list
     const filtered = allProjects.filter(p => (p.orgId || (p as any).org_id) === orgId);
     setProjects(filtered);
     
@@ -381,8 +400,8 @@ const App: React.FC = () => {
         <div className="min-h-screen bg-slate-50 flex">
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
-            {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organization: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
-            {(currentOrg?.id === 'org-1' && (user.role as string) !== 'Super Admin') && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organization</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organization</button></div>}
+            {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organisation: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
+            {(currentOrg?.id === 'org-1' && (user.role as string) !== 'Super Admin') && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organisation</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organisation</button></div>}
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>

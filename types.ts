@@ -241,7 +241,9 @@ export interface Individual {
   sireId?: string; // Father
   damId?: string; // Mother
   imageUrl?: string;
-  dnaSequence?: string; // Placeholder for DNA data content or file reference
+  dnaSequence?: string; // Base64 or Text content of the DNA file
+  dnaFileName?: string; // Original name of the uploaded file
+  dnaFileType?: string; // Format type (FASTA, VCF, BAM, etc.)
   notes: string;
   
   // Origin / Source
