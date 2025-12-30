@@ -58,12 +58,13 @@ app.use(morgan('dev'));
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
-    console.log("Starting Database Schema Check...");
+    console.log(`Attempting to connect to database '${dbConfig.database}' as '${dbConfig.user}'...`);
     const db = getDb();
     try {
         // Test connection first
         await db.query('SELECT 1');
         
+        // 1. Create tables if they don't exist
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -88,25 +89,6 @@ const initDatabase = async () => {
                 is_deleted BOOLEAN DEFAULT FALSE
             )
         `);
-
-        // Aggressive column check for older table versions
-        const ensureCols = async (table: string, columns: {name: string, type: string}[]) => {
-           const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${table}`);
-           const existing = rows.map((r: any) => r.Field.toLowerCase());
-           for (const col of columns) {
-              if (!existing.includes(col.name.toLowerCase())) {
-                 console.log(`[MIGRATION] Adding missing column ${col.name} to ${table}`);
-                 await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
-              }
-           }
-        };
-
-        await ensureCols('organizations', [
-           { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
-           { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
-           { name: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
-           { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
-        ]);
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -182,6 +164,37 @@ const initDatabase = async () => {
             )
         `);
 
+        // Aggressive column reconciliation for existing tables
+        const ensureCols = async (table: string, columns: {name: string, type: string}[]) => {
+           const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${table}`);
+           const existing = rows.map((r: any) => r.Field.toLowerCase());
+           for (const col of columns) {
+              if (!existing.includes(col.name.toLowerCase())) {
+                 console.log(`[MIGRATION] Adding missing column ${col.name} to ${table}`);
+                 await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
+              }
+           }
+        };
+
+        // Fix organization columns
+        await ensureCols('organizations', [
+           { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
+           { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
+           { name: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
+           { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
+        ]);
+
+        // FIX: Ensure users table has org_id
+        await ensureCols('users', [
+           { name: 'org_id', type: 'VARCHAR(255)' },
+           { name: 'allowed_project_ids', type: 'JSON' }
+        ]);
+
+        // FIX: Ensure projects table has org_id
+        await ensureCols('projects', [
+           { name: 'org_id', type: 'VARCHAR(255)' }
+        ]);
+
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
                 id VARCHAR(255) PRIMARY KEY,
@@ -243,7 +256,7 @@ const initDatabase = async () => {
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
 
-        console.log("Database tables verified and ready.");
+        console.log("Database schema reconciliation complete. Tables ready.");
     } catch (e: any) {
         if (e.message.includes('auth_gssapi_client')) {
            console.error("\n==================================================================");
@@ -253,9 +266,26 @@ const initDatabase = async () => {
            console.error("\nALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '';");
            console.error("FLUSH PRIVILEGES;");
            console.error("==================================================================\n");
-        } else {
+        } 
+        else if (e.code === 'ER_ACCESS_DENIED_ERROR' || e.message.includes('Access denied')) {
+           console.error("\n==================================================================");
+           console.error("DATABASE ACCESS DENIED");
+           console.error(`User '${dbConfig.user}' could not connect (Password provided: ${dbConfig.password ? 'YES' : 'NO'})`);
+           console.error("\nFIX: Create a file named 'backend/.env' and add:");
+           console.error(`DATABASE_PASSWORD=your_actual_password`);
+           console.error("==================================================================\n");
+        }
+        else if (e.code === 'ER_BAD_DB_ERROR' || e.message.includes('Unknown database')) {
+            console.error("\n==================================================================");
+            console.error(`DATABASE '${dbConfig.database}' NOT FOUND`);
+            console.error("\nFIX: Run this SQL command in your database manager:");
+            console.error(`CREATE DATABASE ${dbConfig.database};`);
+            console.error("==================================================================\n");
+        }
+        else {
            console.error("Critical: Database Schema Init Failed!", e.message);
         }
+        process.exit(1);
     }
 };
 
