@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
+import { checkAndIncrementAiUsage } from "./storage";
 
 // Schema guided by prompt instructions
 const speciesSchema = {
@@ -22,7 +23,6 @@ const speciesSchema = {
 };
 
 const getAiClient = (): GoogleGenAI => {
-  // Use a safe access pattern for process.env in the browser
   const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
   return new GoogleGenAI({ apiKey });
 };
@@ -43,13 +43,17 @@ const sanitizeJsonResponse = (text: string): string => {
 
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
-    const ai = getAiClient();
     const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
-    
     if (!apiKey) {
-      throw new Error("Gemini API Key is not configured in the host environment.");
+      throw new Error("Gemini API Key is not configured in the host environment. Please check your .env file or hosting provider secrets.");
     }
 
+    // Check Usage Limits
+    if (!checkAndIncrementAiUsage()) {
+       throw new Error("Organization AI usage limit reached for this month. Please contact an administrator to increase your quota.");
+    }
+
+    const ai = getAiClient();
     const locationPrompt = locationContext 
       ? `The organization tracking this species is located in "${locationContext}".`
       : `No location context provided.`;
@@ -76,6 +80,11 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<Record<string, string>> => {
   try {
+    // Check Usage Limits
+    if (!checkAndIncrementAiUsage()) {
+       throw new Error("AI usage limit reached.");
+    }
+
     const ai = getAiClient();
     const prompt = `Translate values to ${targetLanguage}. Keep JSON keys intact: ${JSON.stringify(sourceData)}. Return ONLY the JSON object.`;
     const response = await ai.models.generateContent({

@@ -39,7 +39,6 @@ const get = <T>(key: string, defaultVal: T): T => {
   if (!item) return defaultVal;
   try {
     const parsed = JSON.parse(item);
-    // Explicitly check for null because JSON.parse("null") returns null
     if (parsed === null) return defaultVal;
     return parsed;
   } catch (e) {
@@ -68,6 +67,47 @@ const safeParseJson = async (response: Response) => {
   throw new Error(`Server returned unexpected content (Status: ${response.status})`);
 };
 
+/* Added exportFullData to handle complete system backups */
+export const exportFullData = () => {
+  const data: any = {};
+  Object.keys(KEYS).forEach(k => {
+    data[k] = get((KEYS as any)[k], null);
+  });
+  return data;
+};
+
+/* Added importFullData to restore data from a backup file */
+export const importFullData = (data: any) => {
+  Object.keys(data).forEach(k => {
+    if ((KEYS as any)[k]) {
+      set((KEYS as any)[k], data[k]);
+    }
+  });
+};
+
+/* Added exportDataAsCSV to provide a flattened view of species and individuals */
+export const exportDataAsCSV = () => {
+  const species = getSpecies();
+  const individuals = getIndividuals();
+  let csv = "Type,Common Name,Scientific Name,ID,Name,Sex,Birth Date,Weight\n";
+  individuals.forEach(i => {
+    const s = species.find(sp => sp.id === i.speciesId);
+    csv += `Individual,${s?.commonName || ''},${s?.scientificName || ''},${i.studbookId},${i.name},${i.sex},${i.birthDate},${i.weightKg}\n`;
+  });
+  return csv;
+};
+
+/* Added exportSpeciesData to handle species-specific exports */
+export const exportSpeciesData = () => {
+   return JSON.stringify(getSpecies());
+};
+
+/* Added importSpeciesData to handle species-specific imports */
+export const importSpeciesData = (json: string) => {
+   const data = JSON.parse(json);
+   saveSpecies(data);
+};
+
 export const getSystemSettings = (): SystemSettings => {
   const defaults: SystemSettings = {
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
@@ -84,8 +124,6 @@ export const getSystemSettings = (): SystemSettings => {
   };
   
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
-  
-  // Explicitly merge to ensure all objects like aboutPage exist even if stored data is from an older version
   return {
     ...defaults,
     ...stored,
@@ -164,16 +202,55 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
 };
 
 export const getOrg = (): Organization => {
-  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false };
+  const defaultOrg: Organization = { 
+    id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', 
+    focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, 
+    obscureLocation: false, allowBreedingRequests: false,
+    aiUsageLimit: 100, aiUsageCount: 0 
+  };
   const org = get(KEYS.ORG, defaultOrg);
-  // Double-safety check for null-derived objects
   if (!org || typeof org !== 'object') return defaultOrg;
+  
+  // Ensure default limits exist
+  if (org.aiUsageLimit === undefined) org.aiUsageLimit = 100;
+  if (org.aiUsageCount === undefined) org.aiUsageCount = 0;
+  
   return org;
 };
 
 export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
   if (!skipSync) syncPushOrg(o).catch(() => {});
+};
+
+// AI USAGE HELPERS
+export const checkAndIncrementAiUsage = (): boolean => {
+  const org = getOrg();
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
+  
+  let count = org.aiUsageCount || 0;
+  let lastReset = org.aiUsageLastReset || "";
+  const limit = org.aiUsageLimit || 100;
+  
+  // Check for monthly reset
+  if (lastReset !== currentMonthStr) {
+     count = 0;
+     lastReset = currentMonthStr;
+  }
+  
+  if (count >= limit) {
+     return false;
+  }
+  
+  const updatedOrg = { 
+    ...org, 
+    aiUsageCount: count + 1, 
+    aiUsageLastReset: currentMonthStr 
+  };
+  
+  saveOrg(updatedOrg);
+  return true;
 };
 
 export const getProjects = (): Project[] => get(KEYS.PROJECTS, []);
@@ -258,7 +335,6 @@ export const registerOrganization = async (orgName: string, userName: string, em
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
-  console.log(`[LOGIN DEBUG] Frontend login request for ${email}`);
   try {
     const response = await fetch(`${API_BASE_URL}/api/login`, {
       method: 'POST',
@@ -268,20 +344,18 @@ export const login = async (email: string, pass: string): Promise<User | null> =
     if (response.ok) {
       const { token, user, organization } = await response.json();
       localStorage.setItem(KEYS.TOKEN, token);
-      // Ensure the logged in user's actual organization is persisted to prevent demo org fallback
       if (organization) {
          saveOrg(organization, true);
       }
       return user;
     }
   } catch (e: any) {
-    console.warn(`[LOGIN DEBUG] Server unreachable or proxy fail:`, e.message);
+    console.warn(`[LOGIN] Proxy fail:`, e.message);
   }
 
-  // Local Fallback (Only works if DB has standard plain-text from old local-only mode)
   const user = getUsers().find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
   if (user?.password) {
-     if (user.password.startsWith('$2')) return null; // Server required for Bcrypt
+     if (user.password.startsWith('$2')) return null;
      const hashedInput = await hashPassword(pass);
      if (hashedInput === user.password) return user;
   }
@@ -297,7 +371,6 @@ export const forgotPassword = async (email: string): Promise<any> => {
       });
       return await safeParseJson(response);
    } catch (e: any) {
-      console.error("[STORAGE] Forgot password error:", e.message);
       return { success: false, error: e.message };
    }
 };
@@ -311,7 +384,6 @@ export const resetPassword = async (email: string, code: string, newPassword: st
       });
       return await safeParseJson(response);
    } catch (e: any) {
-      console.error("[STORAGE] Reset password error:", e.message);
       return { success: false, error: e.message };
    }
 };
@@ -340,63 +412,14 @@ export const sendMockNotification = (recipientId: string, title: string, message
    saveNotifications([{ id: `n-${Date.now()}`, recipientId, senderOrgName: 'System', title, message, date: new Date().toISOString().split('T')[0], isRead: false, type }, ...notifs]);
 };
 
-export const exportSpeciesData = (speciesId: string): any => {
-   const species = getSpecies().find(s => s.id === speciesId);
-   if (!species) return null;
-   return { species, individuals: getIndividuals().filter(i => i.speciesId === speciesId), exportDate: new Date().toISOString() };
-};
-
-export const importSpeciesData = (data: any) => {
-   if (!data.species) throw new Error("Invalid Format");
-   const allS = getSpecies();
-   const idx = allS.findIndex(s => s.id === data.species.id);
-   if (idx >= 0) allS[idx] = data.species; else allS.push(data.species);
-   saveSpecies(allS);
-   if (data.individuals) {
-      const allI = getIndividuals();
-      data.individuals.forEach((ind: Individual) => {
-         const iIdx = allI.findIndex(i => i.id === ind.id);
-         if (iIdx >= 0) allI[iIdx] = ind; else allI.push(ind);
-      });
-      saveIndividuals(allI);
-   }
-};
-
-export const exportFullData = () => ({
-   org: getOrg(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(),
-   breedingEvents: getBreedingEvents(), settings: getSystemSettings(), languages: getLanguages(), version: '1.0'
-});
-
-export const importFullData = (data: any) => {
-   if (!data.org) throw new Error("Invalid Backup");
-   saveOrg(data.org);
-   if (data.users) saveUsers(data.users);
-   if (data.species) saveSpecies(data.species);
-   if (data.individuals) saveIndividuals(data.individuals);
-   if (data.breedingEvents) saveBreedingEvents(data.breedingEvents);
-   if (data.settings) saveSystemSettings(data.settings);
-   if (data.languages) saveLanguages(data.languages);
-};
-
-export const exportDataAsCSV = (): string => {
-  const individuals = getIndividuals();
-  const species = getSpecies();
-  const header = "Studbook ID,Individual Name,Common Name,Scientific Name,Sex,Birth Date,Status";
-  const rows = individuals.map(ind => {
-    const sp = species.find(s => s.id === ind.speciesId);
-    return [ind.studbookId, ind.name, sp?.commonName, sp?.scientificName, ind.sex, ind.birthDate, ind.isDeceased ? 'Deceased' : 'Active'].join(",");
-  });
-  return [header, ...rows].join("\n");
-};
-
 export const regenerateDemoData = async () => {
     const mockOrg: Organization = {
       id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805,
       isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998,
-      description: 'Demo Sanctuary', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true
+      description: 'Demo Sanctuary', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
+      aiUsageLimit: 1000, aiUsageCount: 42
     };
 
-    // Use standard plain text for sync, the backend now correctly detects and hashes these
     const mockUsers: User[] = [
       { id: 'u-1', orgId: 'org-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
       { id: 'u-2', orgId: 'org-1', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
@@ -413,15 +436,10 @@ export const regenerateDemoData = async () => {
     saveIndividuals([], true);
     saveBreedingEvents([], true);
 
-    console.log("Demo Data Restored Locally.");
-
     try {
        await syncPushOrg(mockOrg);
        await syncPushUsers(mockUsers); 
        await syncPushProjects(projects);
        await syncPushSpecies([s1]);
-       console.log("Demo Data Synced to Backend.");
-    } catch(e: any) {
-       console.warn("Demo Sync Failed:", e.message);
-    }
+    } catch(e: any) {}
 };

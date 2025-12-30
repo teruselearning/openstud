@@ -66,19 +66,30 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
 };
 
 // ... prep helpers ...
-const prepOrg = (o: any) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, founded_year: o.founded_year, description: o.description, focus: o.focus, is_org_public: o.is_org_public, is_species_public: o.is_species_public, obscure_location: o.obscure_location, hide_name: o.hide_name, allow_breeding_requests: o.allow_breeding_requests, breeding_request_contact_id: o.breeding_request_contact_id, show_native_status: o.show_native_status, dashboard_block: o.dashboard_block, is_deleted: o.is_deleted });
+const prepOrg = (o: any) => ({ 
+  id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, 
+  founded_year: o.founded_year, description: o.description, focus: o.focus, 
+  is_org_public: o.is_org_public, is_species_public: o.is_species_public, 
+  obscure_location: o.obscure_location, hide_name: o.hide_name, 
+  allow_breeding_requests: o.allow_breeding_requests, breeding_request_contact_id: o.breeding_request_contact_id, 
+  show_native_status: o.show_native_status, dashboard_block: o.dashboard_block, 
+  is_deleted: o.is_deleted,
+  ai_usage_limit: o.aiUsageLimit,
+  ai_usage_count: o.aiUsageCount,
+  ai_usage_last_reset: o.aiUsageLastReset
+});
 const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id, name: p.name, description: p.description });
 const prepUser = (u: any) => ({ id: u.id, org_id: u.orgId || u.org_id, name: u.name, email: u.email?.toLowerCase().trim(), role: u.role, status: u.status, password: u.password, avatar_url: u.avatar_url, allowed_project_ids: u.allowed_project_ids });
 const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
 const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
 const prepEvent = (e: any) => ({ id: e.id, species_id: e.species_id, sire_id: e.sire_id, dam_id: e.dam_id, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspring_ids });
 const prepLoan = (l: any) => ({ id: l.id, partner_org_id: l.partner_org_id, proposer_org_id: l.proposer_org_id, role: l.role, start_date: l.start_date, end_date: l.end_date, status: l.status, individual_ids: l.individual_ids, terms: l.terms, notification_recipient_id: l.notification_recipient_id, change_request: l.change_request });
-const prepPartnership = (p: any) => ({ id: p.id, org_id_1: o.org_id_1, org_id_2: o.org_id_2, status: p.status, established_date: p.established_date });
+const prepPartnership = (p: any) => ({ id: p.id, org_id_1: p.org_id_1, org_id_2: p.org_id_2, status: p.status, established_date: p.established_date });
 const prepLanguage = (l: any) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.is_default, manual_overrides: l.manual_overrides, is_deleted: l.is_deleted });
 const prepAppConfig = (c: any) => ({ id: c.id, settings: c.settings });
 
 // 2. Register API Routes explicitly before static serving
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.17' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.18' }));
 
 // ... auth routes ...
 app.post('/api/login', async (req: any, res: any) => {

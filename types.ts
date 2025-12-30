@@ -64,6 +64,11 @@ export interface Organization {
   // Custom Dashboard
   dashboardBlock?: DashboardBlockConfig;
   
+  // AI Usage Limits
+  aiUsageLimit?: number;      // Monthly limit
+  aiUsageCount?: number;      // Current month count
+  aiUsageLastReset?: string;  // ISO Date of last reset
+
   // Soft Delete
   deleted?: boolean;
 }
@@ -149,11 +154,12 @@ export interface SystemSettings {
   aboutPage: StaticPageConfig;
   privacyPage: StaticPageConfig;
   termsPage: StaticPageConfig;
-  // AI API keys removed to strictly follow environment variable requirements
   // Security
   recaptchaSiteKey?: string;
   recaptchaSecretKey?: string;
   enableMfa: boolean;
+  // App Config
+  aiModel?: string;
 }
 
 export interface LanguageConfig {

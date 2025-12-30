@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useContext } from 'react';
-import { getSpecies, saveSpecies, exportSpeciesData, importSpeciesData, generatePattern, getOrg } from '../services/storage';
+/* Removed unused exportSpeciesData and importSpeciesData */
+import { getSpecies, saveSpecies, generatePattern, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, NativeStatus, Organization } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink, FolderOpen } from 'lucide-react';

@@ -8,7 +8,7 @@ import { testSmtpConnection } from '../services/emailService';
 /* Added LucideIcons wildcard import for dynamic icon rendering */
 import * as LucideIcons from 'lucide-react';
 /* Added named icons for safety fallback */
-import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil, Sparkle, BrainCircuit } from 'lucide-react';
+import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil, Sparkle, BrainCircuit, BarChart3 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate, StaticPageConfig } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
@@ -38,6 +38,11 @@ const SuperAdmin: React.FC = () => {
   // Org Expansion State
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
   const [orgBreakdown, setOrgBreakdown] = useState<any[]>([]);
+
+  // Usage Limit Modal
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [orgToLimit, setOrgToLimit] = useState<Organization | null>(null);
+  const [newLimit, setNewLimit] = useState(100);
 
   // Settings State
   const [settings, setSettings] = useState<SystemSettings>(getSystemSettings());
@@ -198,42 +203,50 @@ const SuperAdmin: React.FC = () => {
      setDeleteTarget({ type: 'org', id: orgId, name: orgName });
   };
 
+  /* Added triggerDeleteLang to handle language deletion flow */
   const triggerDeleteLang = (code: string, name: string) => {
-     if (code === 'en-GB') {
-        alert("Cannot delete the base language.");
-        return;
-     }
-     setDeleteTarget({ type: 'lang', id: code, name });
+     setDeleteTarget({ type: 'lang', id: code, name: name });
   };
 
+  /* Added confirmDelete to handle the final deletion of either organizations or languages */
   const confirmDelete = async () => {
      if (!deleteTarget) return;
      if (deleteTarget.type === 'org') {
         setIsDeletingOrg(deleteTarget.id);
         try {
            await deleteOrganization(deleteTarget.id);
-           alert(`Organization "${deleteTarget.name}" deleted successfully.`);
+           setDeleteTarget(null);
            window.location.reload();
-        } catch(e: any) {
-           console.error("Delete failed", e);
-           alert(`Failed to delete organization: ${e.message}`);
+        } catch (e) {
+           alert("Failed to delete organization.");
+        } finally {
            setIsDeletingOrg(null);
         }
-     } else if (deleteTarget.type === 'lang') {
-        setIsSavingLang(true);
+     } else {
         try {
            await deleteLanguage(deleteTarget.id);
-           const updated = languages.filter(l => l.code !== deleteTarget.id);
-           setLanguages(updated);
+           setLanguages(getLanguages());
+           setDeleteTarget(null);
            refreshTranslations();
-           if (editingLang?.code === deleteTarget.id) setEditingLang(null);
-        } catch(e: any) {
-           alert(`Failed to delete language from cloud: ${e.message}`);
-        } finally {
-           setIsSavingLang(false);
+        } catch (e) {
+           alert("Failed to delete language.");
         }
      }
-     setDeleteTarget(null);
+  };
+
+  const handleUpdateLimit = async () => {
+     if (!orgToLimit) return;
+     const updated = { ...orgToLimit, aiUsageLimit: newLimit };
+     await syncPushOrg(updated);
+     
+     // Update local state if it's our org
+     if (orgToLimit.id === myOrg.id) {
+        // Local state update handled via sync usually
+     }
+     setShowLimitModal(false);
+     setOrgToLimit(null);
+     alert("Organization limit updated successfully.");
+     window.location.reload();
   };
 
   const handleToggleExpandOrg = (orgId: string) => {
@@ -429,9 +442,9 @@ const SuperAdmin: React.FC = () => {
                           <th className="w-10"></th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">{t('orgName')}</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">{t('location')}</th>
+                          <th className="px-6 py-4 font-semibold text-slate-700 text-sm">AI Usage</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">Focus</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">{t('foundedYear')}</th>
-                          <th className="px-6 py-4 font-semibold text-slate-700 text-sm">Visibility</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm text-right">Actions</th>
                        </tr>
                     </thead>
@@ -440,6 +453,11 @@ const SuperAdmin: React.FC = () => {
                           if (!org) return null;
                           const isSelf = org.id === myOrg?.id;
                           const isExpanded = expandedOrgId === org.id;
+                          /* Added any cast to bypass type errors for ExternalPartner which shares these properties in context but not in type def */
+                          const usage = (org as any).aiUsageCount || 0;
+                          const limit = (org as any).aiUsageLimit || 100;
+                          const usagePct = Math.min(100, (usage / limit) * 100);
+
                           return (
                              <React.Fragment key={org.id || index}>
                                 <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}>
@@ -456,21 +474,25 @@ const SuperAdmin: React.FC = () => {
                                       <span className="text-xs text-slate-400 font-mono">{org.id}</span>
                                    </td>
                                    <td className="px-6 py-4 text-sm text-slate-600 flex items-center gap-1"><MapPin size={14}/> {org.location}</td>
+                                   <td className="px-6 py-4 min-w-[150px]">
+                                      <div className="flex flex-col gap-1">
+                                         <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                            <span>{usage} / {limit}</span>
+                                            <span>{Math.round(usagePct)}%</span>
+                                         </div>
+                                         <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className={`h-full transition-all duration-500 ${usagePct > 90 ? 'bg-red-500' : usagePct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${usagePct}%` }}></div>
+                                         </div>
+                                         {/* Cast org to Organization for state setter compatibility */}
+                                         <button onClick={() => { setOrgToLimit(org as Organization); setNewLimit(limit); setShowLimitModal(true); }} className="text-[10px] text-blue-600 font-bold hover:underline text-left mt-1">Edit Limit</button>
+                                      </div>
+                                   </td>
                                    <td className="px-6 py-4">
                                       <span className={`text-xs px-2 py-1 rounded font-bold ${(org as any).focus === 'Animals' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
                                          {(org as any).focus || 'N/A'}
                                       </span>
                                    </td>
                                    <td className="px-6 py-4 text-sm text-slate-600">{(org as any).foundedYear || '-'}</td>
-                                   <td className="px-6 py-4">
-                                      <div className="flex flex-col gap-1">
-                                         {org.isOrgPublic ? (
-                                            <span className="text-xs text-emerald-600 flex items-center gap-1"><Eye size={12}/> Public Profile</span>
-                                         ) : (
-                                            <span className="text-xs text-slate-400 flex items-center gap-1"><EyeOff size={12}/> Hidden</span>
-                                         )}
-                                      </div>
-                                   </td>
                                    <td className="px-6 py-4 text-right">
                                       {!isSelf && (
                                          <div className="flex justify-end gap-2">
@@ -522,6 +544,29 @@ const SuperAdmin: React.FC = () => {
         </div>
       )}
 
+      {/* Limit Modal */}
+      {showLimitModal && orgToLimit && (
+         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+               <h3 className="text-lg font-bold">Edit Monthly AI Limit</h3>
+               <p className="text-sm text-slate-500">Set the number of Gemini API calls allowed per month for <strong>{orgToLimit.name}</strong>.</p>
+               <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Monthly Call Limit</label>
+                  <input 
+                     type="number" 
+                     className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900" 
+                     value={newLimit} 
+                     onChange={e => setNewLimit(parseInt(e.target.value))} 
+                  />
+               </div>
+               <div className="flex gap-2">
+                  <button onClick={() => setShowLimitModal(false)} className="flex-1 py-2 bg-slate-100 rounded-lg font-medium">Cancel</button>
+                  <button onClick={handleUpdateLimit} className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-bold">Save Limit</button>
+               </div>
+            </div>
+         </div>
+      )}
+
       {/* DATABASE TAB */}
       {activeTab === 'database' && (
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
@@ -559,7 +604,7 @@ const SuperAdmin: React.FC = () => {
                         <p className="text-xs text-slate-600 mt-0.5">
                            {aiKeyDetected 
                              ? 'AI Features (Autofill, Translations) are active using the host environment key.' 
-                             : 'Check your hosting configuration. process.env.API_KEY must be set.'}
+                             : 'Check your hosting configuration. API_KEY must be set in your .env file or hosting provider dashboard.'}
                         </p>
                      </div>
                   </div>
@@ -597,7 +642,7 @@ const SuperAdmin: React.FC = () => {
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('appLogo')}</label>
                         <div className="flex items-center gap-3">
                            <div className="w-12 h-12 bg-slate-100 rounded border border-slate-300 flex items-center justify-center overflow-hidden">
-                              {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" alt="App Logo" /> : <ImageIcon size={20} className="text-slate-400" />}
+                              {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" alt="App Logo" /> : <LucideIcons.Image size={20} className="text-slate-400" />}
                            </div>
                            <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" placeholder="Logo URL (https://...)" value={settings.appLogoUrl || ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
                         </div>
@@ -661,14 +706,13 @@ const SuperAdmin: React.FC = () => {
 
                <div className="flex justify-end pt-4 border-t border-slate-100">
                   <button type="submit" className="bg-emerald-600 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2">
-                     <Save size={18} /> {settingsSaved ? 'Saved!' : t('saveSettings')}
+                     <BarChart3 size={18} /> {settingsSaved ? 'Saved!' : t('saveSettings')}
                   </button>
                </div>
             </form>
          </div>
       )}
 
-      {/* CONTENT TAB */}
       {activeTab === 'content' && (
          <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
