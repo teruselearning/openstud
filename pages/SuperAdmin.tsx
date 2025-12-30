@@ -2,16 +2,22 @@
 import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
-import { Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, Send, AlertCircle, Trash2, X, RefreshCw, Plus } from 'lucide-react';
+import { 
+  Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
+  Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
+  Lock, FileText, Type, Image as ImageIcon, Sparkles
+} from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LanguageConfig, EmailTemplate, UserRole } from '../types';
+import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 import React from 'react';
 
+type AdminTab = 'overview' | 'email' | 'settings' | 'languages';
+
 const SuperAdmin: React.FC = () => {
   const { t, refreshTranslations } = useContext(LanguageContext);
-  const [activeTab, setActiveTab] = useState<'overview' | 'email' | 'languages'>('overview');
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   
   const partners = getNetworkPartners();
   const myOrg = getOrg();
@@ -41,16 +47,16 @@ const SuperAdmin: React.FC = () => {
     setSettings(current);
     setLanguages(getLanguages());
     
-    // Default to currently selected template content from storage
     const tpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
     if (tpl) {
        setEditingTemplate(tpl);
     }
   }, []);
 
-  const handleSaveAllEmailSettings = (e?: React.FormEvent) => {
+  const handleSaveAllSettings = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
+    // Ensure currently editing template is merged before saving
     const finalSettings: SystemSettings = {
       ...settings,
       emailTemplates: {
@@ -66,20 +72,15 @@ const SuperAdmin: React.FC = () => {
   };
   
   const handleTemplateChange = (type: string) => {
-     // Persist local state of the current editor to settings state before switching
      const updatedTemplates = { 
         ...settings.emailTemplates, 
         [selectedTemplate]: editingTemplate 
      };
-     
      setSelectedTemplate(type);
-     
-     // Load the new template data from the settings state
      const nextTpl = updatedTemplates[type as keyof typeof updatedTemplates];
      if (nextTpl) {
         setEditingTemplate(nextTpl);
      }
-     
      setSettings(prev => ({ ...prev, emailTemplates: updatedTemplates }));
   };
 
@@ -87,8 +88,7 @@ const SuperAdmin: React.FC = () => {
     if (!testEmail) return;
     setIsTestingSmtp(true);
     setTestResult(null);
-    
-    handleSaveAllEmailSettings();
+    handleSaveAllSettings();
 
     try {
       await testSmtpConnection(testEmail);
@@ -98,6 +98,13 @@ const SuperAdmin: React.FC = () => {
     } finally {
       setIsTestingSmtp(false);
     }
+  };
+
+  const updateStaticPage = (key: 'aboutPage' | 'privacyPage' | 'termsPage', field: keyof StaticPageConfig, value: any) => {
+    setSettings({
+      ...settings,
+      [key]: { ...settings[key], [field]: value }
+    });
   };
 
   const handleUpdateTranslation = (key: string, value: string) => {
@@ -116,7 +123,6 @@ const SuperAdmin: React.FC = () => {
       setLanguages(updated);
       await saveLanguages(updated, false);
       refreshTranslations();
-      alert("Localisation data updated.");
     } finally { setIsSavingLang(false); }
   };
 
@@ -125,11 +131,12 @@ const SuperAdmin: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Shield className="text-purple-600" /> Super Administration</h2>
-          <p className="text-slate-500">Global system settings, email templates, and network oversight.</p>
+          <p className="text-slate-500">Global system settings, app configuration, and network oversight.</p>
         </div>
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap">
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
            <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>Network</button>
-           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email & SMTP</button>
+           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email</button>
+           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> App Settings</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> Localisation</button>
         </div>
       </div>
@@ -164,15 +171,13 @@ const SuperAdmin: React.FC = () => {
 
       {activeTab === 'email' && (
          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in fade-in">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col h-full">
-               <div className="flex items-center justify-between border-b border-slate-50 pb-2">
-                  <div className="flex items-center gap-3">
-                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Mail size={20}/></div>
-                     <h3 className="font-extrabold text-lg text-slate-900">SMTP Server</h3>
-                  </div>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col h-fit">
+               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Mail size={20}/></div>
+                  <h3 className="font-extrabold text-lg text-slate-900">SMTP Server</h3>
                </div>
                
-               <form onSubmit={handleSaveAllEmailSettings} className="grid grid-cols-1 gap-4 flex-1">
+               <form onSubmit={handleSaveAllSettings} className="grid grid-cols-1 gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase block">Host</label>
@@ -200,9 +205,7 @@ const SuperAdmin: React.FC = () => {
                   </div>
 
                   <div className="mt-2 pt-4 border-t border-slate-100 space-y-3">
-                    <div className="flex items-center gap-2">
-                       <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2"><Send size={12}/> Test Connection</h4>
-                    </div>
+                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2"><Send size={12}/> Test Connection</h4>
                     <div className="flex gap-2">
                        <input 
                          className="flex-1 px-4 py-1.5 border border-slate-300 rounded-lg bg-white text-xs outline-none focus:ring-1 focus:ring-blue-500"
@@ -229,13 +232,10 @@ const SuperAdmin: React.FC = () => {
                     )}
                   </div>
                </form>
-               <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[10px] text-blue-800 leading-tight">
-                  <strong>Mailcatcher Note:</strong> Use port <strong>1025</strong> for SMTP. <strong>1080</strong> is only for the Web UI. Disable Secure (TLS/SSL) for local testing.
-               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[600px]">
-               <div className="flex items-center gap-3 mb-4">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-fit min-h-[600px]">
+               <div className="flex items-center gap-3 mb-4 border-b border-slate-50 pb-4">
                   <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><PenTool size={20}/></div>
                   <h3 className="font-extrabold text-lg text-slate-900">Email Templates</h3>
                </div>
@@ -254,7 +254,7 @@ const SuperAdmin: React.FC = () => {
                   <div className="flex items-center justify-between">
                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
                         <input type="checkbox" checked={editingTemplate.enabled} onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})} className="rounded text-emerald-600" /> 
-                        Use Override
+                        Template Enabled
                      </label>
                   </div>
                   <div className="space-y-1">
@@ -265,13 +265,170 @@ const SuperAdmin: React.FC = () => {
                      <RichTextEditor value={editingTemplate.bodyHtml} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-50 p-2 rounded">
-                     <span>Vars: {'{{orgName}}, {{userName}}, {{code}}'}</span>
+                     <span>Available Variables: {'{{orgName}}, {{userName}}, {{code}}, {{message}}'}</span>
                   </div>
                </div>
-               <div className="mt-4">
-                  <button onClick={handleSaveAllEmailSettings} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+               <div className="mt-6">
+                  <button onClick={handleSaveAllSettings} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
                      {settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
-                     <span>{settingsSaved ? 'All Settings Updated' : 'Save Configuration'}</span>
+                     <span>{settingsSaved ? 'Saved Successfully' : 'Save Email Config'}</span>
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {activeTab === 'settings' && (
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
+            {/* BRANDING */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><Palette size={20}/></div>
+                  <h3 className="font-extrabold text-lg text-slate-900">Branding & Theming</h3>
+               </div>
+               
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Primary Color</label>
+                     <div className="flex gap-2">
+                        <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                     </div>
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Secondary Color</label>
+                     <div className="flex gap-2">
+                        <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themeSecondaryColor} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
+                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themeSecondaryColor} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
+                     </div>
+                  </div>
+               </div>
+
+               <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block">App Logo URL</label>
+                  <div className="flex gap-3">
+                     <div className="h-10 w-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center overflow-hidden">
+                        {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="max-h-full max-w-full object-contain" /> : <ImageIcon size={16} className="text-slate-400"/>}
+                     </div>
+                     <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://..." value={settings.appLogoUrl || ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
+                  </div>
+               </div>
+
+               <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block">Custom CSS Injection</label>
+                  <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="/* Custom CSS */" value={settings.customCss || ''} onChange={e => setSettings({...settings, customCss: e.target.value})} />
+               </div>
+            </div>
+
+            {/* LANDING PAGE */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
+                  <h3 className="font-extrabold text-lg text-slate-900">Landing Page Content</h3>
+               </div>
+               
+               <div className="space-y-4">
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Hero Title</label>
+                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={settings.landingPageConfig?.heroTitle || ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroTitle: e.target.value}})} />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Hero Subtitle</label>
+                     <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows={2} value={settings.landingPageConfig?.heroSubtitle || ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroSubtitle: e.target.value}})} />
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200">
+                     <span className="text-sm font-bold text-slate-700">Show Features Section</span>
+                     <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={settings.landingPageConfig?.showFeatures !== false} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, showFeatures: e.target.checked}})} />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                     </label>
+                  </div>
+               </div>
+            </div>
+
+            {/* STATIC PAGES */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 lg:col-span-2">
+               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><FileText size={20}/></div>
+                  <h3 className="font-extrabold text-lg text-slate-900">Static Pages (About / Privacy / Terms)</h3>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  {['aboutPage', 'privacyPage', 'termsPage'].map((pKey) => {
+                     const page = settings[pKey as 'aboutPage' | 'privacyPage' | 'termsPage'];
+                     return (
+                        <div key={pKey} className="space-y-4">
+                           <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-slate-800 capitalize">{pKey.replace('Page', '')} Page</h4>
+                              <input type="checkbox" checked={page.enabled} onChange={e => updateStaticPage(pKey as any, 'enabled', e.target.checked)} className="rounded text-amber-600" />
+                           </div>
+                           <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase block">Title</label>
+                              <input className="w-full px-3 py-1.5 border border-slate-300 rounded text-sm font-bold" value={page.title} onChange={e => updateStaticPage(pKey as any, 'title', e.target.value)} />
+                           </div>
+                           <div className="h-64 border border-slate-200 rounded-lg overflow-hidden">
+                              <RichTextEditor value={page.contentHtml} onChange={v => updateStaticPage(pKey as any, 'contentHtml', v)} height="100%" />
+                           </div>
+                        </div>
+                     )
+                  })}
+               </div>
+            </div>
+
+            {/* SECURITY & AI */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 lg:col-span-2">
+               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2 bg-red-100 text-red-600 rounded-lg"><Lock size={20}/></div>
+                  <h3 className="font-extrabold text-lg text-slate-900">Security & Integration</h3>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                     <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <div>
+                           <p className="font-bold text-slate-800">Two-Factor Authentication</p>
+                           <p className="text-xs text-slate-500">Require email codes for all logins</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                           <input type="checkbox" className="sr-only peer" checked={settings.enableMfa} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
+                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                        </label>
+                     </div>
+                     <div className="space-y-3">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Google reCAPTCHA v2</h4>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-500 uppercase block">Site Key</label>
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm" value={settings.recaptchaSiteKey || ''} onChange={e => setSettings({...settings, recaptchaSiteKey: e.target.value})} />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-500 uppercase block">Secret Key</label>
+                           <input type="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm" value={settings.recaptchaSecretKey || ''} onChange={e => setSettings({...settings, recaptchaSecretKey: e.target.value})} />
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="space-y-4">
+                     <div className="flex items-center gap-2 text-indigo-600">
+                        <Sparkles size={18}/>
+                        <h4 className="text-xs font-bold uppercase tracking-widest">AI Content Generation</h4>
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block">Preferred Model</label>
+                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none" value={settings.aiModel || 'gemini-3-flash-preview'} onChange={e => setSettings({...settings, aiModel: e.target.value})}>
+                           <option value="gemini-3-flash-preview">Gemini 3 Flash (Fast & Cheap)</option>
+                           <option value="gemini-3-pro-preview">Gemini 3 Pro (Complex Reasoning)</option>
+                        </select>
+                     </div>
+                     <p className="text-xs text-slate-500 bg-indigo-50 p-3 rounded-lg leading-relaxed">
+                        AI features utilize the built-in Gemini API. Organisations have monthly limits configurable in their individual profiles.
+                     </p>
+                  </div>
+               </div>
+               
+               <div className="pt-6 border-t border-slate-100 flex justify-end">
+                  <button onClick={handleSaveAllSettings} className="bg-slate-900 hover:bg-slate-800 text-white px-10 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                     {settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
+                     <span>{settingsSaved ? 'All Settings Saved' : 'Save System Configuration'}</span>
                   </button>
                </div>
             </div>
