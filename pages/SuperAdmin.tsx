@@ -1,7 +1,7 @@
 
 import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages } from '../services/storage';
-import { Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn } from 'lucide-react';
+import { Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
@@ -35,13 +35,27 @@ const SuperAdmin: React.FC = () => {
     setSettings(current);
     setLanguages(getLanguages());
     
-    // Default to Registration Template
-    const tpl = current.emailTemplates?.registration || {
+    // Ensure Registration is the starting template
+    const regTpl = current.emailTemplates?.registration || {
         subject: 'Verify your OpenStudbook account',
-        bodyHtml: '<div style="font-family: sans-serif; padding: 20px;"><h2 style="color: #059669;">Welcome to OpenStudbook!</h2><p>Please enter this code to complete your registration:</p><div style="font-size: 24px; font-weight: bold; background: #f0fdf4; padding: 10px; text-align: center; border-radius: 5px; color: #166534;">{{code}}</div></div>',
+        bodyHtml: `<div style="font-family: sans-serif; padding: 40px; background: #f8fafc;">
+            <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                <div style="padding: 32px; background: #059669; color: white; text-align: center;">
+                    <h1 style="margin: 0; font-size: 24px;">Welcome to OpenStudbook</h1>
+                </div>
+                <div style="padding: 32px; color: #1e293b; line-height: 1.6;">
+                    <p>Hello {{userName}},</p>
+                    <p>To complete the registration for <strong>{{orgName}}</strong>, please enter the following verification code in your browser:</p>
+                    <div style="font-size: 32px; font-weight: bold; background: #f0fdf4; padding: 24px; text-align: center; border-radius: 12px; border: 2px dashed #059669; margin: 32px 0; color: #065f46; letter-spacing: 4px;">
+                        {{code}}
+                    </div>
+                    <p style="color: #64748b; font-size: 14px; margin-top: 32px;">If you didn't request this code, you can safely ignore this email.</p>
+                </div>
+            </div>
+        </div>`,
         enabled: true
     };
-    setEditingTemplate(tpl);
+    setEditingTemplate(regTpl);
   }, []);
 
   const handleSaveEmailConfig = (e: React.FormEvent) => {
@@ -60,15 +74,15 @@ const SuperAdmin: React.FC = () => {
   };
   
   const handleTemplateChange = (type: string) => {
-     // Cache current work into local settings object before switching
-     const currentSettingsWithEdit = { 
+     // Persist current edits to the settings state before swapping view
+     const currentWithEdits = { 
         ...settings, 
         emailTemplates: { ...settings.emailTemplates, [selectedTemplate]: editingTemplate } 
      };
-     setSettings(currentSettingsWithEdit);
+     setSettings(currentWithEdits);
      
      setSelectedTemplate(type);
-     const nextTpl = currentSettingsWithEdit.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true };
+     const nextTpl = currentWithEdits.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true };
      setEditingTemplate(nextTpl);
   };
 
@@ -88,7 +102,7 @@ const SuperAdmin: React.FC = () => {
       setLanguages(updated);
       await saveLanguages(updated, false);
       refreshTranslations();
-      alert("Translations saved.");
+      alert("Localisation data updated.");
     } finally { setIsSavingLang(false); }
   };
 
@@ -96,23 +110,22 @@ const SuperAdmin: React.FC = () => {
     <div className="space-y-8 pb-12">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Shield className="text-purple-600" /> System Administration</h2>
-          <p className="text-slate-500">Global configuration and multi-tenant management.</p>
+          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Shield className="text-purple-600" /> Super Administration</h2>
+          <p className="text-slate-500">Global system settings, email templates, and network oversight.</p>
         </div>
         <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap">
-           <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>Network Overview</button>
+           <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>Network</button>
            <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email Templates</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> Localisation</button>
         </div>
       </div>
 
       {activeTab === 'overview' && (
-         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm animate-in fade-in">
+         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-in fade-in">
             <table className="w-full text-left">
                <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Organization</th>
-                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Focus</th>
+                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Organisation</th>
                      <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
                   </tr>
                </thead>
@@ -122,10 +135,6 @@ const SuperAdmin: React.FC = () => {
                         <td className="px-6 py-4">
                            <div className="font-bold text-slate-900">{org.name}</div>
                            <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600 font-medium">
-                           {/* Fix: Casting org to any to access 'focus' property which is present on Organization but not on ExternalPartner in this union array */}
-                           {(org as any).focus || 'N/A'}
                         </td>
                         <td className="px-6 py-4 text-right">
                            <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-slate-100 group-hover:bg-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
@@ -141,25 +150,27 @@ const SuperAdmin: React.FC = () => {
 
       {activeTab === 'email' && (
          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in fade-in">
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 flex flex-col h-full">
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Mail size={24}/></div>
-                  <h3 className="font-extrabold text-xl text-slate-900">SMTP Settings</h3>
+                  <h3 className="font-extrabold text-xl text-slate-900">SMTP Server Configuration</h3>
                </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="md:col-span-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Host</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.gmail.com" /></div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
+                  <div className="md:col-span-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Host</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.postmarkapp.com" /></div>
                   <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Port</label><input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpPort || 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} /></div>
                   <div className="flex items-center pt-5"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={settings.smtpSecure || false} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} className="rounded text-blue-600" /> <span className="text-sm font-bold text-slate-600">Secure (TLS/SSL)</span></label></div>
-                  <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">User</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} /></div>
+                  <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Username</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} /></div>
                   <div><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Password</label><input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} /></div>
                </div>
-               <p className="text-xs text-slate-400 bg-slate-50 p-3 rounded-lg leading-relaxed">Required for system notifications and account verification. If left empty, the server will try to use variables from the host environment (.env).</p>
+               <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 leading-relaxed">
+                  <strong>Developer Note:</strong> If SMTP is not configured, registration codes will still be logged to the server terminal/logs for testing.
+               </div>
             </div>
 
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[600px]">
+            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[700px]">
                <div className="flex items-center gap-3 mb-6">
                   <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><PenTool size={24}/></div>
-                  <h3 className="font-extrabold text-xl text-slate-900">System Templates</h3>
+                  <h3 className="font-extrabold text-xl text-slate-900">System-Wide Messaging</h3>
                </div>
                <div className="flex gap-2 mb-6 bg-slate-100 p-1.5 rounded-xl">
                   {['registration', 'mfa', 'invite', 'notification'].map(tKey => (
@@ -176,16 +187,25 @@ const SuperAdmin: React.FC = () => {
                   <div className="flex items-center justify-between">
                      <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer">
                         <input type="checkbox" checked={editingTemplate.enabled} onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})} className="rounded text-emerald-600" /> 
-                        Enabled
+                        Activate Template Override
                      </label>
                   </div>
-                  <input className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Subject Line" value={editingTemplate.subject} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
-                  <div className="flex-1 min-h-[300px] rounded-xl overflow-hidden border border-slate-200"><RichTextEditor value={editingTemplate.bodyHtml} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/></div>
-                  <p className="text-[10px] text-slate-400 font-mono">Vars: {'{{orgName}}, {{userName}}, {{code}}, {{role}}'}</p>
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Subject Line</label>
+                     <input className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Email Subject" value={editingTemplate.subject} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
+                  </div>
+                  <div className="flex-1 min-h-[350px] rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+                     <RichTextEditor value={editingTemplate.bodyHtml} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-50 p-2 rounded">
+                     <span>Variables: {'{{orgName}}, {{userName}}, {{code}}, {{role}}'}</span>
+                     <span className="font-bold text-emerald-600 uppercase">Key: {selectedTemplate}</span>
+                  </div>
                </div>
-               <div className="mt-6 flex justify-end">
-                  <button onClick={handleSaveEmailConfig} className="bg-slate-900 hover:bg-slate-800 text-white px-10 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center gap-2 active:scale-95">
-                     <Save size={18} /> {settingsSaved ? 'Configuration Saved' : 'Save Config'}
+               <div className="mt-6">
+                  <button onClick={handleSaveEmailConfig} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                     {settingsSaved ? <CheckCircle2 size={18}/> : <Save size={18} />}
+                     <span>{settingsSaved ? 'Configuration Updated' : 'Save Email Configuration'}</span>
                   </button>
                </div>
             </div>
@@ -193,21 +213,21 @@ const SuperAdmin: React.FC = () => {
       )}
 
       {activeTab === 'languages' && (
-         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[700px] animate-in fade-in overflow-hidden">
+         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[800px] animate-in fade-in overflow-hidden">
             <div className="p-8 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
                <div>
-                  <h3 className="font-extrabold text-xl text-slate-900 tracking-tight">Translation & Localisation</h3>
-                  <p className="text-xs text-slate-500 mt-1">Manage global dictionary and interface language settings.</p>
+                  <h3 className="font-extrabold text-xl text-slate-900 tracking-tight">System Localisation</h3>
+                  <p className="text-xs text-slate-500 mt-1">Manage global translation keys and language support.</p>
                </div>
                <div className="flex gap-2">
-                  <input placeholder="Code (e.g. de)" className="border border-slate-300 px-4 py-2 rounded-xl text-sm w-28 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} />
-                  <input placeholder="Name (e.g. German)" className="border border-slate-300 px-4 py-2 rounded-xl text-sm w-44 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangName} onChange={e => setNewLangName(e.target.value)} />
+                  <input placeholder="Code (e.g. es)" className="border border-slate-300 px-4 py-2 rounded-xl text-sm w-24 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} />
+                  <input placeholder="Language Name" className="border border-slate-300 px-4 py-2 rounded-xl text-sm w-40 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangName} onChange={e => setNewLangName(e.target.value)} />
                   <button onClick={async () => {
                      if(!newLangCode || !newLangName) return;
                      const updated = [...languages, { code: newLangCode, name: newLangName, translations: { ...BASE_TRANSLATIONS }, isDefault: false }];
                      setLanguages(updated); await saveLanguages(updated); refreshTranslations();
                      setNewLangCode(''); setNewLangName('');
-                  }} className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm"><Globe size={18} className="inline mr-1"/> Add</button>
+                  }} className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center gap-2"><Globe size={18}/> Add</button>
                </div>
             </div>
             <div className="flex flex-1 overflow-hidden">
