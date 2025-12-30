@@ -7,8 +7,8 @@ import { translateDictionary } from '../services/geminiService';
 import { testSmtpConnection } from '../services/emailService';
 /* Added LucideIcons wildcard import for dynamic icon rendering */
 import * as LucideIcons from 'lucide-react';
-/* Added Pencil to named imports */
-import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil } from 'lucide-react';
+/* Added named icons for safety fallback */
+import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil, Sparkle } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate, StaticPageConfig } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
@@ -32,6 +32,9 @@ const SuperAdmin: React.FC = () => {
   const [isSeeding, setIsSeeding] = useState(false);
   const [showSchemaModal, setShowSchemaModal] = useState(false);
 
+  // AI Key Status Check
+  const aiKeyDetected = !!process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '';
+
   // Org Expansion State
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
   const [orgBreakdown, setOrgBreakdown] = useState<any[]>([]);
@@ -40,9 +43,9 @@ const SuperAdmin: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings>(getSystemSettings());
   const [landingConfig, setLandingConfig] = useState(settings.landingPageConfig || {});
   const [pagesConfig, setPagesConfig] = useState({
-     about: settings.aboutPage,
-     privacy: settings.privacyPage,
-     terms: settings.termsPage
+     about: settings.aboutPage || { enabled: true, title: 'About', contentHtml: '' },
+     privacy: settings.privacyPage || { enabled: true, title: 'Privacy', contentHtml: '' },
+     terms: settings.termsPage || { enabled: true, title: 'Terms', contentHtml: '' }
   });
   
   // Email State
@@ -79,9 +82,9 @@ const SuperAdmin: React.FC = () => {
     setLandingConfig(current.landingPageConfig || {});
     setFeatures(current.landingPageConfig?.features || []);
     setPagesConfig({
-       about: current.aboutPage,
-       privacy: current.privacyPage,
-       terms: current.termsPage
+       about: current.aboutPage || { enabled: true, title: 'About', contentHtml: '' },
+       privacy: current.privacyPage || { enabled: true, title: 'Privacy', contentHtml: '' },
+       terms: current.termsPage || { enabled: true, title: 'Terms', contentHtml: '' }
     });
     setDbConfig(getSupabaseConfig());
     setLanguages(getLanguages());
@@ -352,8 +355,8 @@ const SuperAdmin: React.FC = () => {
         return;
      }
      const apiKey = process.env.API_KEY;
-     if (!apiKey) {
-        alert("Gemini API Key is not configured.");
+     if (!apiKey || apiKey === 'undefined') {
+        alert("Gemini API Key is not configured in the host environment.");
         return;
      }
      setIsTranslating(true);
@@ -380,6 +383,12 @@ const SuperAdmin: React.FC = () => {
      } finally {
         setIsTranslating(false);
      }
+  };
+
+  // Safe Dynamic Icon Resolver
+  const renderIcon = (name: string, props: any) => {
+     const IconComp = (LucideIcons as any)[name] || (LucideIcons as any).HelpCircle || HelpCircle;
+     return <IconComp {...props} />;
   };
 
   return (
@@ -535,6 +544,27 @@ const SuperAdmin: React.FC = () => {
                      {dbCheckResult && <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${dbCheckResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{dbCheckResult.success ? <Check size={16} /> : <AlertCircle size={16} />}{dbCheckResult.message}</div>}
                   </div>
                </div>
+
+               {/* AI Status Panel */}
+               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Sparkle size={20} className="text-purple-600" /> AI Service Integration</h3>
+                  <div className={`p-4 rounded-lg flex items-center gap-4 ${aiKeyDetected ? 'bg-emerald-50 border border-emerald-100' : 'bg-amber-50 border border-amber-100'}`}>
+                     <div className={`p-2 rounded-full ${aiKeyDetected ? 'bg-emerald-500' : 'bg-amber-500'} text-white`}>
+                        {aiKeyDetected ? <Check size={20} /> : <AlertTriangle size={20} />}
+                     </div>
+                     <div>
+                        <p className={`font-bold ${aiKeyDetected ? 'text-emerald-800' : 'text-amber-800'}`}>
+                           {aiKeyDetected ? 'Gemini API Connected' : 'API Key Missing'}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                           {aiKeyDetected 
+                             ? 'AI Features (Autofill, Translations) are active using the host environment key.' 
+                             : 'Check your hosting configuration. process.env.API_KEY must be set.'}
+                        </p>
+                     </div>
+                  </div>
+               </div>
+
                <button onClick={() => setShowSchemaModal(true)} className="w-full bg-slate-100 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-200 flex items-center justify-center gap-2"><FileText size={16} /> View SQL Schema</button>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
@@ -559,17 +589,17 @@ const SuperAdmin: React.FC = () => {
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('primaryColor')}</label>
                         <div className="flex items-center gap-3">
-                           <input type="color" className="w-12 h-12 rounded border border-slate-300" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                           <input type="text" className="flex-1 px-4 py-2 border border-slate-300 rounded-lg font-mono text-sm bg-white" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                           <input type="color" className="w-12 h-12 rounded border border-slate-300" value={settings.themePrimaryColor || '#059669'} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                           <input type="text" className="flex-1 px-4 py-2 border border-slate-300 rounded-lg font-mono text-sm bg-white text-slate-900" value={settings.themePrimaryColor || '#059669'} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
                         </div>
                      </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('appLogo')}</label>
                         <div className="flex items-center gap-3">
                            <div className="w-12 h-12 bg-slate-100 rounded border border-slate-300 flex items-center justify-center overflow-hidden">
-                              {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" /> : <ImageIcon size={20} className="text-slate-400" />}
+                              {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" alt="App Logo" /> : <ImageIcon size={20} className="text-slate-400" />}
                            </div>
-                           <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Logo URL (https://...)" value={settings.appLogoUrl} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
+                           <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" placeholder="Logo URL (https://...)" value={settings.appLogoUrl || ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
                         </div>
                      </div>
                   </div>
@@ -579,7 +609,7 @@ const SuperAdmin: React.FC = () => {
                         <div className="flex items-center justify-between mb-2">
                            <span className="font-medium text-slate-700">{t('enableMfa')}</span>
                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input type="checkbox" className="sr-only peer" checked={settings.enableMfa} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
+                              <input type="checkbox" className="sr-only peer" checked={settings.enableMfa || false} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
                               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                            </label>
                         </div>
@@ -608,11 +638,11 @@ const SuperAdmin: React.FC = () => {
                         <div className="space-y-4">
                            <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('heroTitle')}</label>
-                              <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={landingConfig.heroTitle || ''} onChange={e => setLandingConfig({...landingConfig, heroTitle: e.target.value})} placeholder={t('landingTitle')} />
+                              <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={landingConfig.heroTitle || ''} onChange={e => setLandingConfig({...landingConfig, heroTitle: e.target.value})} placeholder={t('landingTitle')} />
                            </div>
                            <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('heroSubtitle')}</label>
-                              <textarea rows={3} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={landingConfig.heroSubtitle || ''} onChange={e => setLandingConfig({...landingConfig, heroSubtitle: e.target.value})} placeholder={t('landingSubtitle')} />
+                              <textarea rows={3} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={landingConfig.heroSubtitle || ''} onChange={e => setLandingConfig({...landingConfig, heroSubtitle: e.target.value})} placeholder={t('landingSubtitle')} />
                            </div>
                         </div>
                      </div>
@@ -622,11 +652,11 @@ const SuperAdmin: React.FC = () => {
                            <button onClick={handleAddFeature} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"><Plus size={18}/></button>
                         </div>
                         <div className="space-y-3">
-                           {features.map(f => (
+                           {(features || []).map(f => (
                               <div key={f.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between group">
                                  <div className="flex items-center gap-3 truncate">
                                     <div className="p-2 bg-white rounded border border-slate-200 text-slate-400 group-hover:text-emerald-600 transition-colors">
-                                       {React.createElement((LucideIcons as any)[f.icon] || HelpCircle, { size: 16 })}
+                                       {renderIcon(f.icon, { size: 16 })}
                                     </div>
                                     <span className="text-sm font-bold text-slate-700 truncate">{f.title}</span>
                                  </div>
@@ -654,17 +684,17 @@ const SuperAdmin: React.FC = () => {
                            </div>
                         </div>
                         <label className="flex items-center gap-2 text-sm text-slate-600 font-medium cursor-pointer">
-                           <input type="checkbox" checked={pagesConfig[selectedPage].enabled} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], enabled: e.target.checked}})} className="rounded text-purple-600" />
+                           <input type="checkbox" checked={pagesConfig[selectedPage]?.enabled || false} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], enabled: e.target.checked}})} className="rounded text-purple-600" />
                            {t('enabled')}
                         </label>
                      </div>
                      <div className="p-6 space-y-4 flex-1 flex flex-col">
                         <div>
                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('pageTitle')}</label>
-                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={pagesConfig[selectedPage].title} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], title: e.target.value}})} />
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={pagesConfig[selectedPage]?.title || ''} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], title: e.target.value}})} />
                         </div>
                         <div className="flex-1 min-h-[300px]">
-                           <RichTextEditor value={pagesConfig[selectedPage].contentHtml} onChange={val => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], contentHtml: val}})} height="100%" />
+                           <RichTextEditor value={pagesConfig[selectedPage]?.contentHtml || ''} onChange={val => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], contentHtml: val}})} height="100%" />
                         </div>
                      </div>
                      <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
@@ -683,15 +713,15 @@ const SuperAdmin: React.FC = () => {
                      <h3 className="text-lg font-bold">Edit Feature Tile</h3>
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Title</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" value={editingFeature.title} onChange={e => setEditingFeature({...editingFeature, title: e.target.value})} />
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={editingFeature.title || ''} onChange={e => setEditingFeature({...editingFeature, title: e.target.value})} />
                      </div>
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
-                        <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white" rows={3} value={editingFeature.description} onChange={e => setEditingFeature({...editingFeature, description: e.target.value})} />
+                        <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" rows={3} value={editingFeature.description || ''} onChange={e => setEditingFeature({...editingFeature, description: e.target.value})} />
                      </div>
                      <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Icon Name (Lucide)</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={editingFeature.icon} onChange={e => setEditingFeature({...editingFeature, icon: e.target.value})} />
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" value={editingFeature.icon || 'HelpCircle'} onChange={e => setEditingFeature({...editingFeature, icon: e.target.value})} />
                         <p className="text-[10px] text-slate-400 mt-1">E.g. Shield, Sprout, Globe2, Dna, Heart</p>
                      </div>
                      <div className="flex gap-2 pt-2">
@@ -713,27 +743,27 @@ const SuperAdmin: React.FC = () => {
                   <div className="space-y-4">
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('smtpHost')}</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpHost} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="smtp.gmail.com" />
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="smtp.gmail.com" />
                      </div>
                      <div className="grid grid-cols-2 gap-4">
                         <div>
                            <label className="block text-sm font-medium text-slate-700 mb-1">{t('port')}</label>
-                           <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPort} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} placeholder="587" />
+                           <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPort || 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} placeholder="587" />
                         </div>
                         <div className="flex items-end">
                            <label className="flex items-center space-x-2 bg-slate-50 px-3 py-2.5 rounded-lg border border-slate-200 w-full cursor-pointer">
-                              <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" checked={settings.smtpSecure} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} />
+                              <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" checked={settings.smtpSecure || false} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} />
                               <span className="text-sm text-slate-700">{t('secureConnection')}</span>
                            </label>
                         </div>
                      </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('username')}</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpUser} onChange={e => setSettings({...settings, smtpUser: e.target.value})} placeholder="user@example.com" />
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} placeholder="user@example.com" />
                      </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
-                        <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
+                        <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
                      </div>
                      <div className="pt-2 border-t border-slate-100 mt-4">
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Test Connection</label>
@@ -754,11 +784,11 @@ const SuperAdmin: React.FC = () => {
                   {editingTemplate && (
                      <div className="space-y-4 flex-1 flex flex-col">
                         <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
-                           <input type="checkbox" checked={editingTemplate.enabled} onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})} className="rounded text-emerald-600" />
+                           <input type="checkbox" checked={editingTemplate.enabled || false} onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})} className="rounded text-emerald-600" />
                            Enable Custom Template
                         </label>
-                        <input className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={editingTemplate.subject} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} placeholder="Subject" />
-                        <div className="flex-1 min-h-[200px]"><RichTextEditor value={editingTemplate.bodyHtml} onChange={val => setEditingTemplate({...editingTemplate, bodyHtml: val})} height="100%" /></div>
+                        <input className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={editingTemplate.subject || ''} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} placeholder="Subject" />
+                        <div className="flex-1 min-h-[200px]"><RichTextEditor value={editingTemplate.bodyHtml || ''} onChange={val => setEditingTemplate({...editingTemplate, bodyHtml: val})} height="100%" /></div>
                      </div>
                   )}
                </div>
@@ -786,7 +816,7 @@ const SuperAdmin: React.FC = () => {
            
            <div className="flex flex-1 overflow-hidden">
               <div className="w-64 border-r border-slate-200 bg-slate-50 overflow-y-auto p-2">
-                 {languages.map(lang => (
+                 {(languages || []).map(lang => (
                     <div key={lang.code} className={`flex justify-between items-center p-3 rounded-lg cursor-pointer mb-1 ${editingLang?.code === lang.code ? 'bg-white shadow text-purple-700 font-bold' : 'hover:bg-white text-slate-600'}`} onClick={() => setEditingLang(lang)}>
                        <div className="flex items-center gap-2"><span>{lang.name}</span>{lang.isDefault && <Star size={12} className="text-amber-500 fill-amber-500" />}</div>
                        <button onClick={(e) => {e.stopPropagation(); triggerDeleteLang(lang.code, lang.name);}} className="text-slate-400 hover:text-red-500 p-1" disabled={lang.code === 'en-GB' || isSavingLang}><Trash2 size={12} /></button>
@@ -815,7 +845,7 @@ const SuperAdmin: React.FC = () => {
                              <div key={key} className="space-y-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase">{key}</label>
                                 <div className="flex gap-2">
-                                   <input className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm bg-white text-slate-900" value={editingLang.translations[key] || ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
+                                   <input className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm bg-white text-slate-900" value={editingLang.translations?.[key] || ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
                                    {editingLang.manualOverrides?.includes(key) && (
                                       <button onClick={() => handleUnlockTranslation(key)} className="text-slate-400 hover:text-emerald-600" title="Unlock auto-translate"><Unlock size={14}/></button>
                                    )}

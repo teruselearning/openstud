@@ -35,7 +35,11 @@ const speciesSchema = {
 };
 
 const getAiClient = (): GoogleGenAI => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY || '';
+  if (!apiKey || apiKey === 'undefined') {
+     console.warn("Gemini API Key is missing in process.env. AI services will fail.");
+  }
+  return new GoogleGenAI({ apiKey });
 };
 
 const searchGBIF = async (query: string, type: SpeciesType): Promise<Partial<Species> | null> => {
@@ -64,10 +68,20 @@ const fetchWikipediaImage = async (query: string): Promise<string | null> => {
 };
 
 /**
- * Strips markdown code blocks if the model returns them.
+ * Strips markdown code blocks (e.g. ```json ... ```) if the model returns them.
+ * This is a common occurrence even with responseMimeType set to application/json.
  */
 const sanitizeJsonResponse = (text: string): string => {
-  return text.replace(/```json/g, "").replace(/```/g, "").trim();
+  if (!text) return "";
+  // Remove markdown identifiers
+  let clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  // If the model added text before or after the JSON block, try to find the actual JSON boundaries
+  const start = clean.indexOf('{');
+  const end = clean.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+     clean = clean.substring(start, end + 1);
+  }
+  return clean;
 };
 
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
@@ -107,13 +121,18 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
-      const aiData = JSON.parse(sanitized) as Partial<Species>;
-      return {
-        ...aiData,
-        ...result, 
-        scientificName: result.scientificName || aiData.scientificName,
-        imageUrl: result.imageUrl || undefined
-      };
+      try {
+        const aiData = JSON.parse(sanitized) as Partial<Species>;
+        return {
+          ...aiData,
+          ...result, 
+          scientificName: result.scientificName || aiData.scientificName,
+          imageUrl: result.imageUrl || undefined
+        };
+      } catch (parseErr) {
+        console.error("Failed to parse AI JSON response:", sanitized);
+        return result.scientificName ? result : null;
+      }
     }
     return result.scientificName ? result : null;
   } catch (error) {

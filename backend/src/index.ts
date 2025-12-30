@@ -28,11 +28,12 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
-app.use('/', cors({ origin: '*' }) as any);
-app.use('/', express.json({ limit: '50mb' }) as any);
-app.use('/', express.urlencoded({ limit: '50mb', extended: true }) as any);
-app.use('/', morgan('dev') as any);
-app.use('/', express.static(path.join(__dirname, '../../dist')) as any);
+// 1. Basic Middleware
+/* Cast middleware to any to fix overload mismatch errors in some environments */
+app.use(cors({ origin: '*' }) as any);
+app.use(express.json({ limit: '50mb' }) as any);
+app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
+app.use(morgan('dev') as any);
 
 const resetCodes = new Map<string, { code: string, expires: number }>();
 
@@ -57,14 +58,6 @@ const getTransporter = async () => {
   }
 };
 
-const runBcryptSelfTest = async () => {
-  try {
-    const testHash = await bcrypt.hash('password', 10);
-    await bcrypt.compare('password', testHash);
-  } catch (e) {}
-};
-runBcryptSelfTest();
-
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return next();
@@ -77,7 +70,8 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.15' }));
+// 2. API & REST Routes (Must come BEFORE static/catch-all)
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.16' }));
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
   const { to, subject, html } = req.body;
@@ -272,5 +266,17 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
    } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-app.get('*', (req: any, res: any) => res.sendFile(path.join(__dirname, '../../dist/index.html')));
+// 3. Static File Serving (After API routes)
+app.use(express.static(path.join(__dirname, '../../dist')));
+
+// 4. SPA Fallback (Last)
+/* Cast to any to fix type checking errors on catch-all route */
+(app as any).get('*', (req: any, res: any) => {
+   // Skip API/Rest requests
+   if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) {
+      return res.status(404).json({ error: "Route not found" });
+   }
+   res.sendFile(path.join(__dirname, '../../dist/index.html'));
+});
+
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
