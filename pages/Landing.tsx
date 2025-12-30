@@ -80,7 +80,13 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
 
   const handleDemoLogin = async () => {
     setIsLoading(true);
+    setError(null);
+    
     try {
+       // 1. Force state reset for demo org to exist locally
+       await regenerateDemoData();
+
+       // 2. Try to sync remote if possible
        const result = await fetchRemoteData();
        if (result.success && result.data) {
           const { data } = result;
@@ -96,15 +102,18 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           if(data.partners) saveNetworkPartners(data.partners);
           if(data.languages) saveLanguages(data.languages, true);
        }
-    } catch (e) { console.warn("Demo Sync failed", e); }
+    } catch (e) { console.warn("Demo Pre-Sync failed (non-critical)", e); }
 
+    // 3. Final login attempts with forced sarah context
     let user = await login('sarah@wild.org', 'password');
-    if (!user) {
-      await regenerateDemoData(); 
-      user = await login('sarah@wild.org', 'password');
+    
+    if (user) { 
+       saveSession(user); 
+       onLogin(user); 
+    } else { 
+       setError("Could not initialize demo environment. Please try again."); 
+       setIsLoading(false); 
     }
-    if (user) { saveSession(user); onLogin(user); } 
-    else { setError("Could not initialize demo."); setIsLoading(false); }
   };
   
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -266,14 +275,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
               <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back</h2>
-              <p className="text-slate-500 mb-6 text-sm">Sign in to your organization.</p>
+              <p className="text-slate-500 mb-6 text-sm">Sign in to your organisation.</p>
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
                   <div className="relative">
                     <Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-                    <input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organization.org" value={loginData.email} onChange={e => setLoginData({...loginData, email: e.target.value})} required />
+                    <input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={loginData.email} onChange={e => setLoginData({...loginData, email: e.target.value})} required />
                   </div>
                 </div>
                 <div>
@@ -304,7 +313,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                <form onSubmit={handleForgotSubmit} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
-                    <input type="email" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organization.org" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required />
+                    <input type="email" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required />
                   </div>
                   <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold">Request Code</button>
                </form>
@@ -362,9 +371,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
               <form onSubmit={handleRegister} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('orgName')}</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. City Zoo" value={regData.orgName} onChange={e => setRegData({...regData, orgName: e.target.value})} required /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Organization Focus</label><select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}><option value="Animals">Animals</option><option value="Plants">Plants</option></select></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Organisation Focus</label><select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}><option value="Animals">Animals</option><option value="Plants">Plants</option></select></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('adminName')}</label><div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Your Full Name" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('emailAddr')}</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organization.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('emailAddr')}</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div></div>
                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div></div>

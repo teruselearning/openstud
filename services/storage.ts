@@ -67,7 +67,6 @@ const safeParseJson = async (response: Response) => {
   throw new Error(`Server returned unexpected content (Status: ${response.status})`);
 };
 
-/* Added exportFullData to handle complete system backups */
 export const exportFullData = () => {
   const data: any = {};
   Object.keys(KEYS).forEach(k => {
@@ -76,7 +75,6 @@ export const exportFullData = () => {
   return data;
 };
 
-/* Added importFullData to restore data from a backup file */
 export const importFullData = (data: any) => {
   Object.keys(data).forEach(k => {
     if ((KEYS as any)[k]) {
@@ -85,7 +83,6 @@ export const importFullData = (data: any) => {
   });
 };
 
-/* Added exportDataAsCSV to provide a flattened view of species and individuals */
 export const exportDataAsCSV = () => {
   const species = getSpecies();
   const individuals = getIndividuals();
@@ -95,17 +92,6 @@ export const exportDataAsCSV = () => {
     csv += `Individual,${s?.commonName || ''},${s?.scientificName || ''},${i.studbookId},${i.name},${i.sex},${i.birthDate},${i.weightKg}\n`;
   });
   return csv;
-};
-
-/* Added exportSpeciesData to handle species-specific exports */
-export const exportSpeciesData = () => {
-   return JSON.stringify(getSpecies());
-};
-
-/* Added importSpeciesData to handle species-specific imports */
-export const importSpeciesData = (json: string) => {
-   const data = JSON.parse(json);
-   saveSpecies(data);
 };
 
 export const getSystemSettings = (): SystemSettings => {
@@ -211,7 +197,6 @@ export const getOrg = (): Organization => {
   const org = get(KEYS.ORG, defaultOrg);
   if (!org || typeof org !== 'object') return defaultOrg;
   
-  // Ensure default limits exist
   if (org.aiUsageLimit === undefined) org.aiUsageLimit = 100;
   if (org.aiUsageCount === undefined) org.aiUsageCount = 0;
   
@@ -223,7 +208,6 @@ export const saveOrg = (o: Organization, skipSync = false) => {
   if (!skipSync) syncPushOrg(o).catch(() => {});
 };
 
-// AI USAGE HELPERS
 export const checkAndIncrementAiUsage = (): boolean => {
   const org = getOrg();
   const now = new Date();
@@ -233,7 +217,6 @@ export const checkAndIncrementAiUsage = (): boolean => {
   let lastReset = org.aiUsageLastReset || "";
   const limit = org.aiUsageLimit || 100;
   
-  // Check for monthly reset
   if (lastReset !== currentMonthStr) {
      count = 0;
      lastReset = currentMonthStr;
@@ -357,7 +340,15 @@ export const login = async (email: string, pass: string): Promise<User | null> =
   if (user?.password) {
      if (user.password.startsWith('$2')) return null;
      const hashedInput = await hashPassword(pass);
-     if (hashedInput === user.password) return user;
+     if (hashedInput === user.password) {
+        // CRITICAL: Ensure active organization context matches the user being logged into
+        const partners = getNetworkPartners();
+        const foundOrg = partners.find(p => p.id === user.orgId);
+        if (foundOrg) {
+           saveOrg(foundOrg as any, true);
+        }
+        return user;
+     }
   }
   return null;
 };
@@ -401,7 +392,7 @@ export const trustDevice = (userId: string) => {
 };
 
 export const sendMfaCode = async (email: string, code: string) => {
-   await sendSystemEmail(email, 'mfa', { code }, "Code", `Code: ${code}`);
+   await sendSystemEmail(email, 'mfa', { code }, "Your Verification Code", `Code: ${code}`);
 };
 
 export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []);
@@ -416,7 +407,7 @@ export const regenerateDemoData = async () => {
     const mockOrg: Organization = {
       id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805,
       isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998,
-      description: 'Demo Sanctuary', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
+      description: 'The global demonstration sanctuary for OpenStudbook.', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
       aiUsageLimit: 1000, aiUsageCount: 42
     };
 
@@ -428,6 +419,12 @@ export const regenerateDemoData = async () => {
 
     const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
     const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
+
+    // Update Network Partners list to include the demo org so it can be found during local login
+    const partners = getNetworkPartners();
+    if (!partners.some(p => p.id === 'org-1')) {
+       saveNetworkPartners([...partners, mockOrg as any]);
+    }
 
     saveOrg(mockOrg, true);
     saveUsers(mockUsers, true);
