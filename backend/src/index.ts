@@ -536,8 +536,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             
             const placeholders = keys.map(() => '?').join(', ');
             
-            // ON DUPLICATE KEY UPDATE logic: avoid updating the primary key itself if possible
-            // Most OSC tables use 'id' or 'code' as primary key.
+            // ON DUPLICATE KEY UPDATE logic: avoid updating the primary key itself
             const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
             const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
             
@@ -545,7 +544,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             if (nonPkKeys.length > 0) {
                 updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `${k} = VALUES(${k})`).join(', ');
             } else {
-                // If there's only a primary key, just do nothing on duplicate
                 updateClause = "ON DUPLICATE KEY UPDATE " + primaryKeyCol + " = " + primaryKeyCol;
             }
             

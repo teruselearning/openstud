@@ -47,16 +47,17 @@ const SuperAdmin: React.FC = () => {
     setSettings(current);
     setLanguages(getLanguages());
     
-    const tpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
-    if (tpl) {
-       setEditingTemplate(tpl);
+    // Load default or saved template based on the current selection
+    const initialTpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
+    if (initialTpl) {
+       setEditingTemplate(initialTpl);
     }
-  }, []);
+  }, [selectedTemplate]);
 
   const handleSaveAllSettings = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
-    // Ensure currently editing template is merged before saving
+    // Merge current editor state into settings before saving
     const finalSettings: SystemSettings = {
       ...settings,
       emailTemplates: {
@@ -72,22 +73,31 @@ const SuperAdmin: React.FC = () => {
   };
   
   const handleTemplateChange = (type: string) => {
-     const updatedTemplates = { 
+     // Save the one we are currently leaving
+     const currentTemplates = { 
         ...settings.emailTemplates, 
         [selectedTemplate]: editingTemplate 
      };
+     
+     // Update selected key
      setSelectedTemplate(type);
-     const nextTpl = updatedTemplates[type as keyof typeof updatedTemplates];
+     
+     // Load the new one from state
+     const nextTpl = currentTemplates[type as keyof typeof currentTemplates];
      if (nextTpl) {
         setEditingTemplate(nextTpl);
      }
-     setSettings(prev => ({ ...prev, emailTemplates: updatedTemplates }));
+     
+     // Sync back to local settings state
+     setSettings(prev => ({ ...prev, emailTemplates: currentTemplates }));
   };
 
   const handleRunSmtpTest = async () => {
     if (!testEmail) return;
     setIsTestingSmtp(true);
     setTestResult(null);
+    
+    // Attempt to save settings before testing
     handleSaveAllSettings();
 
     try {
@@ -123,6 +133,7 @@ const SuperAdmin: React.FC = () => {
       setLanguages(updated);
       await saveLanguages(updated, false);
       refreshTranslations();
+      alert("Localisation data updated.");
     } finally { setIsSavingLang(false); }
   };
 
@@ -232,6 +243,12 @@ const SuperAdmin: React.FC = () => {
                     )}
                   </div>
                </form>
+               <div className="mt-4 pt-4 border-t border-slate-100">
+                  <button onClick={handleSaveAllSettings} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                     {settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
+                     <span>{settingsSaved ? 'Saved Successfully' : 'Save Mail Config'}</span>
+                  </button>
+               </div>
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-fit min-h-[600px]">

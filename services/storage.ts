@@ -53,9 +53,16 @@ const set = <T>(key: string, val: T) => {
       localStorage.setItem(key, JSON.stringify(val));
     } catch (e) {
       if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-         console.warn("Storage quota exceeded. Attempting to clear non-essential data.");
-         localStorage.removeItem(KEYS.BACKUP); // Clear backups to make room
-         localStorage.setItem(key, JSON.stringify(val));
+         console.warn("Storage quota exceeded. Pruning non-essential data.");
+         // Clear largest non-essential caches
+         localStorage.removeItem(KEYS.BACKUP);
+         localStorage.removeItem(KEYS.NOTIFICATIONS);
+         // Try again
+         try {
+            localStorage.setItem(key, JSON.stringify(val));
+         } catch (secondErr) {
+            console.error("Critical: Storage remains full after pruning.", secondErr);
+         }
       }
     }
   }
@@ -68,28 +75,28 @@ export const getSystemSettings = (): SystemSettings => {
       registration: { 
         enabled: true, 
         subject: "Verify your OpenStudbook account", 
-        bodyHtml: "<h3>Welcome!</h3><p>Your verification code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>" 
+        bodyHtml: "<h3>Welcome to OpenStudbook!</h3><p>Your verification code for <strong>{{orgName}}</strong> is: <strong style='font-size: 24px; color: #059669;'>{{code}}</strong></p><p>Enter this code in your browser to complete your registration.</p>" 
       },
       mfa: { 
         enabled: true, 
-        subject: "Your Login Code", 
-        bodyHtml: "<p>Your security code is: <strong>{{code}}</strong></p>" 
+        subject: "Your OpenStudbook Security Code", 
+        bodyHtml: "<h3>Security Verification</h3><p>Hello {{userName}},</p><p>Use the following code to sign in to your account: <strong style='font-size: 24px; color: #3b82f6;'>{{code}}</strong></p><p>If you did not request this code, please secure your account immediately.</p>" 
       },
       invite: { 
         enabled: true, 
         subject: "You've been invited to join {{orgName}}", 
-        bodyHtml: "<h3>Invitation</h3><p>You have been invited to join the studbook management team at {{orgName}}.</p>" 
+        bodyHtml: "<h3>Team Invitation</h3><p>You have been invited to join the studbook management team at <strong>{{orgName}}</strong>.</p><p>Click the link below or log in using your email to get started.</p>" 
       },
       notification: { 
         enabled: true, 
-        subject: "OpenStudbook Activity Alert", 
-        bodyHtml: "<p>New activity in your project:</p><blockquote>{{message}}</blockquote>" 
+        subject: "OpenStudbook: New Activity in {{orgName}}", 
+        bodyHtml: "<h3>Project Update</h3><p>New activity has been recorded in your project:</p><div style='padding: 15px; background: #f8fafc; border-left: 4px solid #059669;'>{{message}}</div><p>Log in to view the full details.</p>" 
       }
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
-    aboutPage: { enabled: true, title: 'About', contentHtml: '' },
-    privacyPage: { enabled: true, title: 'Privacy', contentHtml: '' },
-    termsPage: { enabled: true, title: 'Terms', contentHtml: '' },
+    aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management for conservation.</p>' },
+    privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected and stored securely.</p>' },
+    termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Use of this software is subject to standard open-source licensing.</p>' },
     enableMfa: false
   };
   
@@ -268,7 +275,6 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
 export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
-// Fix error in pages/OrgSettings.tsx on line 4: Module '"../services/storage"' has no exported member 'exportFullData'.
 /**
  * Exports all organization data from local storage for backup.
  */
@@ -287,7 +293,6 @@ export const exportFullData = () => {
   };
 };
 
-// Fix error in pages/OrgSettings.tsx on line 4: Module '"../services/storage"' has no exported member 'importFullData'.
 /**
  * Imports organization data into local storage.
  */
@@ -304,7 +309,6 @@ export const importFullData = (data: any) => {
   if (data.languages) saveLanguages(data.languages);
 };
 
-// Fix error in pages/OrgSettings.tsx on line 4: Module '"../services/storage"' has no exported member 'exportDataAsCSV'.
 /**
  * Exports species and individuals data as a CSV string.
  */
