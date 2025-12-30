@@ -8,7 +8,7 @@ import { testSmtpConnection } from '../services/emailService';
 /* Added LucideIcons wildcard import for dynamic icon rendering */
 import * as LucideIcons from 'lucide-react';
 /* Added named icons for safety fallback */
-import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil, Sparkle } from 'lucide-react';
+import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil, Sparkle, BrainCircuit } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate, StaticPageConfig } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
@@ -33,7 +33,7 @@ const SuperAdmin: React.FC = () => {
   const [showSchemaModal, setShowSchemaModal] = useState(false);
 
   // AI Key Status Check
-  const aiKeyDetected = !!process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '';
+  const aiKeyDetected = !!(typeof process !== 'undefined' && process.env?.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '');
 
   // Org Expansion State
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
@@ -354,8 +354,8 @@ const SuperAdmin: React.FC = () => {
         alert("Cannot auto-translate the source language.");
         return;
      }
-     const apiKey = process.env.API_KEY;
-     if (!apiKey || apiKey === 'undefined') {
+     const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
+     if (!apiKey) {
         alert("Gemini API Key is not configured in the host environment.");
         return;
      }
@@ -617,6 +617,48 @@ const SuperAdmin: React.FC = () => {
                      </div>
                   </div>
                </div>
+
+               {/* AI Integration Card */}
+               <div className="border-t border-slate-100 pt-6 space-y-4">
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><BrainCircuit size={20} className="text-purple-600"/> AI Integration Settings</h3>
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                     <div className="flex items-center justify-between mb-4">
+                        <div className="text-sm">
+                           <p className="font-bold text-slate-700">Environment Key Status</p>
+                           <p className="text-xs text-slate-500">For security, the Gemini API key must be set as an environment variable.</p>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold ${aiKeyDetected ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                           {aiKeyDetected ? 'DETECTED' : 'NOT SET'}
+                        </div>
+                     </div>
+                     
+                     {!aiKeyDetected && (
+                        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-xs text-amber-800 mb-4">
+                           <p className="font-bold mb-1">How to fix this:</p>
+                           <ul className="list-disc list-inside space-y-1">
+                              <li>Local Dev: Create a <code>.env</code> file in the root with <code>API_KEY=your_key</code>.</li>
+                              <li>Hosted (Vercel/Netlify): Add <code>API_KEY</code> to your Environment Variables in settings.</li>
+                              <li>Self-Hosted: Set <code>API_KEY</code> in your environment or Docker config.</li>
+                           </ul>
+                        </div>
+                     )}
+
+                     <div className="space-y-4">
+                        <div>
+                           <label className="block text-sm font-medium text-slate-700 mb-1">Preferred Model</label>
+                           <select 
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900"
+                              value={settings.aiModel || 'gemini-3-flash-preview'}
+                              onChange={e => setSettings({...settings, aiModel: e.target.value})}
+                           >
+                              <option value="gemini-3-flash-preview">Gemini 3 Flash (Fast & Cost-Effective)</option>
+                              <option value="gemini-3-pro-preview">Gemini 3 Pro (Complex Reasoning)</option>
+                           </select>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
                <div className="flex justify-end pt-4 border-t border-slate-100">
                   <button type="submit" className="bg-emerald-600 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2">
                      <Save size={18} /> {settingsSaved ? 'Saved!' : t('saveSettings')}

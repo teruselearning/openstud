@@ -6,11 +6,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Standard Vite replacement for environment variables
+    // Aggressively define process.env for browser compatibility
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
-    // Polyfill process.env to prevent "process is not defined" errors
     'process.env': {
-       API_KEY: JSON.stringify(process.env.API_KEY || '')
+      API_KEY: JSON.stringify(process.env.API_KEY || '')
     }
   },
   build: {

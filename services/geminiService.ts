@@ -2,80 +2,37 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
 
-// Schema guided by prompt instructions (No SchemaType, no enum keys directly in Type)
+// Schema guided by prompt instructions
 const speciesSchema = {
   type: Type.OBJECT,
   properties: {
     scientificName: { type: Type.STRING, description: "The scientific (Latin) name of the species." },
     conservationStatus: { type: Type.STRING, description: "IUCN conservation status (e.g., Endangered, Vulnerable)." },
-    sexualMaturityAgeYears: { type: Type.NUMBER, description: "Average age of sexual maturity (or first flowering for plants) in years." },
-    averageAdultWeightKg: { type: Type.NUMBER, description: "Average weight of an adult in Kilograms. Use 0 for plants." },
-    lifeExpectancyYears: { type: Type.NUMBER, description: "Average life expectancy in years in captivity. Use 0 for plants." },
-    breedingSeasonStart: { type: Type.INTEGER, description: "Start month of breeding/flowering season (1 for Jan, 12 for Dec). Use 0 if year-round." },
-    breedingSeasonEnd: { type: Type.INTEGER, description: "End month of breeding/flowering season (1 for Jan, 12 for Dec). Use 0 if year-round." },
-    plantClassification: { type: Type.STRING, description: "If a plant, return 'Dioecious' or 'Monoecious'. Otherwise return 'N/A'." },
-    nativeStatusCountry: { type: Type.STRING, description: "Return 'Native', 'Introduced', 'Invasive' or 'Unknown' based on the country context." },
-    nativeStatusLocal: { type: Type.STRING, description: "Return 'Native', 'Introduced', 'Invasive' or 'Unknown' based on the region context." },
-    description: { type: Type.STRING, description: "A brief 1-sentence description of the species." }
+    sexualMaturityAgeYears: { type: Type.NUMBER, description: "Average age of sexual maturity in years." },
+    averageAdultWeightKg: { type: Type.NUMBER, description: "Average weight of an adult in Kilograms." },
+    lifeExpectancyYears: { type: Type.NUMBER, description: "Average life expectancy in years in captivity." },
+    breedingSeasonStart: { type: Type.INTEGER, description: "Start month of breeding season (1-12)." },
+    breedingSeasonEnd: { type: Type.INTEGER, description: "End month of breeding season (1-12)." },
+    plantClassification: { type: Type.STRING, description: "If plant, 'Dioecious' or 'Monoecious'. Else 'N/A'." },
+    nativeStatusCountry: { type: Type.STRING, description: "Status in the organization's country." },
+    nativeStatusLocal: { type: Type.STRING, description: "Status in the local region." },
+    description: { type: Type.STRING, description: "Brief description." }
   },
-  required: ["scientificName", "conservationStatus", "sexualMaturityAgeYears", "nativeStatusCountry", "nativeStatusLocal"],
-  propertyOrdering: [
-    "scientificName", 
-    "conservationStatus", 
-    "sexualMaturityAgeYears", 
-    "averageAdultWeightKg", 
-    "lifeExpectancyYears", 
-    "breedingSeasonStart", 
-    "breedingSeasonEnd", 
-    "plantClassification", 
-    "nativeStatusCountry", 
-    "nativeStatusLocal", 
-    "description"
-  ]
+  required: ["scientificName", "conservationStatus"],
 };
 
 const getAiClient = (): GoogleGenAI => {
-  const apiKey = process.env.API_KEY || '';
-  if (!apiKey || apiKey === 'undefined') {
-     console.warn("Gemini API Key is missing in process.env. AI services will fail.");
-  }
+  // Use a safe access pattern for process.env in the browser
+  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
   return new GoogleGenAI({ apiKey });
-};
-
-const searchGBIF = async (query: string, type: SpeciesType): Promise<Partial<Species> | null> => {
-  try {
-    const response = await fetch(`https://api.gbif.org/v1/species/match?name=${encodeURIComponent(query)}&verbose=true`);
-    const data = await response.json();
-    if (data.matchType !== 'NONE' && data.scientificName) {
-      return { scientificName: data.scientificName };
-    }
-    return null;
-  } catch (error) {
-    console.warn("GBIF API Error:", error);
-    return null;
-  }
-};
-
-const fetchWikipediaImage = async (query: string): Promise<string | null> => {
-  try {
-    const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.thumbnail?.source) return data.thumbnail.source;
-    }
-    return null;
-  } catch (e) { return null; }
 };
 
 /**
  * Strips markdown code blocks (e.g. ```json ... ```) if the model returns them.
- * This is a common occurrence even with responseMimeType set to application/json.
  */
 const sanitizeJsonResponse = (text: string): string => {
   if (!text) return "";
-  // Remove markdown identifiers
   let clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  // If the model added text before or after the JSON block, try to find the actual JSON boundaries
   const start = clean.indexOf('{');
   const end = clean.lastIndexOf('}');
   if (start !== -1 && end !== -1 && end > start) {
@@ -85,34 +42,21 @@ const sanitizeJsonResponse = (text: string): string => {
 };
 
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
-  let result: Partial<Species> = {};
-
-  const gbifData = await searchGBIF(commonName, type);
-  if (gbifData) result = { ...gbifData };
-
-  if (result.scientificName) {
-     const wikiImage = await fetchWikipediaImage(result.scientificName);
-     if (wikiImage) result.imageUrl = wikiImage;
-  }
-  
-  if (!result.imageUrl) {
-     const wikiImage = await fetchWikipediaImage(commonName);
-     if (wikiImage) result.imageUrl = wikiImage;
-  }
-
   try {
     const ai = getAiClient();
+    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
+    
+    if (!apiKey) {
+      throw new Error("Gemini API Key is not configured in the host environment.");
+    }
+
     const locationPrompt = locationContext 
       ? `The organization tracking this species is located in "${locationContext}".`
-      : `No location context provided, set native statuses to 'Unknown'.`;
-
-    const contextPrompt = type === 'Plant' 
-      ? `Provide botanical data for the plant "${commonName}". ${locationPrompt}`
-      : `Provide biological data for the animal "${commonName}". ${locationPrompt}`;
+      : `No location context provided.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${result.scientificName ? `Use scientific name "${result.scientificName}".` : ''} Return ONLY a raw JSON object matching the provided schema.`,
+      contents: `Provide biological data for the ${type.toLowerCase()} "${commonName}". ${locationPrompt}. Return as JSON matching the schema.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,
@@ -121,23 +65,12 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
-      try {
-        const aiData = JSON.parse(sanitized) as Partial<Species>;
-        return {
-          ...aiData,
-          ...result, 
-          scientificName: result.scientificName || aiData.scientificName,
-          imageUrl: result.imageUrl || undefined
-        };
-      } catch (parseErr) {
-        console.error("Failed to parse AI JSON response:", sanitized);
-        return result.scientificName ? result : null;
-      }
+      return JSON.parse(sanitized) as Partial<Species>;
     }
-    return result.scientificName ? result : null;
-  } catch (error) {
+    return null;
+  } catch (error: any) {
     console.error("AI Error:", error);
-    return result.scientificName ? result : null;
+    throw error;
   }
 };
 
