@@ -28,6 +28,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   
   const settings = getSystemSettings();
   const landingConfig = settings.landingPageConfig;
+  const isRegistrationEnabled = settings.enableRegistration !== false;
 
   const [regData, setRegData] = useState({ 
     orgName: '', 
@@ -63,6 +64,13 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     }
     setRecaptchaToken(null);
   }, [viewMode, settings.recaptchaSiteKey]);
+
+  // Prevent accessing registration if disabled
+  useEffect(() => {
+     if (viewMode === 'register' && !isRegistrationEnabled) {
+        setViewMode('landing');
+     }
+  }, [viewMode, isRegistrationEnabled]);
 
   // Attempt to auto-detect location when entering registration view
   useEffect(() => {
@@ -169,6 +177,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    if (!isRegistrationEnabled) { setError("Registration is currently disabled."); setIsLoading(false); return; }
     if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
     if (regData.password !== regData.confirmPassword) { setError("Passwords do not match."); setIsLoading(false); return; }
     try {
@@ -236,7 +245,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           </div>
           <button onClick={handleDemoLogin} className="text-slate-600 hover:text-emerald-700 font-medium text-sm disabled:opacity-50" disabled={isLoading}>{t('demoLogin')}</button>
           {viewMode === 'landing' && <button onClick={() => setViewMode('login')} className="text-slate-600 hover:text-emerald-700 font-bold text-sm disabled:opacity-50" disabled={isLoading}>Sign In</button>}
-          {viewMode === 'landing' && <button onClick={() => setViewMode('register')} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50" disabled={isLoading}>{t('getStarted')}</button>}
+          {(viewMode === 'landing' && isRegistrationEnabled) && <button onClick={() => setViewMode('register')} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50" disabled={isLoading}>{t('getStarted')}</button>}
         </div>
       </header>
 
@@ -246,7 +255,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 tracking-tight">{landingConfig?.heroTitle || t('landingTitle')}</h1>
             <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{landingConfig?.heroSubtitle || t('landingSubtitle')}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button onClick={() => setViewMode('register')} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold text-lg hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>
+              {isRegistrationEnabled && (
+                <button onClick={() => setViewMode('register')} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold text-lg hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>
+              )}
               <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
             </div>
             {landingConfig?.showFeatures !== false && (
@@ -279,7 +290,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div className="text-right"><button type="button" onClick={() => setViewMode('forgot_password')} className="text-xs text-slate-500 hover:text-emerald-600">Forgot Password?</button></div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Sign In</button></div>
-                <div className="text-center pt-2"><button type="button" onClick={() => setViewMode('register')} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>
+                {isRegistrationEnabled && (
+                  <div className="text-center pt-2"><button type="button" onClick={() => setViewMode('register')} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>
+                )}
               </form>
             </div>
           </div>

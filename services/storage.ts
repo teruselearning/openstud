@@ -75,7 +75,8 @@ export const getSystemSettings = (): SystemSettings => {
     aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management.</p>' },
     privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected.</p>' },
     termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Standard open-source license.</p>' },
-    enableMfa: false
+    enableMfa: false,
+    enableRegistration: true // Default enabled as requested
   };
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
   return { ...defaults, ...stored, emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) }, aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) }, privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) }, termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) } };

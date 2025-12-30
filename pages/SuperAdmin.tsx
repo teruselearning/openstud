@@ -5,7 +5,7 @@ import { testSmtpConnection } from '../services/emailService';
 import { 
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
-  Lock, FileText, Type, Image as ImageIcon, Sparkles
+  Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig } from '../types';
@@ -344,6 +344,19 @@ const SuperAdmin: React.FC = () => {
                </div>
                
                <div className="space-y-4">
+                  <div className="space-y-1 border-b border-slate-50 pb-4">
+                     <div className="flex items-center justify-between">
+                        <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                           <UserPlus size={16} className="text-indigo-500"/> Enable Public Registration
+                        </label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                           <input type="checkbox" className="sr-only peer" checked={settings.enableRegistration !== false} onChange={e => setSettings({...settings, enableRegistration: e.target.checked})} />
+                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                     </div>
+                     <p className="text-[10px] text-slate-400 mt-1">Allows anyone to create a new organization from the landing page. If disabled, new organizations can only be created by an administrator.</p>
+                  </div>
+
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Hero Title</label>
                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={settings.landingPageConfig?.heroTitle || ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroTitle: e.target.value}})} />

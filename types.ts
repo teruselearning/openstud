@@ -158,6 +158,7 @@ export interface SystemSettings {
   recaptchaSiteKey?: string;
   recaptchaSecretKey?: string;
   enableMfa: boolean;
+  enableRegistration: boolean; // Toggle for public organization creation
   // App Config
   aiModel?: string;
 }
