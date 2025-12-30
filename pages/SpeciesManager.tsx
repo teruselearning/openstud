@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg } from '../services/storage';
-import { fetchSpeciesData, generateSpeciesImage } from '../services/geminiService';
+import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, NativeStatus, Organization } from '../types';
-// Added Dna and PawPrint to the imports below
 import { Plus, Sparkles, Loader2, Camera, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink, FolderOpen, ImageIcon, Info, Calendar, Weight, Activity, Dna, PawPrint } from 'lucide-react';
 import { LanguageContext } from '../App';
 
@@ -18,6 +17,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const [showForm, setShowForm] = useState(false);
   const [loadingAI, setLoadingAI] = useState(false);
   const [loadingImage, setLoadingImage] = useState(false);
+  const [imageStatus, setImageStatus] = useState<string>(''); // For multi-stage image feedback
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,24 +48,49 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const handleAutoFill = async () => {
     if (!formData.commonName) return;
     setLoadingAI(true);
+    setLoadingImage(true);
+    setImageStatus('FETCHING DATA...');
+    
     try {
+      // 1. Fetch Biological Data
       const data = await fetchSpeciesData(formData.commonName, formData.type as SpeciesType, org?.location || '');
+      let finalScientificName = formData.scientificName;
+
       if (data) {
-        setFormData(prev => ({ 
-          ...prev, 
-          ...data,
-          // Handle type casting from AI strings to union types if necessary
-          nativeStatusCountry: (data.nativeStatusCountry as any) || 'Unknown',
-          nativeStatusLocal: (data.nativeStatusLocal as any) || 'Unknown',
-          plantClassification: (data.plantClassification as any)
-        }));
-      } else {
-        alert("Autofill: Could not find data for this species.");
+        setFormData(prev => {
+          finalScientificName = data.scientificName || prev.scientificName;
+          return { 
+            ...prev, 
+            ...data,
+            nativeStatusCountry: (data.nativeStatusCountry as any) || 'Unknown',
+            nativeStatusLocal: (data.nativeStatusLocal as any) || 'Unknown',
+            plantClassification: (data.plantClassification as any)
+          };
+        });
       }
+
+      // 2. Automated Image Search (Wikimedia Priority)
+      const searchQueryForImage = finalScientificName || formData.commonName;
+      setImageStatus('SEARCHING WIKIMEDIA...');
+      
+      let finalImageUrl = await fetchWikimediaImage(searchQueryForImage);
+
+      // 3. Fallback to AI Image Generation
+      if (!finalImageUrl) {
+        setImageStatus('GENERATING AI ILLUSTRATION...');
+        finalImageUrl = await generateSpeciesImage(formData.commonName, finalScientificName || '', formData.type as SpeciesType);
+      }
+
+      if (finalImageUrl) {
+        setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
+      }
+
     } catch (e: any) {
       alert("AI Service Error: " + e.message);
     } finally {
       setLoadingAI(false);
+      setLoadingImage(false);
+      setImageStatus('');
     }
   };
 
@@ -75,6 +100,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         return;
      }
      setLoadingImage(true);
+     setImageStatus('GENERATING...');
      try {
         const url = await generateSpeciesImage(formData.commonName, formData.scientificName, formData.type as SpeciesType);
         if (url) {
@@ -84,6 +110,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         alert("Image generation failed: " + e.message);
      } finally {
         setLoadingImage(false);
+        setImageStatus('');
      }
   };
 
@@ -133,7 +160,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
        id: editingId || `sp-${Date.now()}`,
        projectId: currentProjectId,
        imageUrl: imageToSave,
-       // Ensure numbers are numbers
        sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
        averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
        lifeExpectancyYears: Number(formData.lifeExpectancyYears || 0),
@@ -230,9 +256,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                            </div>
                         )}
                         {loadingImage && (
-                           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+                           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 text-center p-4">
                               <Loader2 className="animate-spin text-emerald-600 mb-2" size={32}/>
-                              <span className="text-[10px] font-bold text-slate-600">GENERATING ILLUSTRATION...</span>
+                              <span className="text-[10px] font-bold text-slate-600 tracking-widest">{imageStatus || 'LOADING...'}</span>
                            </div>
                         )}
                      </div>
@@ -293,7 +319,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Core Taxonomy</h4>
                         <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">
-                           {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} Autofill Biological Data
+                           {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} Autofill Complete Profile
                         </button>
                      </div>
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -389,12 +415,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedSpecies.map(species => (
           <div key={species.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full">
-            {/* Context Menu Overlay */}
             <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all flex gap-1">
               <button onClick={() => handleEdit(species)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all"><Pencil size={16} /></button>
             </div>
 
-            {/* Thumbnail */}
             <div className="h-52 bg-slate-200 relative overflow-hidden">
                <img src={species.imageUrl} alt={species.commonName} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">
@@ -405,7 +429,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                </div>
             </div>
 
-            {/* Content */}
             <div className="p-5 flex-1 flex flex-col">
               <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
               <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>

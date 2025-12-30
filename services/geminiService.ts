@@ -22,9 +22,9 @@ const speciesSchema = {
   required: ["scientificName", "conservationStatus"],
 };
 
+/* Correct Initialization as per guidelines: Always use process.env.API_KEY directly */
 const getAiClient = (): GoogleGenAI => {
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 };
 
 /**
@@ -41,9 +41,54 @@ const sanitizeJsonResponse = (text: string): string => {
   return clean;
 };
 
+/**
+ * Converts a remote image URL to a Base64 data string
+ */
+export const urlToBase64 = async (url: string): Promise<string | null> => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error("Base64 conversion failed:", e);
+    return null;
+  }
+};
+
+/**
+ * Attempts to find a high-quality image from Wikimedia Commons via Wikipedia API
+ */
+export const fetchWikimediaImage = async (query: string): Promise<string | null> => {
+  try {
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(query)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
+    const response = await fetch(searchUrl);
+    const data = await response.json();
+    const pages = data?.query?.pages;
+    if (!pages) return null;
+    
+    const pageId = Object.keys(pages)[0];
+    const imageUrl = pages[pageId]?.thumbnail?.source;
+    
+    if (imageUrl) {
+      // Convert to base64 so we can store it permanently
+      return await urlToBase64(imageUrl);
+    }
+    return null;
+  } catch (e) {
+    console.error("Wikimedia fetch failed:", e);
+    return null;
+  }
+};
+
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
-    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
+    const apiKey = process.env.API_KEY || '';
     if (!apiKey) {
       throw new Error("Gemini API Key is not configured in the host environment. Please check your .env file or hosting provider secrets.");
     }
@@ -88,11 +133,12 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
     }
 
     const ai = getAiClient();
-    const prompt = `A professional scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, isolated on a clean white background, high detail, studio lighting.`;
+    const prompt = `A highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, full body, isolated on a clean white background, textbook style, neutral lighting, 4k.`;
     
+    /* Fixed contents format: must be string or object with parts per guidelines */
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: [{ text: prompt }]
+      contents: { parts: [{ text: prompt }] }
     });
 
     for (const candidate of response.candidates) {

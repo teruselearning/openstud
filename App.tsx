@@ -45,7 +45,8 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners } from './services/storage';
+/* Fixed error on line 263: Added syncPushLanguages to the imports from storage */
+import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners } from './services/storage';
 import { fetchRemoteData } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
@@ -133,7 +134,11 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           <div className="relative">
              <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> Current Project</div>
              <select value={currentProjectId} onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
-               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+               {projects.length > 0 ? (
+                 projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+               ) : (
+                 <option value="">No Projects Found</option>
+               )}
                <option disabled>──────────</option>
                <option value="NEW">+ Create New Project</option>
              </select>
@@ -256,7 +261,7 @@ const App: React.FC = () => {
               await syncPushBreedingEvents(getBreedingEvents());
               await syncPushBreedingLoans(getBreedingLoans());
               await syncPushPartnerships(getPartnerships());
-              await saveLanguages(getLanguages(), false); 
+              await syncPushLanguages(getLanguages());
            } else {
               if (data.org) saveOrg(data.org, true);
               if (data.settings) { saveSystemSettings(data.settings, true); setSystemSettings(data.settings); }
@@ -270,8 +275,11 @@ const App: React.FC = () => {
               if (data.partnerships) savePartnerships(data.partnerships, true);
               if (data.partners) saveNetworkPartners(data.partners); 
            }
-           setProjects(getProjects());
-           setCurrentOrg(getOrg());
+           // IMPORTANT: Filter by active org ID immediately after sync
+           const activeOrg = getOrg();
+           const filtered = getProjects().filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
+           setProjects(filtered);
+           setCurrentOrg(activeOrg);
         } else if (!result.success) {
            setSyncError(result.message || "Unknown sync error");
            if (result.message.includes('Unexpected response (404)') || result.message.includes('Failed to fetch')) setShowBackendSetup(true);
@@ -283,17 +291,29 @@ const App: React.FC = () => {
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
+    
     const isSuper = session.role === UserRole.SUPER_ADMIN || (session.role as string) === 'Super Admin';
     setImpersonating(isSuper ? false : isImpersonating());
-    setCurrentOrg(getOrg());
+    
+    const activeOrg = getOrg();
+    setCurrentOrg(activeOrg);
+    
     const allProjects = getProjects();
-    setProjects(allProjects);
-    let availableProjects = allProjects.filter(p => (!getOrg().id || !p.orgId || p.orgId === getOrg().id) && (!session.allowedProjectIds?.length || session.allowedProjectIds.includes(p.id)));
+    
+    // Filter projects strictly by the current organization context
+    let availableProjects = allProjects.filter(p => {
+       const projectOrgId = p.orgId || (p as any).org_id;
+       return projectOrgId === activeOrg.id;
+    });
+
+    // Handle project selection logic
     let savedPid = getCurrentProjectId();
     if (!availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
     }
+    
+    setProjects(availableProjects);
     setCurrentProjectIdState(savedPid);
     calculateFeatureVisibility(savedPid);
     setUnreadCount(getNotifications().filter(n => n.recipientId === session.id && !n.isRead).length);
@@ -308,14 +328,24 @@ const App: React.FC = () => {
   
   const handleLogin = (u: User) => loadData(u);
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
-  const handleProjectChange = (id: string) => { setCurrentProjectIdState(id); saveCurrentProjectId(id); calculateFeatureVisibility(id); };
+  
+  const handleProjectChange = (id: string) => { 
+     setCurrentProjectIdState(id); 
+     saveCurrentProjectId(id); 
+     calculateFeatureVisibility(id); 
+  };
 
   const handleCreateProject = () => {
     if (!newProjectName) return;
-    const newProject: Project = { id: `p-${Date.now()}`, name: newProjectName, description: newProjectDesc || '', orgId: currentOrg?.id };
-    const updated = [...projects, newProject];
-    setProjects(updated);
-    saveProjects(updated);
+    const orgId = currentOrg?.id || getOrg().id;
+    const newProject: Project = { id: `p-${Date.now()}`, name: newProjectName, description: newProjectDesc || '', orgId: orgId };
+    const allProjects = [...getProjects(), newProject];
+    saveProjects(allProjects);
+    
+    // Refresh the local filtered list
+    const filtered = allProjects.filter(p => (p.orgId || (p as any).org_id) === orgId);
+    setProjects(filtered);
+    
     handleProjectChange(newProject.id);
     setShowAddProjectModal(false);
     setNewProjectName(''); setNewProjectDesc('');
@@ -345,15 +375,14 @@ const App: React.FC = () => {
   if (isLoading) return null;
   if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
 
-  const isSuperAdmin = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   return (
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
       <HashRouter>
         <div className="min-h-screen bg-slate-50 flex">
-          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects.filter(p => (!currentOrg || !p.orgId || p.orgId === currentOrg.id) && (!user.allowedProjectIds?.length || user.allowedProjectIds.includes(p.id)))} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
+          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organization: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
-            {(currentOrg?.id === 'org-1' && !isSuperAdmin) && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organization</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organization</button></div>}
+            {(currentOrg?.id === 'org-1' && (user.role as string) !== 'Super Admin') && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organization</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organization</button></div>}
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>
@@ -364,7 +393,7 @@ const App: React.FC = () => {
               </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={isSuperAdmin ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
+              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
             </div>
           </main>
         </div>

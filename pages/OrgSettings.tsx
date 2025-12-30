@@ -47,9 +47,18 @@ const OrgSettings: React.FC = () => {
   const projectsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setOrg(getOrg());
+    const currentOrg = getOrg();
+    setOrg(currentOrg);
     setUsers(getUsers());
-    setProjects(getProjects());
+    
+    // CRITICAL: Filter projects to only show those belonging to the current organization
+    const allProjects = getProjects();
+    const filteredProjects = allProjects.filter(p => {
+       const projectOrgId = p.orgId || (p as any).org_id;
+       return projectOrgId === currentOrg.id;
+    });
+    setProjects(filteredProjects);
+    
     setSpecies(getSpecies());
     setIndividuals(getIndividuals());
   }, []);
@@ -190,23 +199,31 @@ const OrgSettings: React.FC = () => {
   };
   
   const handleCreateProject = () => {
-     if(!newProjectData.name) return;
+     if(!newProjectData.name || !org) return;
      const newProject: Project = {
         id: `p-${Date.now()}`,
         name: newProjectData.name,
-        description: newProjectData.description
+        description: newProjectData.description,
+        orgId: org.id
      };
-     const updated = [...projects, newProject];
-     setProjects(updated);
-     saveProjects(updated);
+     const allProjects = [...getProjects(), newProject];
+     saveProjects(allProjects);
+     
+     // Update filtered local state
+     setProjects(allProjects.filter(p => (p.orgId || (p as any).org_id) === org.id));
+     
      setNewProjectData({ name: '', description: '' });
      setIsCreatingProject(false);
   };
 
   const handleUpdateProject = (id: string, name: string, description: string) => {
-     const updated = projects.map(p => p.id === id ? { ...p, name, description } : p);
-     setProjects(updated);
-     saveProjects(updated);
+     const allProjects = getProjects().map(p => p.id === id ? { ...p, name, description } : p);
+     saveProjects(allProjects);
+     
+     // Update filtered local state
+     if (org) {
+       setProjects(allProjects.filter(p => (p.orgId || (p as any).org_id) === org.id));
+     }
      setEditingProject(null);
   };
 
@@ -216,6 +233,7 @@ const OrgSettings: React.FC = () => {
      const iCount = individuals.filter(i => i.projectId === project.id).length;
      
      if (sCount > 0 || iCount > 0) {
+        // Only look at projects within the same organization for potential transfer
         const target = projects.find(p => p.id !== project.id);
         if (target) setTransferTargetId(target.id);
         else setTransferTargetId('');
@@ -225,34 +243,39 @@ const OrgSettings: React.FC = () => {
   };
 
   const confirmDeleteProject = (transferData: boolean) => {
-     if (!projectToDelete) return;
+     if (!projectToDelete || !org) return;
      const isDeletingActive = projectToDelete.id === getCurrentProjectId();
 
      if (transferData && transferTargetId) {
-        const updatedSpecies = species.map(s => s.projectId === projectToDelete.id ? { ...s, projectId: transferTargetId } : s);
-        setSpecies(updatedSpecies);
+        const updatedSpecies = getSpecies().map(s => s.projectId === projectToDelete.id ? { ...s, projectId: transferTargetId } : s);
         saveSpecies(updatedSpecies);
+        setSpecies(updatedSpecies);
 
-        const updatedInds = individuals.map(i => i.projectId === projectToDelete.id ? { ...i, projectId: transferTargetId } : i);
-        setIndividuals(updatedInds);
+        const updatedInds = getIndividuals().map(i => i.projectId === projectToDelete.id ? { ...i, projectId: transferTargetId } : i);
         saveIndividuals(updatedInds);
+        setIndividuals(updatedInds);
      } else if (!transferData) {
-        const updatedSpecies = species.filter(s => s.projectId !== projectToDelete.id);
-        setSpecies(updatedSpecies);
+        const updatedSpecies = getSpecies().filter(s => s.projectId !== projectToDelete.id);
         saveSpecies(updatedSpecies);
+        setSpecies(updatedSpecies);
 
-        const updatedInds = individuals.filter(i => i.projectId !== projectToDelete.id);
-        setIndividuals(updatedInds);
+        const updatedInds = getIndividuals().filter(i => i.projectId !== projectToDelete.id);
         saveIndividuals(updatedInds);
+        setIndividuals(updatedInds);
      }
 
-     const updatedProjects = projects.filter(p => p.id !== projectToDelete.id);
-     setProjects(updatedProjects);
-     saveProjects(updatedProjects);
+     const allProjects = getProjects().filter(p => p.id !== projectToDelete.id);
+     saveProjects(allProjects);
+     
+     // Update filtered local state
+     setProjects(allProjects.filter(p => (p.orgId || (p as any).org_id) === org.id));
      
      if (isDeletingActive) {
-        if (updatedProjects.length > 0) {
-           saveCurrentProjectId(updatedProjects[0].id);
+        const remainingForOrg = allProjects.filter(p => (p.orgId || (p as any).org_id) === org.id);
+        if (remainingForOrg.length > 0) {
+           saveCurrentProjectId(remainingForOrg[0].id);
+        } else {
+           saveCurrentProjectId('');
         }
         window.location.reload();
         return;
@@ -290,8 +313,8 @@ const OrgSettings: React.FC = () => {
      if (!transferSourceId || !transferTargetIdModal) return;
      if (selectedTransferItems.size === 0) return;
 
-     let updatedSpecies = [...species];
-     let updatedIndividuals = [...individuals];
+     let updatedSpecies = getSpecies();
+     let updatedIndividuals = getIndividuals();
 
      if (transferMode === 'species') {
         updatedSpecies = updatedSpecies.map(s => {
@@ -308,11 +331,11 @@ const OrgSettings: React.FC = () => {
            return i;
         });
      } else {
-        const indsToMove = individuals.filter(i => selectedTransferItems.has(i.id));
+        const indsToMove = updatedIndividuals.filter(i => selectedTransferItems.has(i.id));
         const speciesGroups = new Set(indsToMove.map(i => i.speciesId));
 
         speciesGroups.forEach(sourceSpeciesId => {
-           const sourceSpecies = species.find(s => s.id === sourceSpeciesId);
+           const sourceSpecies = updatedSpecies.find(s => s.id === sourceSpeciesId);
            if (!sourceSpecies) return;
 
            const targetSpeciesMatch = updatedSpecies.find(s => 
@@ -342,10 +365,10 @@ const OrgSettings: React.FC = () => {
         });
      }
 
-     setSpecies(updatedSpecies);
      saveSpecies(updatedSpecies);
-     setIndividuals(updatedIndividuals);
+     setSpecies(updatedSpecies);
      saveIndividuals(updatedIndividuals);
+     setIndividuals(updatedIndividuals);
      
      setShowTransferModal(false);
      setSelectedTransferItems(new Set());
@@ -356,8 +379,6 @@ const OrgSettings: React.FC = () => {
   const speciesInDeleteTarget = projectToDelete ? species.filter(s => s.projectId === projectToDelete.id).length : 0;
   const indsInDeleteTarget = projectToDelete ? individuals.filter(i => i.projectId === projectToDelete.id).length : 0;
   const hasDataToDelete = speciesInDeleteTarget > 0 || indsInDeleteTarget > 0;
-  const isActiveProject = projectToDelete && projectToDelete.id === getCurrentProjectId();
-  const isOnlyProject = projects.length === 1;
   
   const transferListSpecies = transferSourceId ? species.filter(s => s.projectId === transferSourceId) : [];
   const transferListInds = transferSourceId ? individuals.filter(i => i.projectId === transferSourceId) : [];
