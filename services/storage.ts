@@ -53,16 +53,10 @@ const set = <T>(key: string, val: T) => {
       localStorage.setItem(key, JSON.stringify(val));
     } catch (e) {
       if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-         console.warn("Storage quota exceeded. Pruning non-essential data.");
-         // Clear largest non-essential caches
+         console.warn("Storage quota exceeded.");
          localStorage.removeItem(KEYS.BACKUP);
          localStorage.removeItem(KEYS.NOTIFICATIONS);
-         // Try again
-         try {
-            localStorage.setItem(key, JSON.stringify(val));
-         } catch (secondErr) {
-            console.error("Critical: Storage remains full after pruning.", secondErr);
-         }
+         try { localStorage.setItem(key, JSON.stringify(val)); } catch (secondErr) { console.error("Critical: Storage remains full.", secondErr); }
       }
     }
   }
@@ -72,56 +66,24 @@ export const getSystemSettings = (): SystemSettings => {
   const defaults: SystemSettings = {
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
     emailTemplates: {
-      registration: { 
-        enabled: true, 
-        subject: "Verify your OpenStudbook account", 
-        bodyHtml: "<h3>Welcome to OpenStudbook!</h3><p>Your verification code for <strong>{{orgName}}</strong> is: <strong style='font-size: 24px; color: #059669;'>{{code}}</strong></p><p>Enter this code in your browser to complete your registration.</p>" 
-      },
-      mfa: { 
-        enabled: true, 
-        subject: "Your OpenStudbook Security Code", 
-        bodyHtml: "<h3>Security Verification</h3><p>Hello {{userName}},</p><p>Use the following code to sign in to your account: <strong style='font-size: 24px; color: #3b82f6;'>{{code}}</strong></p><p>If you did not request this code, please secure your account immediately.</p>" 
-      },
-      invite: { 
-        enabled: true, 
-        subject: "You've been invited to join {{orgName}}", 
-        bodyHtml: "<h3>Team Invitation</h3><p>You have been invited to join the studbook management team at <strong>{{orgName}}</strong>.</p><p>Click the link below or log in using your email to get started.</p>" 
-      },
-      notification: { 
-        enabled: true, 
-        subject: "OpenStudbook: New Activity in {{orgName}}", 
-        bodyHtml: "<h3>Project Update</h3><p>New activity has been recorded in your project:</p><div style='padding: 15px; background: #f8fafc; border-left: 4px solid #059669;'>{{message}}</div><p>Log in to view the full details.</p>" 
-      }
+      registration: { enabled: true, subject: "Verify your OpenStudbook account", bodyHtml: "<h3>Welcome to OpenStudbook!</h3><p>Your verification code for <strong>{{orgName}}</strong> is: <strong style='font-size: 24px; color: #059669;'>{{code}}</strong></p>" },
+      mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: "<h3>Security Verification</h3><p>Hello {{userName}},</p><p>Use the following code: <strong style='font-size: 24px; color: #3b82f6;'>{{code}}</strong></p>" },
+      invite: { enabled: true, subject: "You've been invited to join {{orgName}}", bodyHtml: "<h3>Team Invitation</h3><p>You have been invited to join the management team at <strong>{{orgName}}</strong>.</p>" },
+      notification: { enabled: true, subject: "OpenStudbook Update in {{orgName}}", bodyHtml: "<h3>Update</h3><p>{{message}}</p>" }
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
-    aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management for conservation.</p>' },
-    privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected and stored securely.</p>' },
-    termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Use of this software is subject to standard open-source licensing.</p>' },
+    aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management.</p>' },
+    privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected.</p>' },
+    termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Standard open-source license.</p>' },
     enableMfa: false
   };
-  
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
-  return {
-    ...defaults,
-    ...stored,
-    emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) },
-    aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) },
-    privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) },
-    termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) },
-    landingPageConfig: stored.landingPageConfig || defaults.landingPageConfig
-  };
+  return { ...defaults, ...stored, emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) }, aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) }, privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) }, termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) } };
 };
 
 export const saveSystemSettings = async (s: SystemSettings, skipSync = false) => {
   set(KEYS.SETTINGS, s);
-  if (!skipSync) {
-    try {
-      await syncPushSettings(s);
-    } catch (e) {
-      console.error("Failed to sync system settings:", e);
-      throw e;
-    }
-  }
+  if (!skipSync) await syncPushSettings(s);
 };
 
 export const getLanguages = (): LanguageConfig[] => {
@@ -197,10 +159,8 @@ export const getOrg = (): Organization => {
   };
   const org = get(KEYS.ORG, defaultOrg);
   if (!org || typeof org !== 'object') return defaultOrg;
-  
   if (org.aiUsageLimit === undefined) org.aiUsageLimit = 100;
   if (org.aiUsageCount === undefined) org.aiUsageCount = 0;
-  
   return org;
 };
 
@@ -213,26 +173,12 @@ export const checkAndIncrementAiUsage = (): boolean => {
   const org = getOrg();
   const now = new Date();
   const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
-  
   let count = org.aiUsageCount || 0;
   let lastReset = org.aiUsageLastReset || "";
   const limit = org.aiUsageLimit || 100;
-  
-  if (lastReset !== currentMonthStr) {
-     count = 0;
-     lastReset = currentMonthStr;
-  }
-  
-  if (count >= limit) {
-     return false;
-  }
-  
-  const updatedOrg = { 
-    ...org, 
-    aiUsageCount: count + 1, 
-    aiUsageLastReset: currentMonthStr 
-  };
-  
+  if (lastReset !== currentMonthStr) { count = 0; lastReset = currentMonthStr; }
+  if (count >= limit) return false;
+  const updatedOrg = { ...org, aiUsageCount: count + 1, aiUsageLastReset: currentMonthStr };
   saveOrg(updatedOrg);
   return true;
 };
@@ -285,73 +231,25 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
 export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
-/**
- * Exports all organization data from local storage for backup.
- */
-export const exportFullData = () => {
-  return {
-    org: getOrg(),
-    projects: getProjects(),
-    users: getUsers(),
-    species: getSpecies(),
-    individuals: getIndividuals(),
-    breedingEvents: getBreedingEvents(),
-    breedingLoans: getBreedingLoans(),
-    partnerships: getPartnerships(),
-    settings: getSystemSettings(),
-    languages: getLanguages()
-  };
-};
+export const exportFullData = () => ({ org: getOrg(), projects: getProjects(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(), breedingEvents: getBreedingEvents(), breedingLoans: getBreedingLoans(), partnerships: getPartnerships(), settings: getSystemSettings(), languages: getLanguages() });
+export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };
 
-/**
- * Imports organization data into local storage.
- */
-export const importFullData = (data: any) => {
-  if (data.org) saveOrg(data.org);
-  if (data.projects) saveProjects(data.projects);
-  if (data.users) saveUsers(data.users);
-  if (data.species) saveSpecies(data.species);
-  if (data.individuals) saveIndividuals(data.individuals);
-  if (data.breedingEvents) saveBreedingEvents(data.breedingEvents);
-  if (data.breedingLoans) saveBreedingLoans(data.breedingLoans);
-  if (data.partnerships) savePartnerships(data.partnerships);
-  if (data.settings) saveSystemSettings(data.settings);
-  if (data.languages) saveLanguages(data.languages);
-};
-
-/**
- * Exports species and individuals data as a CSV string.
- */
 export const exportDataAsCSV = (): string => {
   const species = getSpecies();
   const individuals = getIndividuals();
-  
   let csv = "Type,Common Name,Scientific Name,Studbook ID,Name,Sex,Birth Date,Weight (kg),Conservation Status\n";
-  
   individuals.forEach(ind => {
     const sp = species.find(s => s.id === ind.speciesId);
-    const row = [
-      sp?.type || 'Unknown',
-      sp?.commonName || 'Unknown',
-      sp?.scientificName || 'Unknown',
-      ind.studbookId,
-      ind.name,
-      ind.sex,
-      ind.birthDate || '',
-      ind.weightKg,
-      sp?.conservationStatus || ''
-    ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(",");
-    csv += row + "\n";
+    csv += [sp?.type || 'Unknown', sp?.commonName || 'Unknown', sp?.scientificName || 'Unknown', ind.studbookId, ind.name, ind.sex, ind.birthDate || '', ind.weightKg, sp?.conservationStatus || ''].map(val => `"${String(val).replace(/"/g, '""')}"`).join(",") + "\n";
   });
-  
   return csv;
 };
 
-export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string = 'en-GB'): Promise<any> => {
+export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string = 'en-GB', latitude?: number, longitude?: number, location?: string): Promise<any> => {
   const response = await fetch(`${API_BASE_URL}/api/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orgName, userName, email, focus, password, lang })
+    body: JSON.stringify({ orgName, userName, email, focus, password, lang, latitude, longitude, location })
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Registration failed");
@@ -366,7 +264,6 @@ export const confirmRegistration = async (email: string, code: string): Promise<
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Verification failed");
-  
   const { token, user, org } = data;
   localStorage.setItem(KEYS.TOKEN, token);
   saveOrg(org, true);
@@ -384,15 +281,10 @@ export const login = async (email: string, pass: string): Promise<User | null> =
     if (response.ok) {
       const { token, user, organization } = await response.json();
       localStorage.setItem(KEYS.TOKEN, token);
-      if (organization) {
-         saveOrg(organization, true);
-      }
+      if (organization) saveOrg(organization, true);
       return user;
     }
-  } catch (e: any) {
-    console.warn(`[LOGIN] Proxy fail:`, e.message);
-  }
-
+  } catch (e: any) { console.warn(`[LOGIN] Proxy fail:`, e.message); }
   const user = getUsers().find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
   if (user?.password) {
      if (user.password.startsWith('$2')) return null;
@@ -400,9 +292,7 @@ export const login = async (email: string, pass: string): Promise<User | null> =
      if (hashedInput === user.password) {
         const partners = getNetworkPartners();
         const foundOrg = partners.find(p => p.id === user.orgId);
-        if (foundOrg) {
-           saveOrg(foundOrg as any, true);
-        }
+        if (foundOrg) saveOrg(foundOrg as any, true);
         return user;
      }
   }
@@ -411,28 +301,16 @@ export const login = async (email: string, pass: string): Promise<User | null> =
 
 export const forgotPassword = async (email: string): Promise<any> => {
    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ email: email.toLowerCase().trim() })
-      });
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.toLowerCase().trim() }) });
       return await response.json();
-   } catch (e: any) {
-      return { success: false, error: e.message };
-   }
+   } catch (e: any) { return { success: false, error: e.message }; }
 };
 
 export const resetPassword = async (email: string, code: string, newPassword: string): Promise<any> => {
    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ email: email.toLowerCase().trim(), code, newPassword })
-      });
+      const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.toLowerCase().trim(), code, newPassword }) });
       return await response.json();
-   } catch (e: any) {
-      return { success: false, error: e.message };
-   }
+   } catch (e: any) { return { success: false, error: e.message }; }
 };
 
 export const deleteOrganization = async (orgId: string) => {
@@ -459,71 +337,31 @@ export const sendMockNotification = (recipientId: string, title: string, message
    saveNotifications([{ id: `n-${Date.now()}`, recipientId, senderOrgName: 'System', title, message, date: new Date().toISOString().split('T')[0], isRead: false, type }, ...notifs]);
 };
 
-export const generatePartnerInvite = (): string => {
-  return Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-};
+export const generatePartnerInvite = (): string => Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
 export const redeemPartnerInvite = (code: string): { success: boolean, message: string } => {
   const myOrg = getOrg();
   const partners = getNetworkPartners();
   const existingPartnerships = getPartnerships();
-  
-  const availablePartner = partners.find(p => 
-    p.id !== myOrg.id && 
-    !existingPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id))
-  );
-
-  if (!availablePartner) {
-    return { success: false, message: "No available partners found to connect with using this code." };
-  }
-
-  const newPartnership: Partnership = {
-    id: `prt-${Date.now()}`,
-    orgId1: myOrg.id,
-    orgId2: availablePartner.id,
-    status: 'Active',
-    establishedDate: new Date().toISOString().split('T')[0]
-  };
-
+  const availablePartner = partners.find(p => p.id !== myOrg.id && !existingPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id)));
+  if (!availablePartner) return { success: false, message: "No available partners found." };
+  const newPartnership: Partnership = { id: `prt-${Date.now()}`, orgId1: myOrg.id, orgId2: availablePartner.id, status: 'Active', establishedDate: new Date().toISOString().split('T')[0] };
   const updated = [...existingPartnerships, newPartnership];
   savePartnerships(updated);
-  
-  return { success: true, message: `Successfully connected with ${availablePartner.name}!` };
+  return { success: true, message: `Connected with ${availablePartner.name}!` };
 };
 
 export const regenerateDemoData = async () => {
-    const mockOrg: Organization = {
-      id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805,
-      isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998,
-      description: 'The global demonstration sanctuary for OpenStudbook.', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true,
-      aiUsageLimit: 1000, aiUsageCount: 42
-    };
-
+    const mockOrg: Organization = { id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805, isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998, description: 'The global demonstration sanctuary for OpenStudbook.', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true, aiUsageLimit: 1000, aiUsageCount: 42 };
     const mockUsers: User[] = [
       { id: 'u-1', orgId: 'org-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
       { id: 'u-2', orgId: 'org-1', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
       { id: 'u-3', orgId: 'org-1', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] }
     ];
-
     const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
     const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
-
     const partners = getNetworkPartners();
-    if (!partners.some(p => p.id === 'org-1')) {
-       saveNetworkPartners([...partners, mockOrg as any]);
-    }
-
-    saveOrg(mockOrg, true);
-    saveUsers(mockUsers, true);
-    saveProjects(projects, true);
-    saveSpecies([s1], true);
-    saveIndividuals([], true);
-    saveBreedingEvents([], true);
-
-    try {
-       await syncPushOrg(mockOrg);
-       await syncPushUsers(mockUsers); 
-       await syncPushProjects(projects);
-       await syncPushSpecies([s1]);
-    } catch(e: any) {}
+    if (!partners.some(p => p.id === 'org-1')) saveNetworkPartners([...partners, mockOrg as any]);
+    saveOrg(mockOrg, true); saveUsers(mockUsers, true); saveProjects(projects, true); saveSpecies([s1], true); saveIndividuals([], true); saveBreedingEvents([], true);
+    try { await syncPushOrg(mockOrg); await syncPushUsers(mockUsers); await syncPushProjects(projects); await syncPushSpecies([s1]); } catch(e: any) {}
 };

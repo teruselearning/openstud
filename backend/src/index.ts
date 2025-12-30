@@ -58,7 +58,6 @@ app.use(morgan('dev'));
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
-    console.log(`Attempting to connect to database '${dbConfig.database}' as '${dbConfig.user}'...`);
     const db = getDb();
     try {
         await db.query('SELECT 1');
@@ -162,33 +161,6 @@ const initDatabase = async () => {
             )
         `);
 
-        const ensureCols = async (table: string, columns: {name: string, type: string}[]) => {
-           const [rows]: any = await db.execute(`SHOW COLUMNS FROM ${table}`);
-           const existing = rows.map((r: any) => r.Field.toLowerCase());
-           for (const col of columns) {
-              if (!existing.includes(col.name.toLowerCase())) {
-                 console.log(`[MIGRATION] Adding missing column ${col.name} to ${table}`);
-                 await db.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
-              }
-           }
-        };
-
-        await ensureCols('organizations', [
-           { name: 'ai_usage_limit', type: 'INT DEFAULT 100' },
-           { name: 'ai_usage_count', type: 'INT DEFAULT 0' },
-           { name: 'ai_usage_last_reset', type: 'VARCHAR(255)' },
-           { name: 'is_deleted', type: 'BOOLEAN DEFAULT FALSE' }
-        ]);
-
-        await ensureCols('users', [
-           { name: 'org_id', type: 'VARCHAR(255)' },
-           { name: 'allowed_project_ids', type: 'JSON' }
-        ]);
-
-        await ensureCols('projects', [
-           { name: 'org_id', type: 'VARCHAR(255)' }
-        ]);
-
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
                 id VARCHAR(255) PRIMARY KEY,
@@ -249,8 +221,7 @@ const initDatabase = async () => {
         `);
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
-
-        console.log("Database schema reconciliation complete. Tables ready.");
+        console.log("Database tables ready.");
     } catch (e: any) {
         console.error("Critical: Database Schema Init Failed!", e.message);
         process.exit(1);
@@ -274,93 +245,51 @@ const getTransporter = async () => {
   try {
     const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
     let s = rows?.[0]?.settings || {};
-    
-    // If settings comes back as a string (LONGTEXT fallback), parse it
-    if (typeof s === 'string') {
-       try { s = JSON.parse(s); } catch (e) { s = {}; }
-    }
-    
+    if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { s = {}; } }
     const host = s.smtpHost || process.env.SMTP_HOST;
     const port = s.smtpPort || Number(process.env.SMTP_PORT) || 587;
     const user = s.smtpUser || process.env.SMTP_USER;
     const pass = s.smtpPass || process.env.SMTP_PASS;
     const secure = s.smtpSecure ?? (process.env.SMTP_SECURE === 'true');
-
     if (!host || host === '') return null;
-    
-    return nodemailer.createTransport({
-      host, port, secure,
-      auth: (user && pass && user !== '' && pass !== '') ? { user, pass } : undefined,
-      tls: {
-         rejectUnauthorized: false
-      }
-    });
+    return nodemailer.createTransport({ host, port, secure, auth: (user && pass) ? { user, pass } : undefined });
   } catch (e) { return null; }
 };
 
 const replacePlaceholders = (text: string, data: Record<string, string>) => {
   let res = text || "";
-  Object.keys(data).forEach(key => {
-    res = res.replace(new RegExp(`{{${key}}}`, 'g'), String(data[key]));
-  });
+  Object.keys(data).forEach(key => { res = res.replace(new RegExp(`{{${key}}}`, 'g'), String(data[key])); });
   return res;
 };
 
 // --- AUTH ROUTES ---
 
 app.post('/api/register', async (req: any, res: any) => {
-    const { orgName, userName, email, focus, password, lang } = req.body;
+    const { orgName, userName, email, focus, password, lang, latitude, longitude, location } = req.body;
     const cleanEmail = email.toLowerCase().trim();
-    const targetLang = lang || 'en-GB';
     const db = getDb();
-    
     try {
         const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
         if (existing.length > 0) return res.status(400).json({ error: "Email already registered" });
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         pendingRegistrations.set(cleanEmail, {
-            data: { orgName, userName, email: cleanEmail, focus, password },
+            data: { orgName, userName, email: cleanEmail, focus, password, latitude, longitude, location },
             code,
             expires: Date.now() + 1800000
         });
 
-        console.log("\n========================================");
-        console.log(`NEW REGISTRATION FOR: ${cleanEmail}`);
-        console.log(`VERIFICATION CODE: ${code}`);
-        console.log("========================================\n");
-
+        console.log(`CODE FOR ${cleanEmail}: ${code}`);
         const transporter = await getTransporter();
         if (transporter) {
             try {
-                const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
-                let settings = configRows?.[0]?.settings || {};
-                if (typeof settings === 'string') settings = JSON.parse(settings);
-                const globalTpl = settings.emailTemplates?.registration;
-
-                const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ?`, [targetLang]);
-                const translations = langRows?.[0]?.translations || {};
-                
-                let subjectTpl = "Verify your OpenStudbook account";
-                let bodyTpl = "<p>Your code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>";
-
-                if (globalTpl?.enabled && globalTpl.subject) {
-                   subjectTpl = globalTpl.subject;
-                   bodyTpl = globalTpl.bodyHtml;
-                } else if (translations.emailVerifySubject) {
-                   subjectTpl = translations.emailVerifySubject;
-                   bodyTpl = translations.emailVerifyBody;
-                }
-                
                 await transporter.sendMail({
                     from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
                     to: cleanEmail,
-                    subject: replacePlaceholders(subjectTpl, { orgName, userName, code }),
-                    html: replacePlaceholders(bodyTpl, { orgName, userName, code })
+                    subject: "Verify your OpenStudbook account",
+                    html: `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`
                 });
-            } catch (mailErr: any) {
-                console.error("SMTP Failed (registration code is still in console):", mailErr.message);
-            }
+            } catch (mailErr: any) { console.error("SMTP Failed", mailErr.message); }
         }
         res.json({ success: true, needsVerification: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -371,23 +300,19 @@ app.post('/api/register/verify', async (req: any, res: any) => {
     const cleanEmail = email.toLowerCase().trim();
     const pending = pendingRegistrations.get(cleanEmail);
     const db = getDb();
+    if (!pending || pending.code !== code || pending.expires < Date.now()) return res.status(400).json({ error: "Invalid code" });
 
-    if (!pending || pending.code !== code || pending.expires < Date.now()) {
-        return res.status(400).json({ error: "Invalid or expired verification code." });
-    }
-
-    const { orgName, userName, focus, password } = pending.data;
+    const { orgName, userName, focus, password, latitude, longitude, location } = pending.data;
     const orgId = `org-${Date.now()}`;
     const userId = `u-${Date.now()}`;
     const projectId = `p-default-${Date.now()}`;
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        
         await db.execute(`
-           INSERT INTO organizations (id, name, focus, location, founded_year, is_deleted, ai_usage_limit, ai_usage_count) 
-           VALUES (?, ?, ?, 'Unknown', ?, FALSE, 100, 0)
-        `, [orgId, orgName, focus, new Date().getFullYear()]);
+           INSERT INTO organizations (id, name, focus, location, latitude, longitude, founded_year) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [orgId, orgName, focus, location || 'Unknown', latitude || null, longitude || null, new Date().getFullYear()]);
         
         await db.execute(`
            INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) 
@@ -401,74 +326,46 @@ app.post('/api/register/verify', async (req: any, res: any) => {
 
         pendingRegistrations.delete(cleanEmail);
         const token = jwt.sign({ id: userId, email: cleanEmail, role: 'Admin', orgId }, JWT_SECRET, { expiresIn: '30d' });
-        
         const [u]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [userId]);
         const [o]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
-
         res.json({ token, user: u[0], org: o[0] });
-    } catch (e: any) { 
-        console.error("Database Insert Error during verification:", e.message);
-        res.status(500).json({ error: e.message }); 
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/login', async (req: any, res: any) => {
   const { email, password } = req.body;
-  const cleanEmail = email?.toLowerCase().trim();
   const db = getDb();
   try {
-    const [users]: any = await db.execute(`SELECT * FROM users WHERE email = ?`, [cleanEmail]);
+    const [users]: any = await db.execute(`SELECT * FROM users WHERE email = ?`, [email?.toLowerCase().trim()]);
     const user = users[0];
     if (!user) return res.status(401).json({ error: "Invalid credentials" });
-
     const passwordValid = await bcrypt.compare(String(password), user.password || '');
-    if (!passwordValid && !(cleanEmail === 'zoe@openstudbook.org' && password === 'password')) return res.status(401).json({ error: "Invalid credentials" });
-
+    if (!passwordValid) return res.status(401).json({ error: "Invalid credentials" });
     const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user, organization: orgs[0] });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- ADMIN & SYSTEM ---
-
-app.post('/api/email/test', authenticate, async (req: any, res: any) => {
-   const { to } = req.body;
-   try {
-      const transporter = await getTransporter();
-      if (!transporter) return res.status(400).json({ error: "SMTP not configured. Host is empty." });
-      
-      await transporter.sendMail({
-         from: process.env.SMTP_FROM || '"OpenStudbook Test" <no-reply@openstudbook.org>',
-         to: to,
-         subject: "OpenStudbook SMTP Test",
-         text: "This is a test email from your OpenStudbook configuration. If you received this, your settings are correct!",
-         html: "<h3>SMTP Test Successful</h3><p>This is a test email from your OpenStudbook configuration. If you received this, your settings are correct!</p>"
-      });
-      res.json({ success: true });
-   } catch (e: any) {
-      console.error("SMTP Test Error:", e.message);
-      res.status(500).json({ error: e.message });
-   }
+// Generic REST endpoints
+app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const table = req.params.table;
+    const data = Array.isArray(req.body) ? req.body : [req.body];
+    const db = getDb();
+    try {
+        for (const item of data) {
+            if (item.password && !item.password.startsWith('$2')) item.password = await bcrypt.hash(String(item.password), 10);
+            const keys = Object.keys(item);
+            const vals = keys.map(k => (typeof item[k] === 'object' && item[k] !== null) ? JSON.stringify(item[k]) : (item[k] ?? null));
+            const placeholders = keys.map(() => '?').join(', ');
+            const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
+            const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
+            let updateClause = nonPkKeys.length > 0 ? "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `${k} = VALUES(${k})`).join(', ') : `ON DUPLICATE KEY UPDATE ${primaryKeyCol} = ${primaryKeyCol}`;
+            await db.execute(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ${updateClause}`, vals);
+        }
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
-
-app.post('/api/email/send', authenticate, async (req: any, res: any) => {
-   const { to, subject, html } = req.body;
-   try {
-      const transporter = await getTransporter();
-      if (!transporter) return res.status(400).json({ error: "SMTP not configured." });
-      
-      await transporter.sendMail({
-         from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
-         to, subject, html
-      });
-      res.json({ success: true });
-   } catch (e: any) {
-      res.status(500).json({ error: e.message });
-   }
-});
-
-// --- DATA SYNC ---
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
@@ -483,72 +380,17 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       const [partnerships]: any = await db.execute(`SELECT * FROM partnerships`);
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-      
       let settings = config[0]?.settings;
-      if (typeof settings === 'string') {
-         try { settings = JSON.parse(settings); } catch (e) {}
-      }
-
-      res.json({ 
-         success: true, 
-         data: { 
-           partners: orgs, projects, users, species, individuals, 
-           breeding_events: events, breeding_loans: loans, partnerships,
-           languages: langs, settings
-         } 
-      });
+      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
+      res.json({ success: true, data: { partners: orgs, projects, users, species, individuals, breeding_events: events, breeding_loans: loans, partnerships, languages: langs, settings } });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
-    const table = req.params.table;
-    const data = Array.isArray(req.body) ? req.body : [req.body];
-    const db = getDb();
-    
-    try {
-        for (const item of data) {
-            if (item.password && !item.password.startsWith('$2')) {
-                item.password = await bcrypt.hash(String(item.password), 10);
-            }
-            
-            const keys = Object.keys(item);
-            const vals = keys.map(k => {
-               const val = item[k];
-               if (val === undefined) return null;
-               if (typeof val === 'object' && val !== null) return JSON.stringify(val);
-               return val;
-            });
-            
-            const placeholders = keys.map(() => '?').join(', ');
-            const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
-            const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
-            
-            let updateClause = "";
-            if (nonPkKeys.length > 0) {
-                updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `${k} = VALUES(${k})`).join(', ');
-            } else {
-                updateClause = "ON DUPLICATE KEY UPDATE " + primaryKeyCol + " = " + primaryKeyCol;
-            }
-            
-            const sql = `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ${updateClause}`;
-            await db.execute(sql, vals);
-        }
-        res.json({ success: true });
-    } catch (e: any) { 
-        console.error(`Generic POST Error [${table}]:`, e.message);
-        res.status(500).json({ error: e.message }); 
-    }
-});
-
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', engine: 'mysql2-direct' }));
-
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
    if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Not Found" });
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 
-(async () => {
-    await initDatabase();
-    app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`));
-})();
+(async () => { await initDatabase(); app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`)); })();

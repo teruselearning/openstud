@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
 import { checkAndIncrementAiUsage } from "./storage";
 
-// Schema guided by prompt instructions
+// Schema for species data
 const speciesSchema = {
   type: Type.OBJECT,
   properties: {
@@ -23,13 +23,13 @@ const speciesSchema = {
   required: ["scientificName", "conservationStatus", "type"],
 };
 
-// Fixed initialization of GoogleGenAI to use process.env.API_KEY directly as per guidelines.
+// Fixed initialization of GoogleGenAI to use process.env.API_KEY directly
 const getAiClient = (): GoogleGenAI => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 /**
- * Strips markdown code blocks (e.g. ```json ... ```) if the model returns them.
+ * Strips markdown code blocks and trims response
  */
 const sanitizeJsonResponse = (text: string): string => {
   if (!text) return "";
@@ -43,8 +43,25 @@ const sanitizeJsonResponse = (text: string): string => {
 };
 
 /**
- * Converts a remote image URL to a Base64 data string
+ * Reverse Geocode coordinates to a human-readable address
  */
+export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+  try {
+    const ai = getAiClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Identify the location at coordinates Latitude: ${lat}, Longitude: ${lng}. 
+      Return a string in the format: "City, State/Region, Country". 
+      Be precise. If it's a remote area, use the nearest known town and region.
+      Return ONLY the location string, no other text.`,
+    });
+    return response.text?.trim() || "Unknown Location";
+  } catch (error) {
+    console.error("Reverse Geocode Error:", error);
+    return "Unknown Location";
+  }
+};
+
 export const urlToBase64 = async (url: string): Promise<string | null> => {
   try {
     const response = await fetch(url);
@@ -62,9 +79,6 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
   }
 };
 
-/**
- * Attempts to find a high-quality image from Wikimedia Commons via Wikipedia API
- */
 export const fetchWikimediaImage = async (query: string): Promise<string | null> => {
   try {
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(query)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
@@ -72,14 +86,9 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
     const data = await response.json();
     const pages = data?.query?.pages;
     if (!pages) return null;
-    
     const pageId = Object.keys(pages)[0];
     const imageUrl = pages[pageId]?.thumbnail?.source;
-    
-    if (imageUrl) {
-      // Convert to base64 so we can store it permanently
-      return await urlToBase64(imageUrl);
-    }
+    if (imageUrl) return await urlToBase64(imageUrl);
     return null;
   } catch (e) {
     console.error("Wikimedia fetch failed:", e);
@@ -90,24 +99,17 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      throw new Error("Gemini API Key is not configured in the host environment. Please check your .env file or hosting provider secrets.");
-    }
-
-    // Check Usage Limits
-    if (!checkAndIncrementAiUsage()) {
-       throw new Error("Organization AI usage limit reached for this month.");
-    }
+    if (!apiKey) throw new Error("Gemini API Key missing.");
+    if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
 
     const ai = getAiClient();
-    
     const locationPrompt = locationContext 
-      ? `The organization tracking this species is located in "${locationContext}". Please determine if this species is Native, Invasive, or Introduced to that specific country AND that specific local area/region.`
+      ? `The organization tracking this species is located in "${locationContext}". Determine if this species is Native, Invasive, or Introduced to that specific country AND that specific local area/region.`
       : `No organization location context provided. Use general native range information.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Provide biological data for the species "${commonName}". Determine automatically if it is an Animal or a Plant. ${locationPrompt}. Return as JSON matching the schema.`,
+      contents: `Provide biological data for "${commonName}". Determine if it is an Animal or a Plant. ${locationPrompt}. Return as JSON matching the schema.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,
@@ -125,29 +127,18 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
   }
 };
 
-/**
- * Generates a scientific illustration for a species.
- */
 export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
   try {
-    if (!checkAndIncrementAiUsage()) {
-       throw new Error("AI usage limit reached.");
-    }
-
+    if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
     const ai = getAiClient();
-    const prompt = `A highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, full body, isolated on a clean white background, textbook style, neutral lighting, 4k.`;
-    
-    /* Fixed contents format: must be string or object with parts per guidelines */
+    const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, isolated on white background, textbook style, 4k.`;
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: prompt }] }
     });
-
     for (const candidate of response.candidates) {
       for (const part of candidate.content.parts) {
-        if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
     return null;
@@ -159,12 +150,9 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
 
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<Record<string, string>> => {
   try {
-    if (!checkAndIncrementAiUsage()) {
-       throw new Error("AI usage limit reached.");
-    }
-
+    if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
     const ai = getAiClient();
-    const prompt = `Translate values to ${targetLanguage}. Keep JSON keys intact: ${JSON.stringify(sourceData)}. Return ONLY the JSON object.`;
+    const prompt = `Translate values to ${targetLanguage}. Keep JSON keys intact: ${JSON.stringify(sourceData)}. Return ONLY JSON.`;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
