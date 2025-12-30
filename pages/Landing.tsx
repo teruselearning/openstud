@@ -1,4 +1,3 @@
-
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
@@ -190,7 +189,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
     if (regData.password !== regData.confirmPassword) { setError("Passwords do not match."); setIsLoading(false); return; }
     try {
-      const res = await registerOrganization(regData.orgName, regData.userName, regData.email, regData.focus, regData.password);
+      // Pass the current app language for localized welcome emails
+      const res = await registerOrganization(regData.orgName, regData.userName, regData.email, regData.focus, regData.password, language);
       if (res.needsVerification) {
         setViewMode('verify_registration');
       }
@@ -372,7 +372,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             </div>
           </div>
         )}
-        {/* Other viewModes (forgot_password, mfa, etc.) omitted for brevity but they remain identical in logic */}
       </main>
 
       <footer className="py-6 text-center text-slate-400 text-sm border-t border-slate-100 mt-auto bg-white flex flex-col items-center gap-2">

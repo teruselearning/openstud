@@ -1,4 +1,3 @@
-
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
@@ -284,11 +283,11 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
 export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
-export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<any> => {
+export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string = 'en-GB'): Promise<any> => {
   const response = await fetch(`${API_BASE_URL}/api/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orgName, userName, email, focus, password })
+    body: JSON.stringify({ orgName, userName, email, focus, password, lang })
   });
   const data = await safeParseJson(response);
   if (!response.ok) throw new Error(data.error || "Registration failed");

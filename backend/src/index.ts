@@ -165,6 +165,17 @@ const initDatabase = async () => {
             )
         `);
 
+        await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS languages (
+                code VARCHAR(10) PRIMARY KEY,
+                name VARCHAR(255),
+                translations JSON,
+                is_default BOOLEAN DEFAULT FALSE,
+                manual_overrides JSON,
+                is_deleted BOOLEAN DEFAULT FALSE
+            )
+        `);
+
         // Ensure default config row exists
         await prisma.$executeRawUnsafe(`
             INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')
@@ -204,10 +215,19 @@ const getTransporter = async () => {
   });
 };
 
+const replacePlaceholders = (text: string, data: Record<string, string>) => {
+  let res = text;
+  Object.keys(data).forEach(key => {
+    res = res.replace(new RegExp(`{{${key}}}`, 'g'), data[key]);
+  });
+  return res;
+};
+
 // 2. Auth & Registration Routes
 app.post('/api/register', async (req: any, res: any, next: express.NextFunction) => {
-    const { orgName, userName, email, focus, password } = req.body;
+    const { orgName, userName, email, focus, password, lang } = req.body;
     const cleanEmail = email.toLowerCase().trim();
+    const targetLang = lang || 'en-GB';
     
     try {
         const existing: any = await prisma.$queryRawUnsafe(`SELECT id FROM users WHERE email = ? LIMIT 1`, cleanEmail);
@@ -222,18 +242,25 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
 
         console.log(`[REGISTRATION] Verification Code for ${cleanEmail}: ${code}`);
         const transporter = await getTransporter();
+        
         if (transporter) {
             try {
+                // Fetch template from DB for localization
+                const langData: any = await prisma.$queryRawUnsafe(`SELECT translations FROM languages WHERE code = ? LIMIT 1`, targetLang);
+                const translations = langData?.[0]?.translations || {};
+                
+                const subjectTpl = translations.emailVerifySubject || "Verify your OpenStudbook account";
+                const bodyTpl = translations.emailVerifyBody || "<p>Your verification code is: <strong>{{code}}</strong></p>";
+                
+                const dataToFill = { orgName, userName, code };
+                const subject = replacePlaceholders(subjectTpl, dataToFill);
+                const html = replacePlaceholders(bodyTpl, dataToFill);
+
                 await transporter.sendMail({
                     from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
                     to: cleanEmail,
-                    subject: "Verify your OpenStudbook account",
-                    html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                            <h2 style="color: #059669;">Welcome to OpenStudbook!</h2>
-                            <p>To complete your registration for <strong>${orgName}</strong>, please enter the following verification code:</p>
-                            <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; padding: 15px; background: #f0fdf4; color: #065f46; text-align: center; border-radius: 5px; margin: 20px 0;">${code}</div>
-                            <p style="color: #666; font-size: 12px;">This code will expire in 30 minutes.</p>
-                        </div>`
+                    subject,
+                    html
                 });
             } catch (mailErr: any) {
                 console.error("[SMTP] Failed to send registration email:", mailErr.message);
@@ -264,8 +291,6 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Execute inserts inside a transaction-like flow manually with raw SQL
-        // Using 0/1 for booleans to be extra safe with MySQL drivers in raw queries
         await prisma.$executeRawUnsafe(`
             INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public, obscure_location, is_deleted, ai_usage_limit, ai_usage_count)
             VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 100, 0)
@@ -346,24 +371,25 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 
 app.get('/api/sync', authenticate, async (req: any, res: any, next: express.NextFunction) => {
    try {
-      const [partners, projects, users, species, individuals, events, config] = await Promise.all([
+      const [partners, projects, users, species, individuals, events, config, languages] = await Promise.all([
          prisma.$queryRawUnsafe(`SELECT * FROM organizations WHERE is_deleted = 0`),
          prisma.$queryRawUnsafe(`SELECT * FROM projects`),
          prisma.$queryRawUnsafe(`SELECT * FROM users`),
          prisma.$queryRawUnsafe(`SELECT * FROM species`),
          prisma.$queryRawUnsafe(`SELECT * FROM individuals`),
          prisma.$queryRawUnsafe(`SELECT * FROM breeding_events`),
-         prisma.$queryRawUnsafe(`SELECT * FROM app_config WHERE id = 'global-settings'`)
+         prisma.$queryRawUnsafe(`SELECT * FROM app_config WHERE id = 'global-settings'`),
+         prisma.$queryRawUnsafe(`SELECT * FROM languages WHERE is_deleted = 0`)
       ]);
       
       res.json({ 
          success: true, 
-         data: { partners, projects, users, species, individuals, breeding_events: events, settings: (config as any)?.[0]?.settings } 
+         data: { partners, projects, users, species, individuals, languages, breeding_events: events, settings: (config as any)?.[0]?.settings } 
       });
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.1.1-rawsql' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.1.2-rawsql' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 

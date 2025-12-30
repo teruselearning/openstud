@@ -1,4 +1,3 @@
-
 import { LanguageConfig } from "../types";
 
 export const BASE_TRANSLATIONS = {
@@ -224,7 +223,15 @@ export const BASE_TRANSLATIONS = {
     appLogo: "Application Logo",
     uploadLogo: "Upload Logo",
     apiKey: "API Key",
-    enableMfa: "Enable Two-Factor Auth"
+    enableMfa: "Enable Two-Factor Auth",
+
+    // Email Templates Localized
+    emailVerifySubject: "Verify your OpenStudbook account",
+    emailVerifyBody: "<div style=\"font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;\"><h2 style=\"color: #059669;\">Welcome to OpenStudbook!</h2><p>To complete your registration for <strong>{{orgName}}</strong>, please enter the following verification code:</p><div style=\"font-size: 32px; font-weight: bold; letter-spacing: 5px; padding: 15px; background: #f0fdf4; color: #065f46; text-align: center; border-radius: 5px; margin: 20px 0;\">{{code}}</div><p style=\"color: #666; font-size: 12px;\">This code will expire in 30 minutes.</p></div>",
+    emailInviteSubject: "You've been invited to join {{orgName}} on OpenStudbook",
+    emailInviteBody: "<div style=\"font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;\"><h2 style=\"color: #059669;\">Invitation Received</h2><p>You have been invited to join <strong>{{orgName}}</strong> as a <strong>{{role}}</strong>.</p><p>Please use the following link to accept your invitation:</p><a href=\"{{inviteUrl}}\" style=\"display: inline-block; padding: 10px 20px; background: #059669; color: white; text-decoration: none; border-radius: 5px;\">Accept Invitation</a></div>",
+    emailNotifySubject: "New Notification from OpenStudbook",
+    emailNotifyBody: "<div style=\"font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;\"><h2 style=\"color: #059669;\">New Activity</h2><p>{{message}}</p><p><a href=\"{{appUrl}}\">Click here</a> to view details in the app.</p></div>"
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
@@ -336,7 +343,7 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       organization: "Organisasi",
       signOut: "Keluar",
       landingTitle: "Masa Depan Manajemen Pembiakan Penangkaran",
-      landingSubtitle: "OpenStudbook adalah platform sumber terbuka bagi kebun binatang, akuarium, dan kebun raya untuk mengelola populasi spesies, melacak genetika, dan berkolaborasi secara global.",
+      landingSubtitle: "OpenStudbook adalah platform sumber terbuka bagi kebun binatang, akuarium, dan kebun raya para mengelola populasi spesies, melacak genetika, dan berkolaborasi secara global.",
       getStarted: "Mulai",
       createOrg: "Buat Organisasi",
       save: "Simpan",

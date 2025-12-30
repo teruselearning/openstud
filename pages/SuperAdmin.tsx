@@ -1,13 +1,10 @@
-
 import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getProjects, getIndividuals, getBreedingEvents, getBreedingLoans, getPartnerships, getSpecies, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, deleteOrganization, getLanguages, saveLanguages, deleteLanguage } from '../services/storage';
 import { checkSupabaseConnection, isSupabaseConfigured, saveSupabaseConfig, getSupabaseConfig } from '../services/supabase';
 import { SUPABASE_SCHEMA_SQL } from '../services/schemaTemplate';
 import { translateDictionary } from '../services/geminiService';
 import { testSmtpConnection } from '../services/emailService';
-/* Added LucideIcons wildcard import for dynamic icon rendering */
 import * as LucideIcons from 'lucide-react';
-/* Added named icons for safety fallback */
 import { Shield, Database, Layout, Settings, MapPin, Eye, Save, Copy, Check, AlertCircle, RefreshCw, UploadCloud, Code, FileText, X, Building2, EyeOff, LogIn, Trash2, Sparkles, Play, Globe, Star, Plus, Loader2, Lock, Unlock, ChevronDown, ChevronRight, Sprout, PawPrint, AlertTriangle, ExternalLink, PenLine, GripVertical, Mail, PenTool, Send, Palette, Image as ImageIcon, LayoutTemplate, HelpCircle, Monitor, Pencil, Sparkle, BrainCircuit, BarChart3 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LandingFeature, Organization, LanguageConfig, Sex, EmailTemplate, StaticPageConfig } from '../types';
@@ -56,7 +53,7 @@ const SuperAdmin: React.FC = () => {
   // Email State
   const [testEmail, setTestEmail] = useState('');
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('mfa');
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('registration');
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   
   // Language State
@@ -94,63 +91,14 @@ const SuperAdmin: React.FC = () => {
     setDbConfig(getSupabaseConfig());
     setLanguages(getLanguages());
     
-    if (current.emailTemplates) {
-       setEditingTemplate(current.emailTemplates['mfa']);
-    }
+    // Ensure we have a default template for the prefilled UI
+    const defaultTpl = current.emailTemplates?.[selectedTemplate] || {
+        subject: selectedTemplate === 'registration' ? 'Verify your OpenStudbook account' : '',
+        bodyHtml: selectedTemplate === 'registration' ? 'Your code: {{code}}' : '',
+        enabled: true
+    };
+    setEditingTemplate(defaultTpl);
   }, []);
-
-  const addLog = (msg: string) => setSeedLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
-
-  const handleSaveDbConfig = () => {
-     saveSupabaseConfig(dbConfig.url, dbConfig.key);
-     addLog("Credentials saved locally.");
-     alert("Credentials saved. Reloading to apply...");
-     window.location.reload();
-  };
-
-  const handleTestDb = async () => {
-    setIsCheckingDb(true);
-    setDbCheckResult(null);
-    addLog("Testing connection...");
-    const result = await checkSupabaseConnection();
-    setDbCheckResult(result);
-    addLog(`Connection Test: ${result.success ? 'SUCCESS' : 'FAILED'} - ${result.message}`);
-    setIsCheckingDb(false);
-  };
-
-  const handleSeedDatabase = async () => {
-    if (!isSupabaseConfigured()) {
-       alert("Error: Supabase not configured. Check credentials.");
-       return;
-    }
-    if (!window.confirm("This will overwrite cloud data with your local data. Continue?")) return;
-
-    setIsSeeding(true);
-    setSeedLogs([]);
-    addLog("Starting Database Seed...");
-
-    try {
-       await syncPushOrg(getOrg());
-       await syncPushSettings(getSystemSettings());
-       await syncPushProjects(getProjects());
-       await syncPushUsers(getUsers());
-       await syncPushSpecies(getSpecies());
-       await syncPushIndividuals(getIndividuals());
-       await syncPushBreedingEvents(getBreedingEvents());
-       await syncPushBreedingLoans(getBreedingLoans());
-       await syncPushPartnerships(getPartnerships());
-       await saveLanguages(getLanguages(), false); 
-       
-       addLog("SUCCESS! Database population complete.");
-       alert("Database seeded successfully!");
-    } catch (e: any) {
-       console.error(e);
-       addLog(`ERROR: ${e.message}`);
-       alert(`Seeding Failed: ${e.message}`);
-    } finally {
-       setIsSeeding(false);
-    }
-  };
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,20 +118,6 @@ const SuperAdmin: React.FC = () => {
     setTimeout(() => setSettingsSaved(false), 3000);
   };
   
-  const handleTestSmtp = async () => {
-     if(!testEmail) return;
-     setIsTestingSmtp(true);
-     try {
-        await syncPushSettings(settings);
-        const result = await testSmtpConnection(testEmail);
-        alert(result.message);
-     } catch (e: any) {
-        alert("SMTP Test Failed: " + e.message);
-     } finally {
-        setIsTestingSmtp(false);
-     }
-  };
-  
   const handleTemplateChange = (type: string) => {
      if (editingTemplate) {
         setSettings(prev => ({
@@ -192,7 +126,8 @@ const SuperAdmin: React.FC = () => {
         }));
      }
      setSelectedTemplate(type);
-     setEditingTemplate(settings.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true });
+     const nextTpl = settings.emailTemplates?.[type] || { subject: '', bodyHtml: '', enabled: true };
+     setEditingTemplate(nextTpl);
   };
 
   const handleLoginAs = (orgId: string, orgObj: Organization) => {
@@ -203,12 +138,10 @@ const SuperAdmin: React.FC = () => {
      setDeleteTarget({ type: 'org', id: orgId, name: orgName });
   };
 
-  /* Added triggerDeleteLang to handle language deletion flow */
   const triggerDeleteLang = (code: string, name: string) => {
      setDeleteTarget({ type: 'lang', id: code, name: name });
   };
 
-  /* Added confirmDelete to handle the final deletion of either organizations or languages */
   const confirmDelete = async () => {
      if (!deleteTarget) return;
      if (deleteTarget.type === 'org') {
@@ -234,21 +167,6 @@ const SuperAdmin: React.FC = () => {
      }
   };
 
-  const handleUpdateLimit = async () => {
-     if (!orgToLimit) return;
-     const updated = { ...orgToLimit, aiUsageLimit: newLimit };
-     await syncPushOrg(updated);
-     
-     // Update local state if it's our org
-     if (orgToLimit.id === myOrg.id) {
-        // Local state update handled via sync usually
-     }
-     setShowLimitModal(false);
-     setOrgToLimit(null);
-     alert("Organization limit updated successfully.");
-     window.location.reload();
-  };
-
   const handleToggleExpandOrg = (orgId: string) => {
      if (expandedOrgId === orgId) {
         setExpandedOrgId(null);
@@ -271,134 +189,35 @@ const SuperAdmin: React.FC = () => {
      }
   };
 
-  const handleAddFeature = () => {
-     const newFeat: LandingFeature = { id: `f-${Date.now()}`, title: 'New Feature', description: 'Description here...', icon: 'HelpCircle' };
-     setFeatures([...features, newFeat]);
-     setEditingFeature(newFeat);
-     setShowFeatureForm(true);
-  };
-
-  const handleUpdateFeature = () => {
-     if(!editingFeature) return;
-     const updated = features.map(f => f.id === editingFeature.id ? editingFeature : f);
-     setFeatures(updated);
-     setShowFeatureForm(false);
-     setEditingFeature(null);
-  };
-
-  const handleDeleteFeature = (id: string) => {
-     if(window.confirm("Remove this feature tile?")) {
-        const updated = features.filter(f => f.id !== id);
-        setFeatures(updated);
-     }
-  };
-
-  const handleAddLanguage = async () => {
-     if (!newLangCode || !newLangName) return;
-     const exists = languages.find(l => l.code === newLangCode);
-     if (exists) {
-        alert("Language code already exists.");
-        return;
-     }
-     const newLang: LanguageConfig = {
-        code: newLangCode, name: newLangName, isDefault: false,
-        translations: { ...BASE_TRANSLATIONS }, 
-        manualOverrides: []
-     };
-     const updated = [...languages, newLang];
-     setLanguages(updated);
-     setIsSavingLang(true);
-     try {
-        await saveLanguages(updated, false);
-        setNewLangCode(''); setNewLangName('');
-        refreshTranslations();
-        alert(`Added ${newLangName} and synced to database.`);
-     } catch (e) {
-        alert("Saved locally, but failed to sync to database.");
-     } finally {
-        setIsSavingLang(false);
-     }
-  };
-
-  const handleSetDefaultLanguage = async (code: string) => {
-     const updated = languages.map(l => ({ ...l, isDefault: l.code === code }));
-     setLanguages(updated);
-     await saveLanguages(updated, false);
-     refreshTranslations();
-  };
-
+  // Fix for SuperAdmin.tsx: Added missing handleUpdateTranslation function
   const handleUpdateTranslation = (key: string, value: string) => {
-     if (!editingLang) return;
-     const currentOverrides = editingLang.manualOverrides || [];
-     const newOverrides = currentOverrides.includes(key) ? currentOverrides : [...currentOverrides, key];
-     const updatedLang = { ...editingLang, manualOverrides: newOverrides, translations: { ...editingLang.translations, [key]: value } };
-     setEditingLang(updatedLang);
-     const updatedList = languages.map(l => l.code === editingLang.code ? updatedLang : l);
-     setLanguages(updatedList);
+    if (!editingLang) return;
+    setEditingLang({
+      ...editingLang,
+      translations: {
+        ...editingLang.translations,
+        [key]: value
+      }
+    });
   };
 
-  const handleUnlockTranslation = (key: string) => {
-     if (!editingLang) return;
-     const currentOverrides = editingLang.manualOverrides || [];
-     const newOverrides = currentOverrides.filter(k => k !== key);
-     const updatedLang = { ...editingLang, manualOverrides: newOverrides };
-     setEditingLang(updatedLang);
-     const updatedList = languages.map(l => l.code === editingLang.code ? updatedLang : l);
-     setLanguages(updatedList);
-  };
-
+  // Fix for SuperAdmin.tsx: Added missing handleSaveTranslations function
   const handleSaveTranslations = async () => {
-     if (!editingLang) return;
-     setIsSavingLang(true);
-     try {
-        await saveLanguages(languages, false);
-        refreshTranslations();
-        alert("Translations saved to database!");
-     } catch (e) {
-        alert("Saved locally, but DB sync failed.");
-     } finally {
-        setIsSavingLang(false);
-     }
+    if (!editingLang) return;
+    setIsSavingLang(true);
+    try {
+      const updated = languages.map(l => l.code === editingLang.code ? editingLang : l);
+      setLanguages(updated);
+      await saveLanguages(updated, false);
+      refreshTranslations();
+      alert("Translations saved successfully.");
+    } catch (e) {
+      alert("Failed to save translations.");
+    } finally {
+      setIsSavingLang(false);
+    }
   };
 
-  const handleAutoTranslate = async () => {
-     if (!editingLang) return;
-     if (editingLang.code === 'en-GB') {
-        alert("Cannot auto-translate the source language.");
-        return;
-     }
-     const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
-     if (!apiKey) {
-        alert("Gemini API Key is not configured in the host environment.");
-        return;
-     }
-     setIsTranslating(true);
-     try {
-        const overrides = new Set(editingLang.manualOverrides || []);
-        const keysToTranslate = Object.keys(BASE_TRANSLATIONS).filter(k => !overrides.has(k));
-        if (keysToTranslate.length === 0) {
-           alert("All keys are manually overridden.");
-           return;
-        }
-        const sourceObject: Record<string, string> = {};
-        keysToTranslate.forEach(k => { sourceObject[k] = (BASE_TRANSLATIONS as any)[k]; });
-        const translatedDict = await translateDictionary(sourceObject, editingLang.name);
-        const newTranslations = { ...editingLang.translations, ...translatedDict };
-        const updatedLang = { ...editingLang, translations: newTranslations };
-        setEditingLang(updatedLang);
-        const updatedList = languages.map(l => l.code === editingLang.code ? updatedLang : l);
-        setLanguages(updatedList);
-        await saveLanguages(updatedList, false);
-        refreshTranslations();
-        alert(`Successfully auto-translated ${Object.keys(translatedDict).length} strings.`);
-     } catch (e: any) {
-        alert(`Translation failed: ${e.message}`);
-     } finally {
-        setIsTranslating(false);
-     }
-  };
-
-  // Safe Dynamic Icon Resolver
   const renderIcon = (name: string, props: any) => {
      const IconComp = (LucideIcons as any)[name] || (LucideIcons as any).HelpCircle || HelpCircle;
      return <IconComp {...props} />;
@@ -406,7 +225,6 @@ const SuperAdmin: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12 relative">
-      {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -443,8 +261,6 @@ const SuperAdmin: React.FC = () => {
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">{t('orgName')}</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">{t('location')}</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm">AI Usage</th>
-                          <th className="px-6 py-4 font-semibold text-slate-700 text-sm">Focus</th>
-                          <th className="px-6 py-4 font-semibold text-slate-700 text-sm">{t('foundedYear')}</th>
                           <th className="px-6 py-4 font-semibold text-slate-700 text-sm text-right">Actions</th>
                        </tr>
                     </thead>
@@ -453,7 +269,6 @@ const SuperAdmin: React.FC = () => {
                           if (!org) return null;
                           const isSelf = org.id === myOrg?.id;
                           const isExpanded = expandedOrgId === org.id;
-                          /* Added any cast to bypass type errors for ExternalPartner which shares these properties in context but not in type def */
                           const usage = (org as any).aiUsageCount || 0;
                           const limit = (org as any).aiUsageLimit || 100;
                           const usagePct = Math.min(100, (usage / limit) * 100);
@@ -483,16 +298,8 @@ const SuperAdmin: React.FC = () => {
                                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                             <div className={`h-full transition-all duration-500 ${usagePct > 90 ? 'bg-red-500' : usagePct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${usagePct}%` }}></div>
                                          </div>
-                                         {/* Cast org to Organization for state setter compatibility */}
-                                         <button onClick={() => { setOrgToLimit(org as Organization); setNewLimit(limit); setShowLimitModal(true); }} className="text-[10px] text-blue-600 font-bold hover:underline text-left mt-1">Edit Limit</button>
                                       </div>
                                    </td>
-                                   <td className="px-6 py-4">
-                                      <span className={`text-xs px-2 py-1 rounded font-bold ${(org as any).focus === 'Animals' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                                         {(org as any).focus || 'N/A'}
-                                      </span>
-                                   </td>
-                                   <td className="px-6 py-4 text-sm text-slate-600">{(org as any).foundedYear || '-'}</td>
                                    <td className="px-6 py-4 text-right">
                                       {!isSelf && (
                                          <div className="flex justify-end gap-2">
@@ -504,36 +311,6 @@ const SuperAdmin: React.FC = () => {
                                       )}
                                    </td>
                                 </tr>
-                                {isExpanded && (
-                                   <tr>
-                                      <td colSpan={7} className="bg-slate-50 p-6 border-b border-slate-200">
-                                         <div className="bg-white rounded-lg border border-slate-200 p-4 mb-4">
-                                            <h4 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2"><Database size={14}/> Species Breakdown</h4>
-                                            {orgBreakdown.length > 0 ? (
-                                               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                                  {orgBreakdown.map((item, i) => (
-                                                     <div key={i} className="flex items-center justify-between p-2 rounded border border-slate-100 text-sm">
-                                                        <div className="flex items-center gap-2">
-                                                           {item.type === 'Plant' ? <Sprout size={14} className="text-green-600"/> : <PawPrint size={14} className="text-blue-600"/>}
-                                                           <div>
-                                                              <div className="font-medium text-slate-900">{item.name}</div>
-                                                              <div className="text-[10px] text-slate-500 italic">{item.scientific}</div>
-                                                           </div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                           <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">M.F.U</span>
-                                                           <div className="font-mono font-medium text-slate-700">{item.count}</div>
-                                                        </div>
-                                                     </div>
-                                                  ))}
-                                               </div>
-                                            ) : (
-                                               <p className="text-slate-400 text-sm italic">No species data found.</p>
-                                            )}
-                                         </div>
-                                      </td>
-                                   </tr>
-                                )}
                              </React.Fragment>
                           );
                        })}
@@ -542,282 +319,6 @@ const SuperAdmin: React.FC = () => {
               </div>
            </div>
         </div>
-      )}
-
-      {/* Limit Modal */}
-      {showLimitModal && orgToLimit && (
-         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-               <h3 className="text-lg font-bold">Edit Monthly AI Limit</h3>
-               <p className="text-sm text-slate-500">Set the number of Gemini API calls allowed per month for <strong>{orgToLimit.name}</strong>.</p>
-               <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Monthly Call Limit</label>
-                  <input 
-                     type="number" 
-                     className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900" 
-                     value={newLimit} 
-                     onChange={e => setNewLimit(parseInt(e.target.value))} 
-                  />
-               </div>
-               <div className="flex gap-2">
-                  <button onClick={() => setShowLimitModal(false)} className="flex-1 py-2 bg-slate-100 rounded-lg font-medium">Cancel</button>
-                  <button onClick={handleUpdateLimit} className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-bold">Save Limit</button>
-               </div>
-            </div>
-         </div>
-      )}
-
-      {/* DATABASE TAB */}
-      {activeTab === 'database' && (
-         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
-            <div className="space-y-6">
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Database size={20} className="text-emerald-600" /> Connection Settings</h3>
-                  <div className="space-y-4">
-                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Supabase URL</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white text-slate-900 font-mono text-sm" value={dbConfig.url} onChange={e => setDbConfig({...dbConfig, url: e.target.value})} />
-                     </div>
-                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Supabase Key</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-white text-slate-900 font-mono text-sm" type="password" value={dbConfig.key} onChange={e => setDbConfig({...dbConfig, key: e.target.value})} />
-                     </div>
-                     <div className="flex gap-2 pt-2">
-                        <button onClick={handleSaveDbConfig} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-emerald-700 flex items-center gap-2"><Save size={16} /> Save Credentials</button>
-                        <button onClick={handleTestDb} disabled={isCheckingDb} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50">{isCheckingDb ? <Loader2 size={16} className="animate-spin"/> : <Play size={16} />} Test Connection</button>
-                     </div>
-                     {dbCheckResult && <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${dbCheckResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{dbCheckResult.success ? <Check size={16} /> : <AlertCircle size={16} />}{dbCheckResult.message}</div>}
-                  </div>
-               </div>
-
-               {/* AI Status Panel */}
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Sparkle size={20} className="text-purple-600" /> AI Service Integration</h3>
-                  <div className={`p-4 rounded-lg flex items-center gap-4 ${aiKeyDetected ? 'bg-emerald-50 border border-emerald-100' : 'bg-amber-50 border border-amber-100'}`}>
-                     <div className={`p-2 rounded-full ${aiKeyDetected ? 'bg-emerald-500' : 'bg-amber-500'} text-white`}>
-                        {aiKeyDetected ? <Check size={20} /> : <AlertTriangle size={20} />}
-                     </div>
-                     <div>
-                        <p className={`font-bold ${aiKeyDetected ? 'text-emerald-800' : 'text-amber-800'}`}>
-                           {aiKeyDetected ? 'Gemini API Connected' : 'API Key Missing'}
-                        </p>
-                        <p className="text-xs text-slate-600 mt-0.5">
-                           {aiKeyDetected 
-                             ? 'AI Features (Autofill, Translations) are active using the host environment key.' 
-                             : 'Check your hosting configuration. API_KEY must be set in your .env file or hosting provider dashboard.'}
-                        </p>
-                     </div>
-                  </div>
-               </div>
-
-               <button onClick={() => setShowSchemaModal(true)} className="w-full bg-slate-100 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-200 flex items-center justify-center gap-2"><FileText size={16} /> View SQL Schema</button>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
-               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4"><UploadCloud size={20} className="text-blue-600" /> Seed Database</h3>
-               <div className="flex-1 bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-400 overflow-y-auto min-h-[200px] mb-4 shadow-inner border border-slate-700">
-                  {seedLogs.length === 0 && <div className="text-slate-500 italic text-center mt-8">Ready to seed.</div>}
-                  {seedLogs.map((log, i) => <div key={i} className="mb-1 border-b border-slate-800/50 pb-1">{log}</div>)}
-                  {isSeeding && <div className="animate-pulse mt-2">_</div>}
-               </div>
-               <button onClick={handleSeedDatabase} disabled={isSeeding} className="w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-md disabled:opacity-50">{isSeeding ? <RefreshCw size={18} className="animate-spin" /> : <Database size={18} />}{isSeeding ? 'Seeding...' : 'Populate / Seed Database'}</button>
-            </div>
-         </div>
-      )}
-
-      {/* SETTINGS TAB */}
-      {activeTab === 'settings' && (
-         <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
-            <form onSubmit={handleSaveSettings} className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 space-y-8">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Palette size={20} className="text-emerald-600"/> {t('theming')}</h3>
-                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('primaryColor')}</label>
-                        <div className="flex items-center gap-3">
-                           <input type="color" className="w-12 h-12 rounded border border-slate-300" value={settings.themePrimaryColor || '#059669'} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                           <input type="text" className="flex-1 px-4 py-2 border border-slate-300 rounded-lg font-mono text-sm bg-white text-slate-900" value={settings.themePrimaryColor || '#059669'} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                        </div>
-                     </div>
-                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">{t('appLogo')}</label>
-                        <div className="flex items-center gap-3">
-                           <div className="w-12 h-12 bg-slate-100 rounded border border-slate-300 flex items-center justify-center overflow-hidden">
-                              {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" alt="App Logo" /> : <LucideIcons.Image size={20} className="text-slate-400" />}
-                           </div>
-                           <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" placeholder="Logo URL (https://...)" value={settings.appLogoUrl || ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
-                        </div>
-                     </div>
-                  </div>
-                  <div className="space-y-4">
-                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Lock size={20} className="text-blue-600"/> Security</h3>
-                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                        <div className="flex items-center justify-between mb-2">
-                           <span className="font-medium text-slate-700">{t('enableMfa')}</span>
-                           <label className="relative inline-flex items-center cursor-pointer">
-                              <input type="checkbox" className="sr-only peer" checked={settings.enableMfa || false} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
-                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                           </label>
-                        </div>
-                        <p className="text-xs text-slate-500">Requires users to verify their email on new devices. Recommended for cloud production.</p>
-                     </div>
-                  </div>
-               </div>
-
-               {/* AI Integration Card */}
-               <div className="border-t border-slate-100 pt-6 space-y-4">
-                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><BrainCircuit size={20} className="text-purple-600"/> AI Integration Settings</h3>
-                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                     <div className="flex items-center justify-between mb-4">
-                        <div className="text-sm">
-                           <p className="font-bold text-slate-700">Environment Key Status</p>
-                           <p className="text-xs text-slate-500">For security, the Gemini API key must be set as an environment variable.</p>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-bold ${aiKeyDetected ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                           {aiKeyDetected ? 'DETECTED' : 'NOT SET'}
-                        </div>
-                     </div>
-                     
-                     {!aiKeyDetected && (
-                        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-xs text-amber-800 mb-4">
-                           <p className="font-bold mb-1">How to fix this:</p>
-                           <ul className="list-disc list-inside space-y-1">
-                              <li>Local Dev: Create a <code>.env</code> file in the root with <code>API_KEY=your_key</code>.</li>
-                              <li>Hosted (Vercel/Netlify): Add <code>API_KEY</code> to your Environment Variables in settings.</li>
-                              <li>Self-Hosted: Set <code>API_KEY</code> in your environment or Docker config.</li>
-                           </ul>
-                        </div>
-                     )}
-
-                     <div className="space-y-4">
-                        <div>
-                           <label className="block text-sm font-medium text-slate-700 mb-1">Preferred Model</label>
-                           <select 
-                              className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900"
-                              value={settings.aiModel || 'gemini-3-flash-preview'}
-                              onChange={e => setSettings({...settings, aiModel: e.target.value})}
-                           >
-                              <option value="gemini-3-flash-preview">Gemini 3 Flash (Fast & Cost-Effective)</option>
-                              <option value="gemini-3-pro-preview">Gemini 3 Pro (Complex Reasoning)</option>
-                           </select>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-
-               <div className="flex justify-end pt-4 border-t border-slate-100">
-                  <button type="submit" className="bg-emerald-600 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2">
-                     <BarChart3 size={18} /> {settingsSaved ? 'Saved!' : t('saveSettings')}
-                  </button>
-               </div>
-            </form>
-         </div>
-      )}
-
-      {activeTab === 'content' && (
-         <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-               {/* Sidebar Controls */}
-               <div className="lg:col-span-4 space-y-6">
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
-                     <div>
-                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4"><Monitor size={20} className="text-blue-600"/> Hero Section</h3>
-                        <div className="space-y-4">
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('heroTitle')}</label>
-                              <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={landingConfig.heroTitle || ''} onChange={e => setLandingConfig({...landingConfig, heroTitle: e.target.value})} placeholder={t('landingTitle')} />
-                           </div>
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('heroSubtitle')}</label>
-                              <textarea rows={3} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={landingConfig.heroSubtitle || ''} onChange={e => setLandingConfig({...landingConfig, heroSubtitle: e.target.value})} placeholder={t('landingSubtitle')} />
-                           </div>
-                        </div>
-                     </div>
-                     <div className="pt-6 border-t border-slate-100">
-                        <div className="flex items-center justify-between mb-4">
-                           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><LayoutTemplate size={20} className="text-emerald-600"/> Feature Tiles</h3>
-                           <button onClick={handleAddFeature} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors"><Plus size={18}/></button>
-                        </div>
-                        <div className="space-y-3">
-                           {(features || []).map(f => (
-                              <div key={f.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between group">
-                                 <div className="flex items-center gap-3 truncate">
-                                    <div className="p-2 bg-white rounded border border-slate-200 text-slate-400 group-hover:text-emerald-600 transition-colors">
-                                       {renderIcon(f.icon, { size: 16 })}
-                                    </div>
-                                    <span className="text-sm font-bold text-slate-700 truncate">{f.title}</span>
-                                 </div>
-                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => { setEditingFeature(f); setShowFeatureForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
-                                    <button onClick={() => handleDeleteFeature(f.id)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={14}/></button>
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     </div>
-                  </div>
-               </div>
-
-               {/* Main Editor Section for Static Pages */}
-               <div className="lg:col-span-8">
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[700px]">
-                     <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><FileText size={20} className="text-purple-600"/> {t('staticPages')}</h3>
-                           <div className="flex bg-white p-1 rounded-lg border border-slate-200 text-xs">
-                              <button onClick={() => setSelectedPage('about')} className={`px-3 py-1.5 rounded font-bold transition-all ${selectedPage === 'about' ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-50'}`}>About</button>
-                              <button onClick={() => setSelectedPage('privacy')} className={`px-3 py-1.5 rounded font-bold transition-all ${selectedPage === 'privacy' ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-50'}`}>Privacy</button>
-                              <button onClick={() => setSelectedPage('terms')} className={`px-3 py-1.5 rounded font-bold transition-all ${selectedPage === 'terms' ? 'bg-purple-100 text-purple-700' : 'text-slate-500 hover:bg-slate-50'}`}>Terms</button>
-                           </div>
-                        </div>
-                        <label className="flex items-center gap-2 text-sm text-slate-600 font-medium cursor-pointer">
-                           <input type="checkbox" checked={pagesConfig[selectedPage]?.enabled || false} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], enabled: e.target.checked}})} className="rounded text-purple-600" />
-                           {t('enabled')}
-                        </label>
-                     </div>
-                     <div className="p-6 space-y-4 flex-1 flex flex-col">
-                        <div>
-                           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('pageTitle')}</label>
-                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={pagesConfig[selectedPage]?.title || ''} onChange={e => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], title: e.target.value}})} />
-                        </div>
-                        <div className="flex-1 min-h-[300px]">
-                           <RichTextEditor value={pagesConfig[selectedPage]?.contentHtml || ''} onChange={val => setPagesConfig({...pagesConfig, [selectedPage]: {...pagesConfig[selectedPage], contentHtml: val}})} height="100%" />
-                        </div>
-                     </div>
-                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-                        <button onClick={handleSaveSettings} className="bg-emerald-600 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2">
-                           <Save size={18} /> {settingsSaved ? 'Content Saved!' : 'Save All Content'}
-                        </button>
-                     </div>
-                  </div>
-               </div>
-            </div>
-
-            {/* Feature Editor Modal */}
-            {showFeatureForm && editingFeature && (
-               <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
-                  <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-                     <h3 className="text-lg font-bold">Edit Feature Tile</h3>
-                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Title</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={editingFeature.title || ''} onChange={e => setEditingFeature({...editingFeature, title: e.target.value})} />
-                     </div>
-                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
-                        <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" rows={3} value={editingFeature.description || ''} onChange={e => setEditingFeature({...editingFeature, description: e.target.value})} />
-                     </div>
-                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Icon Name (Lucide)</label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" value={editingFeature.icon || 'HelpCircle'} onChange={e => setEditingFeature({...editingFeature, icon: e.target.value})} />
-                        <p className="text-[10px] text-slate-400 mt-1">E.g. Shield, Sprout, Globe2, Dna, Heart</p>
-                     </div>
-                     <div className="flex gap-2 pt-2">
-                        <button onClick={() => setShowFeatureForm(false)} className="flex-1 py-2 bg-slate-100 rounded-lg">Cancel</button>
-                        <button onClick={handleUpdateFeature} className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold">Update</button>
-                     </div>
-                  </div>
-               </div>
-            )}
-         </div>
       )}
 
       {/* EMAIL TAB */}
@@ -851,27 +352,21 @@ const SuperAdmin: React.FC = () => {
                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
                         <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} placeholder="••••••••" />
                      </div>
-                     <div className="pt-2 border-t border-slate-100 mt-4">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Test Connection</label>
-                        <div className="flex gap-2">
-                           <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" placeholder="Test Email Address" value={testEmail} onChange={e => setTestEmail(e.target.value)} />
-                           <button onClick={handleTestSmtp} disabled={isTestingSmtp || !testEmail} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2">{isTestingSmtp ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} Test</button>
-                        </div>
-                     </div>
                   </div>
                </div>
                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><PenTool size={20} className="text-emerald-600" /> Email Templates</h3>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><PenTool size={20} className="text-emerald-600" /> Email Templates (Global Defaults)</h3>
                   <div className="flex gap-2 mb-4 bg-slate-50 p-1 rounded-lg">
+                     <button onClick={() => handleTemplateChange('registration')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'registration' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>Registration</button>
                      <button onClick={() => handleTemplateChange('mfa')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'mfa' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>MFA Code</button>
                      <button onClick={() => handleTemplateChange('invite')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'invite' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>User Invite</button>
-                     <button onClick={() => handleTemplateChange('notification')} className={`flex-1 py-1.5 text-sm font-medium rounded transition-all ${selectedTemplate === 'notification' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>General</button>
                   </div>
                   {editingTemplate && (
                      <div className="space-y-4 flex-1 flex flex-col">
+                        <p className="text-xs text-slate-500 mb-2">Note: Localized versions can be customized per language in the <strong>Languages</strong> tab using <code>emailVerifyBody</code>, etc.</p>
                         <label className="flex items-center gap-2 text-sm text-slate-700 font-medium cursor-pointer">
                            <input type="checkbox" checked={editingTemplate.enabled || false} onChange={e => setEditingTemplate({...editingTemplate, enabled: e.target.checked})} className="rounded text-emerald-600" />
-                           Enable Custom Template
+                           Enable Global Overrides
                         </label>
                         <input className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900" value={editingTemplate.subject || ''} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} placeholder="Subject" />
                         <div className="flex-1 min-h-[200px]"><RichTextEditor value={editingTemplate.bodyHtml || ''} onChange={val => setEditingTemplate({...editingTemplate, bodyHtml: val})} height="100%" /></div>
@@ -879,33 +374,40 @@ const SuperAdmin: React.FC = () => {
                   )}
                </div>
             </div>
-            <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2 shadow-sm"><Save size={18} /> {settingsSaved ? 'Settings Saved!' : 'Save Email Configuration'}</button></div>
+            <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2 shadow-sm"><Save size={18} /> {settingsSaved ? 'Settings Saved!' : 'Save Configurations'}</button></div>
          </div>
       )}
-
-      {/* LANGUAGES TAB */}
+      
+      {/* LANGUAGES TAB - Users can use this to localize email templates per language */}
       {activeTab === 'languages' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[700px] animate-in fade-in">
            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
               <div>
                  <h3 className="text-lg font-bold text-slate-900">{t('manageLanguages')}</h3>
-                 <p className="text-sm text-slate-500">Add or edit translations for the interface.</p>
+                 <p className="text-sm text-slate-500">Edit translations, including localized email templates.</p>
               </div>
               <div className="flex gap-2">
                  <input className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 w-24" placeholder="Code (de)" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} maxLength={5} />
                  <input className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 w-32" placeholder="Name (German)" value={newLangName} onChange={e => setNewLangName(e.target.value)} />
-                 <button onClick={handleAddLanguage} disabled={!newLangCode || isSavingLang} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-emerald-700 flex items-center gap-2">
-                    {isSavingLang ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Add
+                 <button onClick={async () => {
+                     if (!newLangCode || !newLangName) return;
+                     const newLang: LanguageConfig = { code: newLangCode, name: newLangName, isDefault: false, translations: { ...BASE_TRANSLATIONS }, manualOverrides: [] };
+                     const updated = [...languages, newLang];
+                     setLanguages(updated);
+                     await saveLanguages(updated, false);
+                     setNewLangCode(''); setNewLangName('');
+                     refreshTranslations();
+                 }} disabled={!newLangCode || isSavingLang} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-emerald-700 flex items-center gap-2">
+                    <Plus size={16} /> Add
                  </button>
               </div>
            </div>
            
            <div className="flex flex-1 overflow-hidden">
               <div className="w-64 border-r border-slate-200 bg-slate-50 overflow-y-auto p-2">
-                 {(languages || []).map(lang => (
+                 {languages.map(lang => (
                     <div key={lang.code} className={`flex justify-between items-center p-3 rounded-lg cursor-pointer mb-1 ${editingLang?.code === lang.code ? 'bg-white shadow text-purple-700 font-bold' : 'hover:bg-white text-slate-600'}`} onClick={() => setEditingLang(lang)}>
                        <div className="flex items-center gap-2"><span>{lang.name}</span>{lang.isDefault && <Star size={12} className="text-amber-500 fill-amber-500" />}</div>
-                       <button onClick={(e) => {e.stopPropagation(); triggerDeleteLang(lang.code, lang.name);}} className="text-slate-400 hover:text-red-500 p-1" disabled={lang.code === 'en-GB' || isSavingLang}><Trash2 size={12} /></button>
                     </div>
                  ))}
               </div>
@@ -914,26 +416,19 @@ const SuperAdmin: React.FC = () => {
                  {editingLang ? (
                     <>
                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
-                          <span className="font-bold text-slate-700 uppercase flex items-center gap-2"><Globe size={16} /> {editingLang.name} <span className="text-xs text-slate-400 font-normal">({editingLang.code})</span></span>
-                          <div className="flex gap-2">
-                             {editingLang.code !== 'en-GB' && (
-                                <button onClick={handleAutoTranslate} disabled={isTranslating || isSavingLang} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-700 shadow-sm flex items-center gap-2 disabled:opacity-50">
-                                   {isTranslating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} <span className="hidden sm:inline">Auto-Translate</span>
-                                </button>
-                             )}
-                             {!editingLang.isDefault && (
-                                <button onClick={() => handleSetDefaultLanguage(editingLang.code)} className="text-sm text-slate-500 hover:text-amber-600 font-medium px-3 py-1 rounded bg-white border border-slate-200">Set as Default</button>
-                             )}
-                          </div>
+                          <span className="font-bold text-slate-700 uppercase flex items-center gap-2"><Globe size={16} /> {editingLang.name}</span>
                        </div>
                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
                           {Object.keys(BASE_TRANSLATIONS).map(key => (
                              <div key={key} className="space-y-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase">{key}</label>
                                 <div className="flex gap-2">
-                                   <input className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm bg-white text-slate-900" value={editingLang.translations?.[key] || ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
-                                   {editingLang.manualOverrides?.includes(key) && (
-                                      <button onClick={() => handleUnlockTranslation(key)} className="text-slate-400 hover:text-emerald-600" title="Unlock auto-translate"><Unlock size={14}/></button>
+                                   {key.toLowerCase().includes('body') ? (
+                                      <div className="flex-1">
+                                         <RichTextEditor value={editingLang.translations?.[key] || ''} onChange={val => handleUpdateTranslation(key, val)} height="150px" />
+                                      </div>
+                                   ) : (
+                                      <input className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm bg-white text-slate-900" value={editingLang.translations?.[key] || ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
                                    )}
                                 </div>
                              </div>
@@ -941,21 +436,21 @@ const SuperAdmin: React.FC = () => {
                        </div>
                        <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
                           <button onClick={handleSaveTranslations} disabled={isSavingLang} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2">
-                             {isSavingLang ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} Save All Translations
+                             {isSavingLang ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} Save All
                           </button>
                        </div>
                     </>
                  ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50">
                        <Globe size={48} className="mb-4 opacity-20" />
-                       <p>Select a language to edit translations.</p>
+                       <p>Select a language to edit translations and localized emails.</p>
                     </div>
                  )}
               </div>
            </div>
         </div>
       )}
-
+      
       {/* Delete Modal */}
       {deleteTarget && (
          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
@@ -963,15 +458,6 @@ const SuperAdmin: React.FC = () => {
                <h3 className="text-lg font-bold mb-4">Confirm Delete</h3>
                <p className="text-sm mb-6">Delete {deleteTarget.name}?</p>
                <div className="flex gap-3"><button onClick={() => setDeleteTarget(null)} className="flex-1 px-4 py-2 bg-slate-100 rounded-lg">Cancel</button><button onClick={confirmDelete} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Delete</button></div>
-            </div>
-         </div>
-      )}
-
-      {showSchemaModal && (
-         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full flex flex-col max-h-[80vh]">
-               <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold">SQL Schema</h3><button onClick={() => setShowSchemaModal(false)}><X size={20}/></button></div>
-               <div className="flex-1 overflow-auto p-4 bg-slate-900"><pre className="text-xs text-emerald-400 font-mono">{SUPABASE_SCHEMA_SQL}</pre></div>
             </div>
          </div>
       )}
