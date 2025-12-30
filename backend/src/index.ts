@@ -396,6 +396,7 @@ app.post('/api/register/verify', async (req: any, res: any) => {
     const { orgName, userName, focus, password } = pending.data;
     const orgId = `org-${Date.now()}`;
     const userId = `u-${Date.now()}`;
+    const projectId = `p-default-${Date.now()}`;
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -409,6 +410,12 @@ app.post('/api/register/verify', async (req: any, res: any) => {
            INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) 
            VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')
         `, [userId, orgId, userName, cleanEmail, hashedPassword]);
+
+        // Create Default Project
+        await db.execute(`
+           INSERT INTO projects (id, org_id, name, description) 
+           VALUES (?, ?, 'Default', 'Primary organization project')
+        `, [projectId, orgId]);
 
         pendingRegistrations.delete(cleanEmail);
         const token = jwt.sign({ id: userId, email: cleanEmail, role: 'Admin', orgId }, JWT_SECRET, { expiresIn: '30d' });
@@ -516,14 +523,24 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
             const keys = Object.keys(item);
-            const vals = keys.map(k => typeof item[k] === 'object' && item[k] !== null ? JSON.stringify(item[k]) : item[k]);
+            // CRITICAL FIX: Convert undefined values to null to avoid mysql2 driver crashes (500 error)
+            const vals = keys.map(k => {
+               const val = item[k];
+               if (val === undefined) return null;
+               if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+               return val;
+            });
+            
             const placeholders = keys.map(() => '?').join(', ');
             const updates = keys.map(k => `${k} = VALUES(${k})`).join(', ');
             
             await db.execute(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updates}`, vals);
         }
         res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error(`Generic POST Error [${table}]:`, e.message);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', engine: 'mysql2-direct' }));

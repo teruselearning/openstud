@@ -274,6 +274,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     return sp?.imageUrl || generatePattern(ind.name);
   };
 
+  const canAddIndividual = projectSpecies.length > 0;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -300,7 +302,16 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
           </div>
           <div className="flex gap-2">
-             <button onClick={handleOpenNewForm} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"><Plus size={18} /><span className="hidden sm:inline">{t('registerIndividual')}</span><span className="sm:hidden">{t('add')}</span></button>
+             <button 
+                onClick={handleOpenNewForm} 
+                disabled={!canAddIndividual}
+                title={!canAddIndividual ? "You must add at least one species to the project before registering individuals." : ""}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm ${canAddIndividual ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+             >
+                <Plus size={18} />
+                <span className="hidden sm:inline">{t('registerIndividual')}</span>
+                <span className="sm:hidden">{t('add')}</span>
+             </button>
           </div>
         </div>
       </div>
