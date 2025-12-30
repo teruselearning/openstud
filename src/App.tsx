@@ -262,7 +262,14 @@ const App: React.FC = () => {
               await syncPushLanguages(getLanguages());
            } else {
               if (data.org) saveOrg(data.org, true);
-              if (data.settings) { saveSystemSettings(data.settings, true); setSystemSettings(data.settings); }
+              
+              // Only overwrite settings if the server actually has meaningful data
+              // This prevents empty default settings from overwriting valid local config during first sync
+              if (data.settings && Object.keys(data.settings).length > 2) { 
+                 saveSystemSettings(data.settings, true); 
+                 setSystemSettings(data.settings); 
+              }
+              
               if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);
@@ -295,9 +302,7 @@ const App: React.FC = () => {
     
     let activeOrg = getOrg();
     
-    // CRITICAL FIX: Ensure active organization strictly matches the user's account unless impersonating
     if (!isImpersonatingSession && activeOrg.id !== session.orgId) {
-       console.warn("Organization mismatch detected in loadData. Re-associating context...");
        const allPartners = getNetworkPartners();
        const matchedOrg = allPartners.find(p => p.id === session.orgId);
        if (matchedOrg) {

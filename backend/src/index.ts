@@ -519,11 +519,14 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     
     try {
         for (const item of data) {
+            // Password hashing logic
             if (item.password && !item.password.startsWith('$2')) {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
+            
             const keys = Object.keys(item);
-            // CRITICAL FIX: Convert undefined values to null to avoid mysql2 driver crashes (500 error)
+            
+            // Value cleaning and JSON stringification
             const vals = keys.map(k => {
                const val = item[k];
                if (val === undefined) return null;
@@ -532,9 +535,22 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             });
             
             const placeholders = keys.map(() => '?').join(', ');
-            const updates = keys.map(k => `${k} = VALUES(${k})`).join(', ');
             
-            await db.execute(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updates}`, vals);
+            // ON DUPLICATE KEY UPDATE logic: avoid updating the primary key itself if possible
+            // Most OSC tables use 'id' or 'code' as primary key.
+            const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
+            const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
+            
+            let updateClause = "";
+            if (nonPkKeys.length > 0) {
+                updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `${k} = VALUES(${k})`).join(', ');
+            } else {
+                // If there's only a primary key, just do nothing on duplicate
+                updateClause = "ON DUPLICATE KEY UPDATE " + primaryKeyCol + " = " + primaryKeyCol;
+            }
+            
+            const sql = `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ${updateClause}`;
+            await db.execute(sql, vals);
         }
         res.json({ success: true });
     } catch (e: any) { 

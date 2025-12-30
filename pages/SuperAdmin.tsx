@@ -2,7 +2,6 @@
 import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
-/* Added Plus to the imports from lucide-react */
 import { Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, Send, AlertCircle, Trash2, X, RefreshCw, Plus } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole } from '../types';
