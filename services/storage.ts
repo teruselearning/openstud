@@ -284,33 +284,27 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
 export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
-export const generatePartnerInvite = (): string => {
-  const code = `${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
-  const codes = get<string[]>(KEYS.INVITE_CODES, []);
-  codes.push(code);
-  set(KEYS.INVITE_CODES, codes);
-  return code;
-};
-
-export const redeemPartnerInvite = (code: string): { success: boolean, message: string } => {
-  const partners = getNetworkPartners();
-  const myOrg = getOrg();
-  const candidate = partners.find(p => p.id !== myOrg.id);
-  if (!candidate) return { success: false, message: "No partners found." };
-  const current = getPartnerships();
-  const newRel: Partnership = { id: `ps-${Date.now()}`, orgId1: myOrg.id, orgId2: candidate.id, status: 'Active', establishedDate: new Date().toISOString().split('T')[0] };
-  savePartnerships([...current, newRel]);
-  return { success: true, message: `Connected to ${candidate.name}` };
-};
-
-export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<User> => {
+export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string): Promise<any> => {
   const response = await fetch(`${API_BASE_URL}/api/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orgName, userName, email, focus, password })
   });
-  if (!response.ok) throw new Error((await response.json()).error || "Registration failed");
-  const { token, user, org } = await response.json();
+  const data = await safeParseJson(response);
+  if (!response.ok) throw new Error(data.error || "Registration failed");
+  return data;
+};
+
+export const confirmRegistration = async (email: string, code: string): Promise<User> => {
+  const response = await fetch(`${API_BASE_URL}/api/register/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.toLowerCase().trim(), code })
+  });
+  const data = await safeParseJson(response);
+  if (!response.ok) throw new Error(data.error || "Verification failed");
+  
+  const { token, user, org } = data;
   localStorage.setItem(KEYS.TOKEN, token);
   saveOrg(org, true);
   saveUsers([user], true);
@@ -401,6 +395,45 @@ export const saveNotifications = (n: Notification[]) => set(KEYS.NOTIFICATIONS, 
 export const sendMockNotification = (recipientId: string, title: string, message: string, type: any = 'System') => {
    const notifs = getNotifications();
    saveNotifications([{ id: `n-${Date.now()}`, recipientId, senderOrgName: 'System', title, message, date: new Date().toISOString().split('T')[0], isRead: false, type }, ...notifs]);
+};
+
+// Fix for Network.tsx error: Added generatePartnerInvite and redeemPartnerInvite
+/**
+ * Generates a mock partnership invite code.
+ */
+export const generatePartnerInvite = (): string => {
+  return Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+};
+
+/**
+ * Redeems a partnership code by linking the current org with an available external partner.
+ */
+export const redeemPartnerInvite = (code: string): { success: boolean, message: string } => {
+  const myOrg = getOrg();
+  const partners = getNetworkPartners();
+  const existingPartnerships = getPartnerships();
+  
+  const availablePartner = partners.find(p => 
+    p.id !== myOrg.id && 
+    !existingPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id))
+  );
+
+  if (!availablePartner) {
+    return { success: false, message: "No available partners found to connect with using this code." };
+  }
+
+  const newPartnership: Partnership = {
+    id: `prt-${Date.now()}`,
+    orgId1: myOrg.id,
+    orgId2: availablePartner.id,
+    status: 'Active',
+    establishedDate: new Date().toISOString().split('T')[0]
+  };
+
+  const updated = [...existingPartnerships, newPartnership];
+  savePartnerships(updated);
+  
+  return { success: true, message: `Successfully connected with ${availablePartner.name}!` };
 };
 
 export const regenerateDemoData = async () => {
