@@ -66,7 +66,8 @@ const getTransporter = async () => {
 };
 
 /**
- * Enhanced Upsert Handler that is resilient to Prisma Client validation errors
+ * Enhanced Upsert Handler that is resilient to Prisma Client validation 
+ * and Database constraint errors.
  */
 const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idField: string = 'id') => async (req: any, res: any) => {
     try {
@@ -87,14 +88,24 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
             try {
                 await table.upsert({ where: whereClause, update: item, create: item });
             } catch (innerErr: any) {
-                // If we hit a validation error about unknown arguments, try to strip common offenders and retry once
-                if (innerErr.message.includes('Unknown argument')) {
-                    console.warn(`[UPSERT] Retrying ${idField} after stripping unknown fields...`);
-                    const badFields = ['ai_usage_limit', 'ai_usage_count', 'ai_usage_last_reset', 'org_id'];
+                const errorMsg = innerErr.message || "";
+                
+                // Case 1: Unknown Arguments (Stale Prisma Client)
+                if (errorMsg.includes('Unknown argument')) {
+                    console.warn(`[UPSERT] Retrying ${idField} (${item[idField]}) after stripping unknown schema fields...`);
+                    const badFields = ['ai_usage_limit', 'ai_usage_count', 'ai_usage_last_reset', 'org_id', 'show_native_status', 'dashboard_block'];
                     badFields.forEach(f => delete item[f]);
-                    // One more try with restricted data
                     await table.upsert({ where: whereClause, update: item, create: item });
-                } else {
+                } 
+                // Case 2: Column Length (Base64 images too large for DB column)
+                else if (errorMsg.includes('too long for the column') || errorMsg.includes('value too long')) {
+                    console.warn(`[UPSERT] Data too long for ${idField} (${item[idField]}), stripping image_url and retrying...`);
+                    delete item.image_url;
+                    delete item.imageUrl;
+                    await table.upsert({ where: whereClause, update: item, create: item });
+                }
+                else {
+                    console.error(`[UPSERT] Failed on ${idField}:`, errorMsg);
                     throw innerErr;
                 }
             }
@@ -107,54 +118,132 @@ const createUpsertHandler = (table: any, prepareBody: (body: any) => any, idFiel
 };
 
 // --- Mappers ---
-// We prioritize compatibility with the Prisma Client which might not have the newest fields
 const prepOrg = (o: any) => {
-  const result: any = { 
-    id: o.id, 
-    name: o.name, 
-    location: o.location, 
-    latitude: o.latitude, 
-    longitude: o.longitude, 
-    founded_year: o.founded_year || o.foundedYear, 
-    description: o.description, 
-    focus: o.focus, 
-    is_org_public: !!o.is_org_public, 
-    is_species_public: !!o.is_species_public, 
-    obscure_location: !!o.obscure_location, 
-    hide_name: !!o.hide_name, 
-    allow_breeding_requests: !!o.allow_breeding_requests, 
-    breeding_request_contact_id: o.breeding_request_contact_id, 
-    show_native_status: o.show_native_status !== false, 
-    dashboard_block: o.dashboard_block, 
+  const res: any = { 
+    id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, 
+    founded_year: o.founded_year || o.foundedYear, description: o.description, focus: o.focus, 
+    is_org_public: !!o.is_org_public, is_species_public: !!o.is_species_public, 
+    obscure_location: !!o.obscure_location, hide_name: !!o.hide_name, 
+    allow_breeding_requests: !!o.allow_breeding_requests, breeding_request_contact_id: o.breeding_request_contact_id, 
+    show_native_status: o.show_native_status !== false, dashboard_block: o.dashboard_block, 
     is_deleted: !!o.is_deleted
   };
-  // Only include AI fields if they were definitely provided, otherwise skip to avoid validation errors
-  // The upsert handler will strip these anyway if the client fails
-  if (o.ai_usage_limit !== undefined) result.ai_usage_limit = o.ai_usage_limit;
-  if (o.ai_usage_count !== undefined) result.ai_usage_count = o.ai_usage_count;
-  return result;
+  if (o.ai_usage_limit !== undefined) res.ai_usage_limit = o.ai_usage_limit;
+  if (o.ai_usage_count !== undefined) res.ai_usage_count = o.ai_usage_count;
+  return res;
 };
 
-const prepProject = (p: any) => ({ id: p.id, org_id: p.org_id || p.orgId, name: p.name, description: p.description });
+const prepProject = (p: any) => ({ 
+    id: p.id, 
+    org_id: p.org_id || p.orgId, 
+    name: p.name, 
+    description: p.description 
+});
 
 const prepUser = (u: any) => ({ 
     id: u.id, 
-    orgId: u.orgId || u.org_id, // Use orgId (camelCase) as default for better Prisma matching
+    org_id: u.org_id || u.orgId, 
+    orgId: u.orgId || u.org_id,
     name: u.name, 
     email: u.email?.toLowerCase().trim(), 
     role: u.role, 
     status: u.status, 
     password: u.password, 
-    avatar_url: u.avatar_url, 
-    allowed_project_ids: u.allowed_project_ids || [] 
+    avatar_url: u.avatar_url || u.avatarUrl, 
+    allowed_project_ids: u.allowed_project_ids || u.allowedProjectIds || [] 
 });
 
-const prepSpecies = (s: any) => ({ id: s.id, project_id: s.project_id, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plant_classification, conservation_status: s.conservation_status, sexual_maturity_age_years: s.sexual_maturity_age_years, average_adult_weight_kg: s.average_adult_weight_kg, life_expectancy_years: s.life_expectancy_years, breeding_season_start: s.breeding_season_start, breeding_season_end: s.breeding_season_end, image_url: s.image_url, native_status_country: s.native_status_country, native_status_local: s.native_status_local });
-const prepInd = (i: any) => ({ id: i.id, project_id: i.project_id, species_id: i.species_id, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birth_date, weight_kg: i.weight_kg, sire_id: i.sire_id, dam_id: i.dam_id, image_url: i.image_url, dna_sequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, latitude: i.latitude, longitude: i.longitude, is_deceased: i.is_deceased, death_date: i.death_date, loan_status: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, transfer_note: i.transfer_note, weight_history: i.weight_history, growth_history: i.growth_history, health_history: i.health_history });
-const prepEvent = (e: any) => ({ id: e.id, species_id: e.species_id, sire_id: e.sire_id, dam_id: e.dam_id, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspring_ids });
-const prepLoan = (l: any) => ({ id: l.id, partner_org_id: l.partner_org_id, proposer_org_id: l.proposer_org_id, role: l.role, start_date: l.start_date, end_date: l.end_date, status: l.status, individual_ids: l.individual_ids, terms: l.terms, notification_recipient_id: l.notification_recipient_id, change_request: l.change_request });
-const prepPartnership = (p: any) => ({ id: p.id, org_id_1: p.org_id_1, org_id_2: p.org_id_2, status: p.status, established_date: p.established_date });
-const prepLanguage = (l: any) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.is_default, manual_overrides: l.manual_overrides, is_deleted: l.is_deleted });
+const prepSpecies = (s: any) => ({ 
+    id: s.id, 
+    project_id: s.project_id || s.projectId, 
+    common_name: s.common_name || s.commonName, 
+    scientific_name: s.scientific_name || s.scientificName, 
+    type: s.type, 
+    plant_classification: s.plant_classification || s.plantClassification, 
+    conservation_status: s.conservation_status || s.conservationStatus, 
+    sexual_maturity_age_years: s.sexual_maturity_age_years || s.sexualMaturityAgeYears, 
+    average_adult_weight_kg: s.average_adult_weight_kg || s.averageAdultWeightKg, 
+    life_expectancy_years: s.life_expectancy_years || s.lifeExpectancyYears, 
+    breeding_season_start: s.breeding_season_start || s.breedingSeasonStart, 
+    breeding_season_end: s.breeding_season_end || s.breedingSeasonEnd, 
+    image_url: s.image_url || s.imageUrl, 
+    native_status_country: s.native_status_country || s.nativeStatusCountry, 
+    native_status_local: s.native_status_local || s.nativeStatusLocal 
+});
+
+const prepInd = (i: any) => ({ 
+    id: i.id, 
+    project_id: i.project_id || i.projectId, 
+    species_id: i.species_id || i.speciesId, 
+    studbook_id: i.studbook_id || i.studbookId, 
+    name: i.name, 
+    sex: i.sex, 
+    birth_date: i.birth_date || i.birthDate, 
+    weight_kg: i.weight_kg || i.weightKg, 
+    sire_id: i.sire_id || i.sireId, 
+    dam_id: i.dam_id || i.damId, 
+    image_url: i.image_url || i.imageUrl, 
+    dna_sequence: i.dna_sequence || i.dnaSequence, 
+    notes: i.notes, 
+    source: i.source, 
+    source_details: i.source_details || i.sourceDetails, 
+    latitude: i.latitude, 
+    longitude: i.longitude, 
+    is_deceased: !!(i.is_deceased || i.isDeceased), 
+    death_date: i.death_date || i.deathDate, 
+    loan_status: i.loan_status || i.loanStatus, 
+    transferred_to_org_id: i.transferred_to_org_id || i.transferredToOrgId, 
+    transfer_date: i.transfer_date || i.transferDate, 
+    transfer_note: i.transfer_note || i.transferNote, 
+    weight_history: i.weight_history || i.weightHistory, 
+    growth_history: i.growth_history || i.growthHistory, 
+    health_history: i.health_history || i.healthHistory 
+});
+
+const prepEvent = (e: any) => ({ 
+    id: e.id, 
+    species_id: e.species_id || e.speciesId, 
+    sire_id: e.sire_id || e.sireId, 
+    dam_id: e.dam_id || e.damId, 
+    date: e.date, 
+    offspring_count: e.offspring_count || e.offspringCount, 
+    successful_births: e.successful_births || e.successfulBirths, 
+    losses: e.losses, 
+    notes: e.notes, 
+    offspring_ids: e.offspring_ids || e.offspringIds 
+});
+
+const prepLoan = (l: any) => ({ 
+    id: l.id, 
+    partner_org_id: l.partner_org_id || l.partnerOrgId, 
+    proposer_org_id: l.proposer_org_id || l.proposerOrgId, 
+    role: l.role, 
+    start_date: l.start_date || l.startDate, 
+    end_date: l.end_date || l.endDate, 
+    status: l.status, 
+    individual_ids: l.individual_ids || l.individualIds, 
+    terms: l.terms, 
+    notification_recipient_id: l.notification_recipient_id || l.notificationRecipientId, 
+    change_request: l.change_request || l.changeRequest 
+});
+
+const prepPartnership = (p: any) => ({ 
+    id: p.id, 
+    org_id_1: p.org_id_1 || p.orgId1, 
+    org_id_2: p.org_id_2 || p.orgId2, 
+    status: p.status, 
+    established_date: p.established_date || p.establishedDate 
+});
+
+const prepLanguage = (l: any) => ({ 
+    code: l.code, 
+    name: l.name, 
+    translations: l.translations, 
+    is_default: !!l.is_default, 
+    manual_overrides: l.manual_overrides || l.manualOverrides || [], 
+    is_deleted: !!l.is_deleted 
+});
+
 const prepAppConfig = (c: any) => ({ id: c.id, settings: c.settings });
 
 // 2. Auth & Registration Routes
@@ -167,7 +256,6 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // 1. Create Organization via Raw SQL to bypass Prisma Client validation
         await (prisma as any).$executeRawUnsafe(`
             INSERT INTO organizations (
                 id, name, focus, location, is_org_public, is_species_public, 
@@ -176,14 +264,12 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         `, orgId, orgName, focus, 'Unknown', false, false, false, new Date().getFullYear(), '', false, false, 100, 0);
         
-        // 2. Create User via Raw SQL to bypass Prisma Client validation
         await (prisma as any).$executeRawUnsafe(`
             INSERT INTO users (
                 id, org_id, name, email, role, status, password, allowed_project_ids
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, userId, orgId, userName, cleanEmail, 'Admin', 'Active', hashedPassword, []);
 
-        // Fetch back using normal prisma to return object
         const user = await (prisma as any).user.findUnique({ where: { id: userId } });
         const org = await (prisma as any).organization.findUnique({ where: { id: orgId } });
 
@@ -191,7 +277,6 @@ app.post('/api/register', async (req: any, res: any, next: express.NextFunction)
         res.json({ token, user: prepUser(user), org: prepOrg(org) });
     } catch (e: any) {
         console.error("Registration Raw SQL Error:", e);
-        // Fallback: If raw SQL fails (e.g. SQLite instead of Postgres), try basic prisma again
         try {
             const org = await (prisma as any).organization.create({
                 data: { id: orgId, name: orgName, focus: focus, location: 'Unknown', founded_year: new Date().getFullYear() }
@@ -224,37 +309,6 @@ app.post('/api/login', async (req: any, res: any, next: express.NextFunction) =>
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: actualOrgId }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: prepUser(user), organization: organization ? prepOrg(organization) : null });
   } catch (e: any) { next(e); }
-});
-
-app.post('/api/auth/forgot-password', async (req: any, res: any, next: express.NextFunction) => {
-   const { email } = req.body;
-   try {
-     const user = await (prisma as any).user.findUnique({ where: { email: email.toLowerCase().trim() } });
-     if (!user) return res.json({ success: true, message: "If that email exists, a code has been sent." });
-
-     const code = Math.floor(100000 + Math.random() * 900000).toString();
-     resetCodes.set(email.toLowerCase().trim(), { code, expires: Date.now() + 3600000 });
-     
-     console.log(`[AUTH] Password reset code for ${email}: ${code}`);
-     res.json({ success: true, message: "Recovery code generated. Check server logs." });
-   } catch (e: any) { next(e); }
-});
-
-app.post('/api/auth/reset-password', async (req: any, res: any, next: express.NextFunction) => {
-    const { email, code, newPassword } = req.body;
-    try {
-      const entry = resetCodes.get(email.toLowerCase().trim());
-      if (!entry || entry.code !== code || entry.expires < Date.now()) {
-          return res.status(400).json({ success: false, error: "Invalid or expired code." });
-      }
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await (prisma as any).user.update({
-          where: { email: email.toLowerCase().trim() },
-          data: { password: hashedPassword }
-      });
-      resetCodes.delete(email.toLowerCase().trim());
-      res.json({ success: true });
-    } catch (e: any) { next(e); }
 });
 
 // 3. Email Routes
@@ -311,12 +365,10 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.24' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.25' }));
 
-// 4. Static Serving
 app.use(express.static(path.join(__dirname, '../../dist')));
 
-// 5. Catch-all for SPA
 app.get('*', (req: any, res: any) => {
    if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) {
       return res.status(404).json({ error: "API Route not found" });
@@ -324,7 +376,6 @@ app.get('*', (req: any, res: any) => {
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 
-// 6. Global Error Handler (Ensures JSON response instead of HTML)
 app.use((err: any, req: any, res: any, next: any) => {
   console.error("API ERROR:", err);
   const status = err.status || 500;
