@@ -154,6 +154,99 @@ const prepUser = (u: any) => ({
     allowed_project_ids: u.allowed_project_ids || u.allowedProjectIds || [] 
 });
 
+const prepSpecies = (s: any) => ({ 
+    id: s.id, 
+    project_id: s.project_id || s.projectId, 
+    common_name: s.common_name || s.commonName, 
+    scientific_name: s.scientific_name || s.scientificName, 
+    type: s.type, 
+    plant_classification: s.plant_classification || s.plantClassification, 
+    conservation_status: s.conservation_status || s.conservationStatus, 
+    sexual_maturity_age_years: s.sexual_maturity_age_years || s.sexualMaturityAgeYears, 
+    average_adult_weight_kg: s.average_adult_weight_kg || s.averageAdultWeightKg, 
+    life_expectancy_years: s.life_expectancy_years || s.lifeExpectancyYears, 
+    breeding_season_start: s.breeding_season_start || s.breedingSeasonStart, 
+    breeding_season_end: s.breeding_season_end || s.breedingSeasonEnd, 
+    image_url: s.image_url || s.imageUrl, 
+    native_status_country: s.native_status_country || s.nativeStatusCountry, 
+    native_status_local: s.native_status_local || s.nativeStatusLocal 
+});
+
+const prepInd = (i: any) => ({ 
+    id: i.id, 
+    project_id: i.project_id || i.projectId, 
+    species_id: i.species_id || i.speciesId, 
+    studbook_id: i.studbook_id || i.studbookId, 
+    name: i.name, 
+    sex: i.sex, 
+    birth_date: i.birth_date || i.birthDate, 
+    weight_kg: i.weight_kg || i.weightKg, 
+    sire_id: i.sire_id || i.sireId, 
+    dam_id: i.dam_id || i.damId, 
+    image_url: i.image_url || i.imageUrl, 
+    dna_sequence: i.dna_sequence || i.dnaSequence, 
+    notes: i.notes, 
+    source: i.source, 
+    source_details: i.source_details || i.sourceDetails, 
+    latitude: i.latitude, 
+    longitude: i.longitude, 
+    is_deceased: !!(i.is_deceased || i.isDeceased), 
+    death_date: i.death_date || i.deathDate, 
+    loan_status: i.loan_status || i.loanStatus, 
+    transferred_to_org_id: i.transferred_to_org_id || i.transferredToOrgId, 
+    transfer_date: i.transfer_date || i.transferDate, 
+    transfer_note: i.transfer_note || i.transferNote, 
+    weight_history: i.weight_history || i.weightHistory, 
+    growth_history: i.growth_history || i.growthHistory, 
+    health_history: i.health_history || i.healthHistory 
+});
+
+const prepEvent = (e: any) => ({ 
+    id: e.id, 
+    species_id: e.species_id || e.speciesId, 
+    sire_id: e.sire_id || e.sireId, 
+    dam_id: e.dam_id || e.damId, 
+    date: e.date, 
+    offspring_count: e.offspring_count || e.offspringCount, 
+    successful_births: e.successful_births || e.successfulBirths, 
+    losses: e.losses, 
+    notes: e.notes, 
+    offspring_ids: e.offspring_ids || e.offspringIds 
+});
+
+const prepLoan = (l: any) => ({ 
+    id: l.id, 
+    partner_org_id: l.partner_org_id || l.partnerOrgId, 
+    proposer_org_id: l.proposer_org_id || l.proposerOrgId, 
+    role: l.role, 
+    start_date: l.start_date || l.startDate, 
+    end_date: l.end_date || l.endDate, 
+    status: l.status, 
+    individual_ids: l.individual_ids || l.individualIds, 
+    terms: l.terms, 
+    notification_recipient_id: l.notification_recipient_id || l.notificationRecipientId, 
+    change_request: l.change_request || l.changeRequest 
+});
+
+const prepPartnership = (p: any) => ({ 
+    id: p.id, 
+    org_id_1: p.org_id_1 || p.orgId1, 
+    org_id_2: p.org_id_2 || p.orgId2, 
+    status: p.status, 
+    established_date: p.established_date || p.establishedDate 
+});
+
+const prepLanguage = (l: any) => ({ 
+    code: l.code, 
+    name: l.name, 
+    translations: l.translations, 
+    is_default: !!l.is_default, 
+    manual_overrides: l.manual_overrides || l.manualOverrides || [], 
+    is_deleted: !!l.is_deleted 
+});
+
+const prepAppConfig = (c: any) => ({ id: c.id, settings: c.settings });
+
 // 2. Auth & Registration Routes
 app.post('/api/register', async (req: any, res: any, next: express.NextFunction) => {
     const { orgName, userName, email, focus, password } = req.body;
@@ -316,6 +409,13 @@ app.post('/api/email/test', authenticate, async (req: any, res: any, next: expre
 app.post('/rest/v1/organizations', createUpsertHandler((prisma as any).organization, prepOrg));
 app.post('/rest/v1/projects', createUpsertHandler((prisma as any).project, prepProject));
 app.post('/rest/v1/users', createUpsertHandler((prisma as any).user, prepUser));
+app.post('/rest/v1/species', createUpsertHandler((prisma as any).species, prepSpecies));
+app.post('/rest/v1/individuals', createUpsertHandler((prisma as any).individual, prepInd));
+app.post('/rest/v1/breeding_events', createUpsertHandler((prisma as any).breedingEvent, prepEvent));
+app.post('/rest/v1/breeding_loans', createUpsertHandler((prisma as any).breedingLoan, prepLoan));
+app.post('/rest/v1/partnerships', createUpsertHandler((prisma as any).partnership, prepPartnership));
+app.post('/rest/v1/languages', createUpsertHandler((prisma as any).language, prepLanguage, 'code'));
+app.post('/rest/v1/app_config', createUpsertHandler((prisma as any).appConfig, prepAppConfig));
 
 app.get('/api/sync', authenticate, async (req: any, res: any, next: express.NextFunction) => {
    try {
@@ -338,7 +438,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.26' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.27' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 
