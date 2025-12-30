@@ -305,42 +305,22 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Final Database Insertion using Raw SQL with '?' for MySQL compatibility
+        // Use Raw SQL to create initial records to bypass Prisma Client strict validation
+        // This avoids "Unknown argument" errors if schema.prisma is slightly out of sync.
         try {
             await (prisma as any).$executeRawUnsafe(`
-                INSERT INTO organizations (
-                    id, name, focus, location, is_org_public, is_species_public, 
-                    obscure_location, founded_year, description, allow_breeding_requests, 
-                    is_deleted, ai_usage_limit, ai_usage_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `, orgId, orgName, focus, 'Unknown', false, false, false, new Date().getFullYear(), '', false, false, 100, 0);
-            
+                INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public, obscure_location, is_deleted, ai_usage_limit, ai_usage_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, orgId, orgName, focus, 'Unknown', new Date().getFullYear(), false, false, false, false, 100, 0);
+
             await (prisma as any).$executeRawUnsafe(`
-                INSERT INTO users (
-                    id, org_id, name, email, role, status, password, allowed_project_ids
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `, userId, orgId, userName, cleanEmail, 'Admin', 'Active', hashedPassword, JSON.stringify([]));
         } catch (sqlErr: any) {
-            console.warn("[VERIFICATION] Raw SQL failed, falling back to Prisma create...", sqlErr.message);
-            // Fallback to standard Prisma API if raw SQL fails (handles different placeholder formats)
-            const orgData: any = {
-                id: orgId, name: orgName, focus: focus, location: 'Unknown', founded_year: new Date().getFullYear(),
-                is_org_public: false, is_species_public: false, obscure_location: false, is_deleted: false,
-                ai_usage_limit: 100, ai_usage_count: 0
-            };
-            const userData: any = {
-                id: userId, org_id: orgId, name: userName, email: cleanEmail, role: 'Admin', status: 'Active',
-                password: hashedPassword, allowed_project_ids: []
-            };
-            
-            await (prisma as any).organization.create({ data: orgData }).catch((e: any) => {
-                console.warn("[VERIFICATION] Prisma Org Create failed, stripping extra fields...");
-                delete orgData.ai_usage_limit;
-                delete orgData.ai_usage_count;
-                return (prisma as any).organization.create({ data: orgData });
-            });
-            
-            await (prisma as any).user.create({ data: userData });
+            console.error("SQL Registration Error:", sqlErr.message);
+            // Emergency fallback if Raw SQL fails (e.g. table doesn't exist yet)
+            throw new Error("Database configuration error. Please ensure tables are created.");
         }
 
         const user = await (prisma as any).user.findUnique({ where: { id: userId } });
@@ -352,7 +332,7 @@ app.post('/api/register/verify', async (req: any, res: any, next: express.NextFu
         res.json({ token, user: prepUser(user), org: prepOrg(org) });
     } catch (e: any) {
         console.error("Verification DB Error:", e);
-        res.status(500).json({ error: "Failed to create organization. Please try again." });
+        res.status(500).json({ error: e.message || "Failed to create account." });
     }
 });
 
@@ -460,7 +440,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any, next: express.Next
    } catch (e: any) { next(e); }
 });
 
-app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.29' }));
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok', version: '1.0.30' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 
