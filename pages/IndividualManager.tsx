@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2 } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -34,9 +34,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
+  const userMarkerRef = useRef<any>(null);
   const [selectedMapInd, setSelectedMapInd] = useState<Individual | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
+  const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | null>(null);
 
   // Map Picker State
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -63,6 +65,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   // Manual Parent Entry State
   const [isManualSire, setIsManualSire] = useState(false);
   const [isManualDam, setIsManualDam] = useState(false);
+
+  // Searchable Species Dropdown State
+  const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
+  const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
+  const speciesDropdownRef = useRef<HTMLDivElement>(null);
 
   // Auto-Add Species State
   const [isAutoSpecies, setIsAutoSpecies] = useState(false);
@@ -98,6 +105,31 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setAllIndividuals(getIndividuals());
     setAllSpecies(getSpecies());
     setOrg(getOrg());
+  }, []);
+
+  // Watch user position for map view
+  useEffect(() => {
+    if (viewMode === 'map' && navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        (err) => console.warn("User location watch failed", err),
+        { enableHighAccuracy: true }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
+  }, [viewMode]);
+
+  // Handle click outside for searchable dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (speciesDropdownRef.current && !speciesDropdownRef.current.contains(event.target as Node)) {
+        setIsSpeciesDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -142,6 +174,20 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       const markersLayer = markersLayerRef.current;
       markersLayer.clearLayers();
 
+      // Show User Location Marker
+      if (userCoords) {
+        const userIcon = L.divIcon({
+          className: 'user-location-marker',
+          html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        });
+        if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);
+        userMarkerRef.current = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon, zIndexOffset: 2000 })
+          .addTo(map)
+          .bindTooltip("You are here", { direction: 'top', offset: [0, -10] });
+      }
+
       const mappedInds = projectIndividuals.filter(i => typeof i.latitude === 'number' && typeof i.longitude === 'number');
       const leafletMarkers: any[] = [];
 
@@ -162,14 +208,20 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           marker.bindTooltip(sp?.commonName || ind.name, {
             permanent: true,
             direction: 'right',
-            className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
+            className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer',
+            interactive: true // Allow label clicking
           });
         }
 
-        marker.on('click', () => {
+        const handleSelect = () => {
           setSelectedMapInd(ind);
           map.flyTo([ind.latitude, ind.longitude], 18, { animate: true, duration: 1.5 });
-        });
+        };
+
+        marker.on('click', handleSelect);
+        // Tooltip clicks also trigger the selection
+        marker.on('tooltipclick', handleSelect);
+
         marker.addTo(markersLayer);
         leafletMarkers.push(marker);
       });
@@ -180,7 +232,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
       }
     }
-  }, [viewMode, currentProjectId, projectIndividuals, allSpecies, showLabels]);
+  }, [viewMode, currentProjectId, projectIndividuals, allSpecies, showLabels, userCoords]);
 
   // Picker Map Initialization
   useEffect(() => {
@@ -221,6 +273,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setIsAutoSpecies(false);
     setIsManualSire(false);
     setIsManualDam(false);
+    setSpeciesSearchQuery('');
     setFormData({
       studbookId: generateUniqueId(),
       speciesId: '',
@@ -349,6 +402,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setIsManualSire(!!ind.sireId && !sireExists);
     setIsManualDam(!!ind.damId && !damExists);
     setFormData({ ...ind });
+    
+    // Set the search query to the current species name for clarity
+    const currentSp = allSpecies.find(s => s.id === ind.speciesId);
+    setSpeciesSearchQuery(currentSp ? currentSp.commonName : '');
+    
     setShowForm(true);
     setShowDeleteConfirm(false);
   };
@@ -360,6 +418,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setIsManualSire(false);
     setIsManualDam(false);
     setIsAutoSpecies(false);
+    setSpeciesSearchQuery('');
     if (returnPath) { navigate(returnPath); setReturnPath(null); }
   };
 
@@ -452,11 +511,17 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   });
 
   const selectedSpecies = allSpecies.find(s => s.id === formData.speciesId);
-  const isPlant = isAutoSpecies ? newSpeciesType === 'Plant' : selectedSpecies?.type === 'Plant';
-  const showSexField = !isPlant || (isPlant && (isAutoSpecies ? true : selectedSpecies?.plantClassification === 'Dioecious'));
+  const isPlantMode = isAutoSpecies ? newSpeciesType === 'Plant' : selectedSpecies?.type === 'Plant';
+  const showSexField = !isPlantMode || (isPlantMode && (isAutoSpecies ? true : selectedSpecies?.plantClassification === 'Dioecious'));
 
   const eligibleSires = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.sex === Sex.MALE && i.id !== editingId);
   const eligibleDams = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.sex === Sex.FEMALE && i.id !== editingId);
+
+  // Search results for searchable species dropdown
+  const speciesSearchResults = projectSpecies.filter(s => 
+    s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()) || 
+    s.scientificName.toLowerCase().includes(speciesSearchQuery.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -526,7 +591,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                          )}
                       </div>
                       {isAutoSpecies ? (
-                         <div className="flex gap-3">
+                         <div className="flex gap-3 animate-in slide-in-from-top-2">
                             <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Enter common name (e.g. Red Oak)" value={newSpeciesName} onChange={(e) => setNewSpeciesName(e.target.value)} required />
                             <select className="w-32 px-2 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={newSpeciesType} onChange={(e) => setNewSpeciesType(e.target.value as SpeciesType)}>
                                <option value="Animal">{t('animal')}</option>
@@ -534,10 +599,57 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                             </select>
                          </div>
                       ) : (
-                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.speciesId} onChange={e => setFormData({...formData, speciesId: e.target.value})} required disabled={!!editingId}>
-                          <option value="">Select Species...</option>
-                          {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName} ({s.scientificName})</option>)}
-                        </select>
+                        <div className="relative" ref={speciesDropdownRef}>
+                           <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+                              <input 
+                                 type="text"
+                                 className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900"
+                                 placeholder="Type to search species..."
+                                 value={speciesSearchQuery}
+                                 onChange={(e) => {
+                                    setSpeciesSearchQuery(e.target.value);
+                                    setIsSpeciesDropdownOpen(true);
+                                 }}
+                                 onFocus={() => setIsSpeciesDropdownOpen(true)}
+                                 disabled={!!editingId}
+                              />
+                              <ChevronDown className={`absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 transition-transform ${isSpeciesDropdownOpen ? 'rotate-180' : ''}`} size={16} />
+                           </div>
+                           
+                           {isSpeciesDropdownOpen && !editingId && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-[110] max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1">
+                                 {speciesSearchResults.length > 0 ? (
+                                    speciesSearchResults.map(s => (
+                                       <button
+                                          key={s.id}
+                                          type="button"
+                                          className={`w-full text-left px-4 py-3 hover:bg-emerald-50 flex flex-col transition-colors border-b border-slate-50 last:border-0 ${formData.speciesId === s.id ? 'bg-emerald-50' : ''}`}
+                                          onClick={() => {
+                                             setFormData({...formData, speciesId: s.id});
+                                             setSpeciesSearchQuery(s.commonName);
+                                             setIsSpeciesDropdownOpen(false);
+                                          }}
+                                       >
+                                          <span className="font-bold text-slate-900">{s.commonName}</span>
+                                          <span className="text-xs text-slate-500 italic">{s.scientificName}</span>
+                                       </button>
+                                    ))
+                                 ) : (
+                                    <div className="p-4 text-center text-slate-500 flex flex-col items-center gap-2">
+                                       <p className="text-sm">No matching species found in this project.</p>
+                                       <button 
+                                          type="button" 
+                                          onClick={() => setIsAutoSpecies(true)}
+                                          className="text-xs font-bold text-emerald-600 hover:underline"
+                                       >
+                                          Click here to create it automatically
+                                       </button>
+                                    </div>
+                                 )}
+                              </div>
+                           )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -550,12 +662,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                       <label className="text-sm font-bold text-slate-700">{isPlant ? t('plantId') : t('studbookId')}</label>
+                       <label className="text-sm font-bold text-slate-700">{isPlantMode ? t('plantId') : t('studbookId')}</label>
                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-mono" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} placeholder="e.g. SB-2024-A1" required />
                     </div>
                     <div className="space-y-2">
-                       <label className="text-sm font-bold text-slate-700">{t('name')} {isPlant && <span className="text-xs text-slate-400 font-normal">(Optional for plants)</span>}</label>
-                       <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder={isPlant ? "e.g. Greenhouse Plot 4" : "e.g. Luna"} required={!isPlant} />
+                       <label className="text-sm font-bold text-slate-700">{t('name')} {isPlantMode && <span className="text-xs text-slate-400 font-normal">(Optional for plants)</span>}</label>
+                       <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder={isPlantMode ? "e.g. Greenhouse Plot 4" : "e.g. Luna"} required={!isPlantMode} />
                     </div>
                     {showSexField && (
                       <div className="space-y-2">
@@ -566,10 +678,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       </div>
                     )}
                     <div className="space-y-2">
-                       <label className="text-sm font-bold text-slate-700">{isPlant ? t('datePlanted') : t('dateOfBirth')}</label>
+                       <label className="text-sm font-bold text-slate-700">{isPlantMode ? t('datePlanted') : t('dateOfBirth')}</label>
                        <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
                     </div>
-                    {!isPlant && (
+                    {!isPlantMode && (
                       <div className="space-y-2">
                          <label className="text-sm font-bold text-slate-700">{t('weight')} (kg)</label>
                          <input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} />
@@ -578,7 +690,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     <div className="space-y-2">
                        <label className="text-sm font-bold text-slate-700">{t('acquisitionSource')}</label>
                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as AcquisitionSource})}>
-                         {(isPlant ? PLANT_SOURCES : ANIMAL_SOURCES).map(src => <option key={src} value={src}>{src}</option>)}
+                         {(isPlantMode ? PLANT_SOURCES : ANIMAL_SOURCES).map(src => <option key={src} value={src}>{src}</option>)}
                        </select>
                     </div>
                   </div>
@@ -639,7 +751,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                </div>
 
-               {!isPlant && (
+               {!isPlantMode && (
                  <div className="space-y-4">
                     <div className="flex items-center gap-2 text-purple-700 border-b border-purple-50 pb-2">
                        <Users size={20}/>
@@ -806,19 +918,72 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           </div>
           
           {selectedMapInd && (
-            <div className="absolute right-4 top-4 bottom-4 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
-              <div className="relative h-40 bg-slate-100">
-                {selectedMapInd.imageUrl ? <img src={selectedMapInd.imageUrl} className="w-full h-full object-cover" alt={selectedMapInd.name} /> : <div className="w-full h-full flex items-center justify-center text-slate-400">No Image</div>}
-                <button onClick={() => setSelectedMapInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors"><X size={16} /></button>
-              </div>
-              <div className="p-4 flex-1 overflow-y-auto">
-                <h3 className="font-bold text-slate-900">{selectedMapInd.name}</h3>
-                <p className="text-xs text-slate-500 font-mono mb-2">{selectedMapInd.studbookId}</p>
-                <p className="text-xs text-emerald-700 font-medium">{allSpecies.find(s => s.id === selectedMapInd.speciesId)?.commonName}</p>
-                <div className="mt-4 flex gap-2">
-                  <button onClick={() => handleEdit(selectedMapInd)} className="flex-1 bg-slate-100 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200">Edit</button>
-                  <Link to={`/individuals/${selectedMapInd.id}`} className="flex-1 bg-emerald-600 py-1.5 rounded-lg text-xs font-bold text-white hover:bg-emerald-700 text-center">Details</Link>
+            <div className="absolute right-4 top-4 bottom-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
+              <div className="relative h-44 bg-slate-100">
+                {(() => {
+                  const sp = allSpecies.find(s => s.id === selectedMapInd.speciesId);
+                  const displayImg = selectedMapInd.imageUrl || sp?.imageUrl;
+                  return displayImg && !displayImg.startsWith('data:image/svg+xml') ? (
+                    <img src={displayImg} className="w-full h-full object-cover" alt={selectedMapInd.name} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 flex-col gap-2">
+                       <PawPrint size={40} className="opacity-20" />
+                       <span className="text-[10px] font-bold tracking-widest uppercase">No Image</span>
+                    </div>
+                  );
+                })()}
+                <button onClick={() => setSelectedMapInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10"><X size={16} /></button>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+                  <h3 className="font-bold text-white text-lg drop-shadow-sm">{selectedMapInd.name}</h3>
+                  <p className="text-[10px] text-white/80 font-mono tracking-widest">{selectedMapInd.studbookId}</p>
                 </div>
+              </div>
+              
+              <div className="p-5 flex-1 overflow-y-auto space-y-5">
+                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
+                  <p className="font-bold text-slate-900">{allSpecies.find(s => s.id === selectedMapInd.speciesId)?.commonName}</p>
+                  <p className="text-xs text-emerald-700 italic">{allSpecies.find(s => s.id === selectedMapInd.speciesId)?.scientificName}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Users size={10}/> Sex</span>
+                    <p className="text-sm font-bold text-slate-800">{selectedMapInd.sex || 'Unknown'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Calendar size={10}/> Born / Planted</span>
+                    <p className="text-sm font-bold text-slate-800">{selectedMapInd.birthDate || 'Unknown'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
+                    <p className="text-sm font-bold text-slate-800">{selectedMapInd.weightKg ? `${selectedMapInd.weightKg} kg` : 'N/A'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
+                    <p className={`text-sm font-bold ${selectedMapInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>{selectedMapInd.isDeceased ? 'Deceased' : 'Active'}</p>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Location Context</span>
+                  <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
+                    <MapPin size={14} className="text-blue-500" />
+                    <span>{selectedMapInd.latitude?.toFixed(5)}, {selectedMapInd.longitude?.toFixed(5)}</span>
+                  </div>
+                </div>
+
+                {selectedMapInd.notes && (
+                  <div className="pt-4 border-t border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Notes</span>
+                    <p className="text-xs text-slate-600 italic leading-relaxed">"{selectedMapInd.notes}"</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
+                <button onClick={() => handleEdit(selectedMapInd)} className="flex-1 bg-white border border-slate-300 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">Edit Record</button>
+                <Link to={`/individuals/${selectedMapInd.id}`} className="flex-1 bg-emerald-600 py-2 rounded-lg text-xs font-bold text-white hover:bg-emerald-700 text-center transition-all shadow-md">View Full File</Link>
               </div>
             </div>
           )}
@@ -836,7 +1001,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                return (
                   <div key={ind.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden group hover:shadow-xl transition-all flex flex-col h-full">
                      <div className="relative h-48 bg-slate-100">
-                        {displayImg ? (
+                        {displayImg && !displayImg.startsWith('data:image/svg+xml') ? (
                           <img src={displayImg} alt={ind.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50"><PawPrint size={40} /></div>
@@ -893,7 +1058,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              return (
                 <div key={ind.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4 group hover:border-emerald-200 hover:shadow-md transition-all">
                    <div className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden">
-                      {displayImg ? <img src={displayImg} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><PawPrint size={20}/></div>}
+                      {displayImg && !displayImg.startsWith('data:image/svg+xml') ? <img src={displayImg} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><PawPrint size={20}/></div>}
                    </div>
                    <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div>

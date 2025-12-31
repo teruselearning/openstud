@@ -1,9 +1,9 @@
-
 import React, { useEffect, useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getIndividuals, getSpecies, getOrg } from '../services/storage';
 import { Individual, Species, Organization } from '../types';
-import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon } from 'lucide-react';
+// Fixed: Added PawPrint to imports
+import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon, Calendar, Weight, Info, Users, Briefcase, Archive, PawPrint } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -14,11 +14,13 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null); 
+  const userMarkerRef = useRef<any>(null);
 
   const [selectedInd, setSelectedInd] = useState<Individual | null>(null);
   const [selectedSpecies, setSelectedSpecies] = useState<Species | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
+  const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | null>(null);
 
   // 1. Initialize Map Instance (Once)
   useEffect(() => {
@@ -43,6 +45,15 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        mapInstanceRef.current = map;
 
        setTimeout(() => map.invalidateSize(), 200);
+
+       // Start watching user location
+       if (navigator.geolocation) {
+         navigator.geolocation.watchPosition(
+           (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+           (err) => console.warn("Watch failed", err),
+           { enableHighAccuracy: true }
+         );
+       }
     }
 
     return () => {
@@ -66,6 +77,21 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     const allSpecies = getSpecies();
     const currentOrg = getOrg();
 
+    // Show User Location
+    if (userCoords) {
+      const userIcon = L.divIcon({
+        className: 'user-location-marker',
+        html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+      if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);
+      userMarkerRef.current = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon, zIndexOffset: 2000 })
+        .addTo(map)
+        .bindTooltip("You are here", { direction: 'top', offset: [0, -10] });
+    }
+
+    // Show Organization Base
     if (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') {
        const orgIcon = L.divIcon({
           className: 'custom-div-icon',
@@ -79,13 +105,13 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           .bindPopup(`<b>${currentOrg.name}</b><br>Headquarters`);
     }
 
-    const mappedPlants = allInds.filter(i => 
+    const mappedInds = allInds.filter(i => 
        i.projectId === currentProjectId && 
        typeof i.latitude === 'number' && 
        typeof i.longitude === 'number'
     );
 
-    const plantIcon = L.divIcon({
+    const mappedPinIcon = L.divIcon({
        className: 'custom-div-icon',
        html: `<div style="background-color: #16a34a; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>`,
        iconSize: [14, 14],
@@ -94,24 +120,28 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
 
     const leafletMarkers: any[] = [];
 
-    mappedPlants.forEach(plant => {
+    mappedInds.forEach(plant => {
        if (typeof plant.latitude !== 'number' || typeof plant.longitude !== 'number') return;
        const sp = allSpecies.find(s => s.id === plant.speciesId);
-       const marker = L.marker([plant.latitude, plant.longitude], { icon: plantIcon });
+       const marker = L.marker([plant.latitude, plant.longitude], { icon: mappedPinIcon });
        
        if (showLabels) {
           marker.bindTooltip(sp?.commonName || plant.name, {
              permanent: true,
              direction: 'right',
-             className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
+             className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer',
+             interactive: true
           });
        }
 
-       marker.on('click', () => {
+       const handleSelect = () => {
           setSelectedInd(plant);
           setSelectedSpecies(sp || null);
           map.flyTo([plant.latitude, plant.longitude], 18, { animate: true, duration: 1.5 });
-       });
+       };
+
+       marker.on('click', handleSelect);
+       marker.on('tooltipclick', handleSelect);
        
        marker.addTo(markersLayer);
        leafletMarkers.push(marker);
@@ -123,12 +153,10 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           const bounds = group.getBounds();
           if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
        } catch (err) {
-          console.warn("FitBounds failed on Plant Map", err);
+          console.warn("FitBounds failed on Map", err);
        }
-    } else if (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') {
-       map.setView([currentOrg.latitude, currentOrg.longitude], 15);
     }
-  }, [currentProjectId, showLabels]); 
+  }, [currentProjectId, showLabels, userCoords]); 
 
   const handleLocateMe = () => {
      if (!mapInstanceRef.current) return;
@@ -179,34 +207,69 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
 
        {selectedInd && (
           <div className="absolute right-4 top-4 bottom-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
-             <div className="relative h-48 bg-slate-100">
-                {selectedInd.imageUrl ? <img src={selectedInd.imageUrl} className="w-full h-full object-cover" alt={selectedInd.name} /> : <div className="w-full h-full flex items-center justify-center text-slate-400">No Image</div>}
-                <button onClick={() => setSelectedInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors"><X size={16} /></button>
-             </div>
-             <div className="p-5 flex-1 overflow-y-auto">
-                <h3 className="text-xl font-bold text-slate-900 mb-1">{selectedInd.name}</h3>
-                <p className="text-sm text-slate-500 font-mono mb-3">{selectedInd.studbookId}</p>
-                <div className="space-y-3 text-sm">
-                   <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                      <span className="text-xs font-bold text-emerald-800 uppercase block mb-1">Species</span>
-                      <p className="font-medium text-emerald-900">{selectedSpecies?.commonName}</p>
-                      <p className="text-xs text-emerald-700 italic">{selectedSpecies?.scientificName}</p>
-                   </div>
-                   <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                         <span className="text-xs text-slate-500 block">Status</span>
-                         <span className="font-medium text-slate-900">{selectedInd.isDeceased ? 'Removed' : 'Active'}</span>
-                      </div>
-                      <div className="bg-slate-50 p-2 rounded border border-slate-100">
-                         <span className="text-xs text-slate-500 block">Planted</span>
-                         <span className="font-medium text-slate-900">{selectedInd.birthDate || 'Unknown'}</span>
-                      </div>
-                   </div>
-                   <div className="flex items-center gap-2 text-slate-500 text-xs"><MapPin size={12} />{selectedInd.latitude?.toFixed(5)}, {selectedInd.longitude?.toFixed(5)}</div>
+             <div className="relative h-44 bg-slate-100">
+                {(() => {
+                  const displayImg = selectedInd.imageUrl || selectedSpecies?.imageUrl;
+                  return displayImg && !displayImg.startsWith('data:image/svg+xml') ? (
+                    <img src={displayImg} className="w-full h-full object-cover" alt={selectedInd.name} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 flex-col gap-2">
+                       <PawPrint size={40} className="opacity-20" />
+                       <span className="text-[10px] font-bold tracking-widest uppercase">No Image</span>
+                    </div>
+                  );
+                })()}
+                <button onClick={() => setSelectedInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10"><X size={16} /></button>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+                  <h3 className="font-bold text-white text-lg drop-shadow-sm">{selectedInd.name}</h3>
+                  <p className="text-[10px] text-white/80 font-mono tracking-widest">{selectedInd.studbookId}</p>
                 </div>
              </div>
-             <div className="p-4 border-t border-slate-100 bg-slate-50">
-                <button onClick={() => navigate(`/individuals/${selectedInd.id}`)} className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"><Maximize2 size={16} /> View Full Details</button>
+             
+             <div className="p-5 flex-1 overflow-y-auto space-y-5">
+                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
+                  <p className="font-bold text-slate-900">{selectedSpecies?.commonName}</p>
+                  <p className="text-xs text-emerald-700 italic">{selectedSpecies?.scientificName}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Users size={10}/> Sex / Class</span>
+                      <p className="text-sm font-bold text-slate-800">{selectedInd.sex || 'Unknown'}</p>
+                   </div>
+                   <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Calendar size={10}/> {selectedSpecies?.type === 'Plant' ? 'Planted' : 'Born'}</span>
+                      <p className="text-sm font-bold text-slate-800">{selectedInd.birthDate || 'Unknown'}</p>
+                   </div>
+                   <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Archive size={10}/> Source</span>
+                      <p className="text-sm font-bold text-slate-800 truncate">{selectedInd.source || 'Unknown'}</p>
+                   </div>
+                   <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
+                      <p className={`text-sm font-bold ${selectedInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>{selectedInd.isDeceased ? 'Dead' : 'Active'}</p>
+                   </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Geo-Coordinates</span>
+                   <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
+                      <MapPin size={14} className="text-blue-500" />
+                      <span>{selectedInd.latitude?.toFixed(5)}, {selectedInd.longitude?.toFixed(5)}</span>
+                   </div>
+                </div>
+
+                {selectedInd.notes && (
+                  <div className="pt-4 border-t border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Notes</span>
+                    <p className="text-xs text-slate-600 italic leading-relaxed">"{selectedInd.notes}"</p>
+                  </div>
+                )}
+             </div>
+
+             <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+                <button onClick={() => navigate(`/individuals/${selectedInd.id}`)} className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2 shadow-md"><Maximize2 size={16} /> View Full File</button>
              </div>
           </div>
        )}

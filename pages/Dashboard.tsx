@@ -60,6 +60,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
     const allSpecies = getSpecies();
     const allIndividuals = getIndividuals();
     const projects = getProjects();
+    const allUsers = getUsers();
+    const currentOrg = getOrg();
+    
+    setOrg(currentOrg);
 
     const activeProject = projects.find(p => p.id === currentProjectId);
     setCurrentProject(activeProject);
@@ -67,14 +71,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
     // Filter by Project
     const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
     const projectIndividuals = allIndividuals.filter(i => i.projectId === currentProjectId);
-
-    const u = getUsers();
-    const currentOrg = getOrg();
-    setOrg(currentOrg);
+    
+    // Scope users to organization
+    const orgUsers = allUsers.filter(u => u.orgId === currentOrg.id);
 
     setSpeciesCount(projectSpecies.length);
     setIndivCount(projectIndividuals.length);
-    setUserCount(u.length); // Users are global, not per project
+    setUserCount(orgUsers.length); // Filtered to current organization
     
     // M.F.U Calculation
     const males = projectIndividuals.filter(i => i.sex === Sex.MALE && !i.isDeceased).length;
@@ -133,8 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
        { name: 'Unknown', value: unknownOriginCount, key: 'unknownOrigin' }
     ].filter(d => d.value > 0));
 
-    // 3. Age & Sex Demographics
-    // Buckets: 0-2, 3-5, 6-10, 10+
+    // 3. Age & Sex Demographics Structure
     const ageBuckets = [
        { range: '0-2', males: 0, females: 0 },
        { range: '3-5', males: 0, females: 0 },
@@ -144,7 +146,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
 
     projectIndividuals.forEach(ind => {
        if (ind.isDeceased || !ind.birthDate) return;
-       // Skip plants for age structure usually, but let's keep it generic
        const birth = new Date(ind.birthDate);
        const now = new Date();
        const age = (now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
@@ -158,7 +159,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
        else if (ind.sex === Sex.FEMALE) ageBuckets[bucketIdx].females++;
     });
     
-    // Only show if there is data
     if (projectIndividuals.some(i => !i.isDeceased && i.birthDate)) {
        setAgeData(ageBuckets);
     } else {
@@ -210,20 +210,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
     navigate('/individuals', { state: { highlightIds: [maleId, femaleId] } });
   };
 
-  // Helper to determine if we should show a chart
-  // Logic: If Demo Org ('org-1'), always show.
-  // Otherwise, hide if there is only 1 data point (100% saturation) or no data.
   const shouldShowChart = (data: any[], isAgeData: boolean = false) => {
     if (org?.id === 'org-1') return true;
-    
     if (data.length === 0) return false;
-    
     if (isAgeData) {
-       // For age data, check if more than 1 bucket has entries
        const bucketsWithData = data.filter(d => (d.males + d.females) > 0).length;
        return bucketsWithData > 1;
     }
-    
     return data.length > 1;
   };
 
@@ -257,7 +250,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
         )}
       </div>
 
-      {/* Custom Dashboard Block */}
       {org?.dashboardBlock?.enabled && (
          <div className="bg-white p-6 rounded-xl shadow-sm border border-emerald-100 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
@@ -282,9 +274,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
         <StatCard title={t('activeUsers')} value={userCount} icon={Users} color="bg-indigo-500" />
       </div>
 
-      {/* New Project-Scoped Visualizations Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         {/* Origin Chart */}
          {shouldShowChart(originData) && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('origin')}</h3>
@@ -315,7 +305,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
             </div>
          )}
 
-         {/* Demographics Chart */}
          {shouldShowChart(ageData, true) && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('ageDist')}</h3>
@@ -338,7 +327,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
          )}
       </div>
 
-      {/* Breeding Recommendations Section */}
       {showBreedingSection && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-emerald-100">
             <div className="flex items-center gap-2 mb-4">
