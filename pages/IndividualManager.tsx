@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2 } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -36,6 +36,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const markersLayerRef = useRef<any>(null);
   const [selectedMapInd, setSelectedMapInd] = useState<Individual | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [showLabels, setShowLabels] = useState(true);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,6 +49,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [locatingId, setLocatingId] = useState<string | null>(null);
   
   // Navigation State
   const [returnPath, setReturnPath] = useState<string | null>(null);
@@ -148,6 +150,16 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         });
 
         const marker = L.marker([ind.latitude, ind.longitude], { icon: customIcon });
+        
+        // Add permanent label if enabled
+        if (showLabels) {
+          marker.bindTooltip(sp?.commonName || ind.name, {
+            permanent: true,
+            direction: 'right',
+            className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
+          });
+        }
+
         marker.on('click', () => {
           setSelectedMapInd(ind);
           map.flyTo([ind.latitude, ind.longitude], 18, { animate: true, duration: 1.5 });
@@ -162,7 +174,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
       }
     }
-  }, [viewMode, currentProjectId, projectIndividuals, allSpecies]);
+  }, [viewMode, currentProjectId, projectIndividuals, allSpecies, showLabels]);
 
   const generateUniqueId = () => {
     const year = new Date().getFullYear();
@@ -248,6 +260,28 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       (error) => {
         alert("Failed to get location: " + error.message);
         setIsLocatingForm(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleQuickSetLocation = (ind: Individual) => {
+    if (!navigator.geolocation) return;
+    setLocatingId(ind.id);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const updated = allIndividuals.map(i => i.id === ind.id ? { 
+          ...i, 
+          latitude: position.coords.latitude, 
+          longitude: position.coords.longitude 
+        } : i);
+        setAllIndividuals(updated);
+        saveIndividuals(updated);
+        setLocatingId(null);
+      },
+      (err) => {
+        alert("Location acquisition failed.");
+        setLocatingId(null);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -685,9 +719,23 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       {viewMode === 'map' ? (
         <div className="h-[calc(100vh-250px)] flex flex-col relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
           <div ref={mapContainerRef} className="w-full h-full z-0" />
-          <button onClick={handleLocateMeMap} className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" title="Locate Me">
-            <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />
-          </button>
+          
+          <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-3">
+             <button 
+               onClick={() => setShowLabels(!showLabels)} 
+               className={`p-3 rounded-full shadow-lg border transition-all ${showLabels ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+               title={showLabels ? "Hide Labels" : "Show Labels"}
+             >
+               <TypeIcon size={24} />
+             </button>
+             <button 
+               onClick={handleLocateMeMap} 
+               className="bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" 
+               title="Locate Me"
+             >
+               <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />
+             </button>
+          </div>
           
           {selectedMapInd && (
             <div className="absolute right-4 top-4 bottom-4 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
@@ -713,6 +761,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              const sp = allSpecies.find(s => s.id === ind.speciesId);
              const isIndPlant = sp?.type === 'Plant';
              const displayImg = ind.imageUrl || sp?.imageUrl;
+             const isLocatingThis = locatingId === ind.id;
              
              if (viewMode === 'grid') {
                return (
@@ -724,6 +773,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50"><PawPrint size={40} /></div>
                         )}
                         <div className="absolute top-3 right-3 flex gap-2">
+                          <button 
+                            onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
+                            className={`p-2 bg-white/90 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 ${isLocatingThis ? 'text-emerald-600 animate-pulse' : 'text-slate-600 hover:text-emerald-600'}`}
+                            title="Set Current Location"
+                            disabled={isLocatingThis}
+                          >
+                            {isLocatingThis ? <Loader2 size={14} className="animate-spin" /> : <LocateFixed size={14} />}
+                          </button>
                           <button onClick={() => handleEdit(ind)} className="p-2 bg-white/90 hover:bg-white text-slate-600 hover:text-emerald-600 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><Pencil size={14} /></button>
                           <Link to={`/individuals/${ind.id}`} className="p-2 bg-emerald-600 text-white rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><ArrowRight size={14} /></Link>
                         </div>
@@ -789,6 +846,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       </div>
                    </div>
                    <div className="flex gap-2">
+                      <button 
+                         onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
+                         className={`p-2 transition-colors ${isLocatingThis ? 'text-emerald-600 animate-spin' : 'text-slate-400 hover:text-emerald-600'}`}
+                         title="Set Current Location"
+                         disabled={isLocatingThis}
+                      >
+                         {isLocatingThis ? <Loader2 size={18} /> : <LocateFixed size={18}/>}
+                      </button>
                       <button onClick={() => handleEdit(ind)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Pencil size={18}/></button>
                       <Link to={`/individuals/${ind.id}`} className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"><ArrowRight size={18}/></Link>
                    </div>

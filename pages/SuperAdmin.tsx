@@ -5,10 +5,11 @@ import { translateDictionary } from '../services/geminiService';
 import { 
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
-  Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2
+  Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
+  Building2, Briefcase, MapPin, GripVertical, Info
 } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization } from '../types';
+import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 import React from 'react';
@@ -44,6 +45,17 @@ const SuperAdmin: React.FC = () => {
   const [newLangName, setNewLangName] = useState('');
   const [isSavingLang, setIsSavingLang] = useState(false);
   const [isAutoFilling, setIsAutoFilling] = useState(false);
+
+  // New Org Creation State
+  const [showCreateOrg, setShowCreateOrg] = useState(false);
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
+  const [newOrgData, setNewOrgData] = useState({
+     orgName: '',
+     adminName: '',
+     adminEmail: '',
+     focus: 'Animals' as OrganizationFocus,
+     location: ''
+  });
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -130,6 +142,79 @@ const SuperAdmin: React.FC = () => {
       }
   };
 
+  const handleCreateOrgSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsCreatingOrg(true);
+      const token = localStorage.getItem('os_token');
+      try {
+          const response = await fetch('/api/super-admin/organizations', {
+              method: 'POST',
+              headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify(newOrgData)
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Creation failed");
+          
+          alert(`Organisation Created!\nTemporary Password for ${newOrgData.adminName}: ${data.tempPassword}`);
+          setShowCreateOrg(false);
+          setNewOrgData({ orgName: '', adminName: '', adminEmail: '', focus: 'Animals', location: '' });
+          
+          // Refresh list
+          const result = await fetch('/api/sync', { headers: { 'Authorization': `Bearer ${token}` } });
+          const syncData = await result.json();
+          if (syncData.success) {
+             setPartners(syncData.data.partners.filter((p: any) => p.id !== myOrg?.id));
+          }
+      } catch (err: any) {
+          alert("Error: " + err.message);
+      } finally {
+          setIsCreatingOrg(false);
+      }
+  };
+
+  // Feature block management
+  const handleAddFeature = () => {
+    const features = settings.landingPageConfig?.features || [];
+    const newFeature: LandingFeature = {
+      id: `f-${Date.now()}`,
+      title: 'New Feature',
+      description: 'Feature description goes here.',
+      icon: 'Shield'
+    };
+    setSettings({
+      ...settings,
+      landingPageConfig: {
+        ...settings.landingPageConfig,
+        features: [...features, newFeature]
+      }
+    });
+  };
+
+  const handleRemoveFeature = (id: string) => {
+    const features = settings.landingPageConfig?.features || [];
+    setSettings({
+      ...settings,
+      landingPageConfig: {
+        ...settings.landingPageConfig,
+        features: features.filter(f => f.id !== id)
+      }
+    });
+  };
+
+  const handleUpdateFeature = (id: string, field: keyof LandingFeature, value: string) => {
+    const features = settings.landingPageConfig?.features || [];
+    setSettings({
+      ...settings,
+      landingPageConfig: {
+        ...settings.landingPageConfig,
+        features: features.map(f => f.id === id ? { ...f, [field]: value } : f)
+      }
+    });
+  };
+
   const handleUpdateTranslation = (key: string, value: string) => {
     if (!editingLang) return;
     setEditingLang({
@@ -185,37 +270,49 @@ const SuperAdmin: React.FC = () => {
       </div>
 
       {activeTab === 'overview' && (
-         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm animate-in fade-in">
-            <table className="w-full text-left">
-               <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Organisation</th>
-                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {allOrganizations.map(org => (
-                     <tr key={org.id} className="hover:bg-slate-50 group transition-colors">
-                        <td className="px-6 py-4">
-                           <div className="font-bold text-slate-900">{org.name}</div>
-                           <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                           <div className="flex justify-end gap-2">
-                             <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-slate-100 group-hover:bg-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
-                                <LogIn size={12}/> Login As
-                             </button>
-                             {org.id !== myOrg?.id && (
-                                <button onClick={() => setOrgToDelete(org)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white p-1.5 rounded-lg transition-all" title="Permanently Delete">
-                                   <Trash2 size={14}/>
-                                </button>
-                             )}
-                           </div>
-                        </td>
+         <div className="space-y-4 animate-in fade-in">
+            <div className="flex justify-between items-center">
+               <h3 className="text-lg font-extrabold text-slate-900">Manage Organisations</h3>
+               <button onClick={() => setShowCreateOrg(true)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-100 flex items-center gap-2 transition-all">
+                  <Plus size={18}/> Create Organisation
+               </button>
+            </div>
+            
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+               <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                     <tr>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Organisation</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
                      </tr>
-                  ))}
-               </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                     {allOrganizations.map(org => (
+                        <tr key={org.id} className="hover:bg-slate-50 group transition-colors">
+                           <td className="px-6 py-4">
+                              <div className="font-bold text-slate-900 flex items-center gap-2">
+                                 {org.name}
+                                 {org.id === myOrg?.id && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Host</span>}
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
+                           </td>
+                           <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-slate-100 group-hover:bg-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
+                                   <LogIn size={12}/> Login As
+                                </button>
+                                {org.id !== myOrg?.id && (
+                                   <button onClick={() => setOrgToDelete(org)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white p-1.5 rounded-lg transition-all" title="Permanently Delete">
+                                      <Trash2 size={14}/>
+                                   </button>
+                                )}
+                              </div>
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
          </div>
       )}
 
@@ -376,7 +473,7 @@ const SuperAdmin: React.FC = () => {
                </div>
             </div>
 
-            {/* LANDING PAGE */}
+            {/* LANDING PAGE CONTENT */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
                <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
                   <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
@@ -394,7 +491,6 @@ const SuperAdmin: React.FC = () => {
                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
                         </label>
                      </div>
-                     <p className="text-[10px] text-slate-400 mt-1">Allows anyone to create a new organization from the landing page. If disabled, new organizations can only be created by an administrator.</p>
                   </div>
 
                   <div className="space-y-1">
@@ -405,12 +501,41 @@ const SuperAdmin: React.FC = () => {
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Hero Subtitle</label>
                      <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows={2} value={settings.landingPageConfig?.heroSubtitle || ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroSubtitle: e.target.value}})} />
                   </div>
-                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200">
-                     <span className="text-sm font-bold text-slate-700">Show Features Section</span>
-                     <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" checked={settings.landingPageConfig?.showFeatures !== false} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, showFeatures: e.target.checked}})} />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                     </label>
+                  
+                  {/* DYNAMIC FEATURE CARDS */}
+                  <div className="pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between mb-4">
+                       <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest flex items-center gap-2"><Sparkles size={16} className="text-amber-500" /> Feature Highlights</h4>
+                       <button onClick={handleAddFeature} className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1"><Plus size={14}/> Add Feature</button>
+                    </div>
+                    
+                    <div className="space-y-3">
+                       {(settings.landingPageConfig?.features || []).map((feature, idx) => (
+                          <div key={feature.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 group/feat">
+                             <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-mono text-slate-400">#Feature {idx + 1}</span>
+                                <button onClick={() => handleRemoveFeature(feature.id)} className="text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                   <label className="text-[9px] font-bold text-slate-400 uppercase">Title</label>
+                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" value={feature.title} onChange={e => handleUpdateFeature(feature.id, 'title', e.target.value)} />
+                                </div>
+                                <div className="space-y-1">
+                                   <label className="text-[9px] font-bold text-slate-400 uppercase">Icon (Lucide name)</label>
+                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={feature.icon} onChange={e => handleUpdateFeature(feature.id, 'icon', e.target.value)} placeholder="Shield, Sprout, Heart..." />
+                                </div>
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase">Description</label>
+                                <textarea className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" rows={2} value={feature.description} onChange={e => handleUpdateFeature(feature.id, 'description', e.target.value)} />
+                             </div>
+                          </div>
+                       ))}
+                       {(!settings.landingPageConfig?.features || settings.landingPageConfig.features.length === 0) && (
+                          <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs italic">No feature cards defined. Landing page will use defaults.</div>
+                       )}
+                    </div>
                   </div>
                </div>
             </div>
@@ -498,10 +623,105 @@ const SuperAdmin: React.FC = () => {
          </div>
       )}
 
+      {/* Form: Create Organization Modal */}
+      {showCreateOrg && (
+         <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col overflow-hidden animate-in zoom-in duration-200">
+               <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                     <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><Building2 size={24}/></div>
+                     <div>
+                        <h3 className="text-xl font-extrabold text-slate-900">New Organisation</h3>
+                        <p className="text-xs text-slate-500">Create an org and its primary admin user.</p>
+                     </div>
+                  </div>
+                  <button onClick={() => setShowCreateOrg(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+               </div>
+               
+               <form onSubmit={handleCreateOrgSubmit} className="p-8 space-y-6">
+                  <div className="space-y-4">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Org Name</label>
+                           <input 
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm font-bold"
+                              placeholder="e.g. Island Sanctuary"
+                              value={newOrgData.orgName}
+                              onChange={e => setNewOrgData({...newOrgData, orgName: e.target.value})}
+                              required
+                           />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Org Focus</label>
+                           <select 
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm font-bold"
+                              value={newOrgData.focus}
+                              onChange={e => setNewOrgData({...newOrgData, focus: e.target.value as OrganizationFocus})}
+                           >
+                              <option value="Animals">Animals</option>
+                              <option value="Plants">Plants</option>
+                           </select>
+                        </div>
+                        <div className="col-span-1 md:col-span-2 space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Location (City, Country)</label>
+                           <div className="relative">
+                              <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                              <input 
+                                 className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
+                                 placeholder="e.g. Victoria, Seychelles"
+                                 value={newOrgData.location}
+                                 onChange={e => setNewOrgData({...newOrgData, location: e.target.value})}
+                                 required
+                              />
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div className="space-y-4 pt-6 border-t border-slate-50">
+                     <h4 className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-2 tracking-widest"><UserPlus size={14} className="text-emerald-500" /> Admin User Account</h4>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Full Name</label>
+                           <input 
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
+                              placeholder="John Smith"
+                              value={newOrgData.adminName}
+                              onChange={e => setNewOrgData({...newOrgData, adminName: e.target.value})}
+                              required
+                           />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Email Address</label>
+                           <input 
+                              type="email"
+                              className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
+                              placeholder="john@island-sanctuary.org"
+                              value={newOrgData.adminEmail}
+                              onChange={e => setNewOrgData({...newOrgData, adminEmail: e.target.value})}
+                              required
+                           />
+                        </div>
+                     </div>
+                     <p className="text-[10px] text-slate-400 italic">Admin will receive an email with a temporary password to log in.</p>
+                  </div>
+
+                  <div className="flex gap-3 pt-6">
+                     <button type="button" onClick={() => setShowCreateOrg(false)} disabled={isCreatingOrg} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Cancel</button>
+                     <button type="submit" disabled={isCreatingOrg} className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-purple-200 flex items-center justify-center gap-2">
+                        {isCreatingOrg ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                        Confirm & Send Invite
+                     </button>
+                  </div>
+               </form>
+            </div>
+         </div>
+      )}
+
       {/* Org Deletion Confirmation Modal */}
       {orgToDelete && (
           <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
-             <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8 text-center animate-in zoom-in duration-200">
+             <div className="bg-white rounded-xl shadow-2xl max-md w-full p-8 text-center animate-in zoom-in duration-200">
                 <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                    <AlertTriangle size={40}/>
                 </div>

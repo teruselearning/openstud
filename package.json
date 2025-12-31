@@ -26,7 +26,8 @@
     "dotenv": "^17.2.3",
     "bcryptjs": "^3.0.3",
     "nodemailer": "^7.0.12",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "crypto": "^1.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

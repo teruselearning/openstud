@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import path from 'path';
+import crypto from 'crypto';
 
 declare const __dirname: string;
 
@@ -275,7 +276,7 @@ const getTransporter = (s: any) => {
 
 const replacePlaceholders = (text: string, data: Record<string, string>) => {
   let res = text || "";
-  Object.keys(data).forEach(key => { res = res.replace(new RegExp(`{{${key}}}`, 'g'), String(data[key])); });
+  Object.keys(data).forEach(key => { res = res.split(`{{${key}}}`).join(String(data[key])); });
   return res;
 };
 
@@ -371,6 +372,117 @@ app.post('/api/login', async (req: any, res: any) => {
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user, organization: orgs[0] });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Email Support Routes
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, subject, html } = req.body;
+    const settings = await getGlobalConfig();
+    const transporter = getTransporter(settings);
+    
+    if (!transporter) {
+        return res.status(400).json({ error: "SMTP is not configured in Super Admin settings." });
+    }
+
+    try {
+        await transporter.sendMail({
+            from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+            to,
+            subject,
+            html
+        });
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: `Mail send failed: ${e.message}` });
+    }
+});
+
+app.post('/api/email/test', authenticate, restrictToSuperAdmin, async (req: any, res: any) => {
+    const { to } = req.body;
+    const settings = await getGlobalConfig();
+    const transporter = getTransporter(settings);
+    
+    if (!transporter) {
+        return res.status(400).json({ error: "SMTP is not configured. Save settings first." });
+    }
+
+    try {
+        await transporter.sendMail({
+            from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+            to,
+            subject: "OpenStudbook SMTP Test",
+            html: `
+                <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #f8fafc;">
+                    <h2 style="color: #059669; margin-top: 0;">SMTP Test Successful!</h2>
+                    <p style="color: #475569; font-size: 16px;">This confirms that OpenStudbook can send automated notifications using your current configuration.</p>
+                    <div style="margin-top: 20px; padding: 12px; background-color: #ffffff; border-radius: 6px; font-size: 12px; color: #94a3b8;">
+                        Sent at: ${new Date().toLocaleString()}
+                    </div>
+                </div>
+            `
+        });
+        res.json({ success: true, message: "Test email sent." });
+    } catch (e: any) {
+        res.status(500).json({ error: `SMTP Connection Failed: ${e.message}` });
+    }
+});
+
+// Super Admin: Create Organization & Admin
+app.post('/api/super-admin/organizations', authenticate, restrictToSuperAdmin, async (req: any, res: any) => {
+    const { orgName, adminName, adminEmail, focus, location } = req.body;
+    const cleanEmail = adminEmail.toLowerCase().trim();
+    const db = getDb();
+
+    try {
+        const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
+        if (existing.length > 0) return res.status(400).json({ error: "Email already registered" });
+
+        const orgId = `org-${Date.now()}`;
+        const userId = `u-${Date.now()}`;
+        const projectId = `p-default-${Date.now()}`;
+        const tempPassword = crypto.randomBytes(6).toString('hex'); // Simple 12-char hex password
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+        await db.execute(`
+           INSERT INTO organizations (id, name, focus, location, founded_year) 
+           VALUES (?, ?, ?, ?, ?)
+        `, [orgId, orgName, focus, location || 'Unknown', new Date().getFullYear()]);
+        
+        await db.execute(`
+           INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) 
+           VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')
+        `, [userId, orgId, adminName, cleanEmail, hashedPassword]);
+
+        await db.execute(`
+           INSERT INTO projects (id, org_id, name, description) 
+           VALUES (?, ?, 'Main Collection', 'Initial organization project')
+        `, [projectId, orgId]);
+
+        // Send Welcome Email
+        const settings = await getGlobalConfig();
+        const transporter = getTransporter(settings);
+        if (transporter) {
+            const template = settings.emailTemplates?.invite;
+            const subject = (template?.enabled && template.subject) 
+              ? replacePlaceholders(template.subject, { orgName, userName: adminName })
+              : `Welcome to ${orgName} on OpenStudbook`;
+            
+            const bodyHtml = (template?.enabled && template.bodyHtml)
+              ? replacePlaceholders(template.bodyHtml, { orgName, userName: adminName, message: `An account has been created for you. Your temporary password is: <strong>${tempPassword}</strong><br><br>Please log in and change your password immediately.` })
+              : `<p>Hello ${adminName},</p><p>An administrator account for <strong>${orgName}</strong> has been created for you.</p><p>Your temporary password is: <strong>${tempPassword}</strong></p><p>Please log in and change your password as soon as possible.</p>`;
+
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+                to: cleanEmail,
+                subject,
+                html: bodyHtml
+            });
+        }
+
+        res.json({ success: true, orgId, userId, tempPassword });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // Permanent delete endpoint for Super Admin
