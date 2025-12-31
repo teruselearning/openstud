@@ -205,33 +205,48 @@ const App: React.FC = () => {
 
   // Initial setup: Get stored data and fetch public config
   useEffect(() => {
-    const storedLangs = getLanguages();
-    setLanguages(storedLangs);
-    const session = getSession();
-    if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
-    else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
+    const initializeApp = async () => {
+       // 1. Initialize High-Capacity Storage (IndexedDB)
+       await initHighCapacityStorage();
 
-    fetchPublicConfig().then(res => {
-       if (res.success) {
-          if (res.settings) {
-             const currentLocal = getSystemSettings();
-             const merged = {
-                ...currentLocal,
-                ...res.settings,
-                landingPageConfig: {
-                   ...currentLocal.landingPageConfig,
-                   ...(res.settings.landingPageConfig || {})
-                }
-             };
-             saveSystemSettings(merged, true); 
-             setSystemSettings(merged);
+       // 2. Setup Languages
+       const storedLangs = getLanguages();
+       setLanguages(storedLangs);
+       
+       const session = getSession();
+       if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
+       else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
+
+       // 3. Fetch public configuration
+       try {
+          const res = await fetchPublicConfig();
+          if (res.success) {
+             if (res.settings) {
+                const currentLocal = getSystemSettings();
+                const merged = {
+                   ...currentLocal,
+                   ...res.settings,
+                   landingPageConfig: {
+                      ...currentLocal.landingPageConfig,
+                      ...(res.settings.landingPageConfig || {})
+                   }
+                };
+                saveSystemSettings(merged, true); 
+                setSystemSettings(merged);
+             }
+             if (res.languages) {
+                saveLanguages(res.languages, true);
+                setLanguages(res.languages);
+             }
           }
-          if (res.languages) {
-             saveLanguages(res.languages, true);
-             setLanguages(res.languages);
-          }
-       }
-    });
+       } catch (e) { console.warn("Public config failed."); }
+
+       // 4. Load session data if it exists
+       if (session) await loadData(session);
+       else setIsLoading(false);
+    };
+
+    initializeApp();
   }, []);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type });
@@ -331,8 +346,9 @@ const App: React.FC = () => {
               if (data.users) saveUsers(data.users, true);
               if (data.species) saveSpecies(data.species, true);
               if (data.individuals) saveIndividuals(data.individuals, true);
-              if (data.breeding_events) saveBreedingEvents(data.breeding_events, true);
-              if (data.breeding_loans) saveBreedingLoans(data.breeding_loans, true);
+              // Fix: Corrected data property names to match camelCase keys in fetchRemoteData response
+              if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
+              if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
               if (data.partnerships) savePartnerships(data.partnerships, true);
               if (data.partners) saveNetworkPartners(data.partners); 
            }

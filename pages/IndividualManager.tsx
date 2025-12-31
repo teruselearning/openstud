@@ -327,8 +327,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     if (file) {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const compressed = await compressImage(reader.result as string);
-        setFormData(prev => ({ ...prev, imageUrl: compressed }));
+        try {
+           const compressed = await compressImage(reader.result as string);
+           setFormData(prev => ({ ...prev, imageUrl: compressed }));
+        } catch (err) {
+           console.error("Compression failed:", err);
+           setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
+        }
       };
       reader.readAsDataURL(file);
     }

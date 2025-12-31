@@ -3,6 +3,7 @@ import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization } from './syncService';
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
+import { localDb } from './localDb';
 
 // Simplified API Base URL - handled by Vite Proxy
 const API_BASE_URL = '';
@@ -32,6 +33,34 @@ const KEYS = {
   BACKUP: `${STORAGE_PREFIX}backup`
 };
 
+// In-Memory Cache for heavy collections to maintain synchronous performance
+let individualsCache: Individual[] = [];
+let speciesCache: Species[] = [];
+let isLoaded = false;
+
+/**
+ * Initializes high-capacity storage. Must be called on app start.
+ */
+export const initHighCapacityStorage = async () => {
+  if (isLoaded) return;
+  try {
+    const [inds, specs] = await Promise.all([
+      localDb.getAll<Individual>('individuals'),
+      localDb.getAll<Species>('species')
+    ]);
+    individualsCache = inds;
+    speciesCache = specs;
+    isLoaded = true;
+    console.log(`OpenStudbook Storage: Loaded ${inds.length} individuals and ${specs.length} species from IndexedDB.`);
+  } catch (err) {
+    console.error("Failed to initialize IndexedDB storage:", err);
+    // Fallback to empty if DB fails
+    individualsCache = [];
+    speciesCache = [];
+    isLoaded = true;
+  }
+};
+
 const get = <T>(key: string, defaultVal: T): T => {
   if (typeof window === 'undefined') return defaultVal;
   const item = localStorage.getItem(key);
@@ -48,41 +77,32 @@ const get = <T>(key: string, defaultVal: T): T => {
 
 const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') {
+    // Avoid storing giant collections in localStorage
+    if (key === KEYS.INDIVIDUALS || key === KEYS.SPECIES) {
+       console.warn(`Attempted to save giant collection ${key} to localStorage. Redirecting to IndexedDB.`);
+       return;
+    }
+
     const stringified = JSON.stringify(val);
     try {
       localStorage.setItem(key, stringified);
     } catch (e) {
       if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
          console.warn(`CRITICAL: Storage full. Attempting emergency purge of non-essential data.`);
-         
-         // Level 1: Clear obvious cache keys
          localStorage.removeItem(KEYS.BACKUP);
          localStorage.removeItem(KEYS.NOTIFICATIONS);
-         localStorage.removeItem(KEYS.PARTNERS); // Can be re-fetched
+         localStorage.removeItem(KEYS.PARTNERS); 
 
          try {
             localStorage.setItem(key, stringified);
-            return;
          } catch (e2) {
-            // Level 2: Purge breeding records and loans (they are synced to DB)
-            console.warn(`Purge Level 2: Clearing local breeding data.`);
-            localStorage.removeItem(KEYS.BREEDING);
-            localStorage.removeItem(KEYS.BREEDING_LOANS);
-            
-            try {
-               localStorage.setItem(key, stringified);
-            } catch (e3) {
-               console.error("CRITICAL: Storage remained full even after purge. This organizational record is too large for local browser storage. Please clear your history images or genetic sequences.", e3);
-            }
+            console.error("CRITICAL: Storage remained full even after purge.", e2);
          }
       }
     }
   }
 };
 
-/**
- * Emergency utility for the Super Admin to resolve quota issues for users
- */
 export const clearLocalCache = () => {
     const essentialKeys = [KEYS.SESSION, KEYS.TOKEN, KEYS.ORG, KEYS.CURRENT_PROJECT];
     const allKeys = Object.keys(localStorage);
@@ -91,6 +111,11 @@ export const clearLocalCache = () => {
             localStorage.removeItem(k);
         }
     });
+    // Also clear IndexedDB
+    individualsCache = [];
+    speciesCache = [];
+    localDb.saveAll('individuals', []);
+    localDb.saveAll('species', []);
     window.location.reload();
 };
 
@@ -245,15 +270,17 @@ export const saveUsers = (u: User[], skipSync = false) => {
   if (!skipSync) syncPushUsers(u).catch(() => {});
 };
 
-export const getSpecies = (): Species[] => get(KEYS.SPECIES, []);
+export const getSpecies = (): Species[] => speciesCache;
 export const saveSpecies = (s: Species[], skipSync = false) => {
-  set(KEYS.SPECIES, s);
+  speciesCache = s;
+  localDb.saveAll('species', s).catch(err => console.error("Species DB Save Failed:", err));
   if (!skipSync) syncPushSpecies(s).catch(() => {});
 };
 
-export const getIndividuals = (): Individual[] => get(KEYS.INDIVIDUALS, []);
+export const getIndividuals = (): Individual[] => individualsCache;
 export const saveIndividuals = (i: Individual[], skipSync = false) => {
-  set(KEYS.INDIVIDUALS, i);
+  individualsCache = i;
+  localDb.saveAll('individuals', i).catch(err => console.error("Individuals DB Save Failed:", err));
   if (!skipSync) syncPushIndividuals(i).catch(() => {});
 };
 
