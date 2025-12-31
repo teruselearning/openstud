@@ -35,6 +35,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
   const userMarkerRef = useRef<any>(null);
+  const hasInitialFit = useRef<boolean>(false);
   const [selectedMapInd, setSelectedMapInd] = useState<Individual | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
@@ -150,7 +151,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const projectSpecies = allSpecies.filter(s => s.id && s.projectId === currentProjectId);
   const hasMappedIndividuals = projectIndividuals.some(i => i.latitude !== undefined && i.longitude !== undefined);
 
-  // Map Initialization logic
+  // 1. Map View Component Lifecycle & Initial Load
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
       const currentOrg = getOrg();
@@ -160,7 +161,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
       const map = L.map(mapContainerRef.current, { 
         zoomControl: false,
-        maxZoom: 22 // Set maxZoom to 22 on the map instance
+        maxZoom: 22
       }).setView([initialLat, initialLng], initialZoom);
       
       L.control.zoom({ position: 'topright' }).addTo(map);
@@ -176,25 +177,37 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
       setTimeout(() => map.invalidateSize(), 200);
     }
+    
+    // Reset initial fit flag if we switch project
+    hasInitialFit.current = false;
+  }, [viewMode, currentProjectId]);
 
-    if (viewMode === 'map' && mapInstanceRef.current && markersLayerRef.current) {
+  // 2. Separate User Marker Update (Prevents Zoom Resets)
+  useEffect(() => {
+    if (viewMode === 'map' && mapInstanceRef.current && userCoords) {
       const map = mapInstanceRef.current;
-      const markersLayer = markersLayerRef.current;
-      markersLayer.clearLayers();
-
-      // Show User Location Marker
-      if (userCoords) {
-        const userIcon = L.divIcon({
-          className: 'user-location-marker',
-          html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9]
-        });
-        if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);
+      const userIcon = L.divIcon({
+        className: 'user-location-marker',
+        html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+      if (userMarkerRef.current) {
+        userMarkerRef.current.setLatLng([userCoords.lat, userCoords.lng]);
+      } else {
         userMarkerRef.current = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon, zIndexOffset: 2000 })
           .addTo(map)
           .bindTooltip("You are here", { direction: 'top', offset: [0, -10] });
       }
+    }
+  }, [viewMode, userCoords]);
+
+  // 3. Update Markers and Fit Bounds once
+  useEffect(() => {
+    if (viewMode === 'map' && mapInstanceRef.current && markersLayerRef.current) {
+      const map = mapInstanceRef.current;
+      const markersLayer = markersLayerRef.current;
+      markersLayer.clearLayers();
 
       const mappedInds = projectIndividuals.filter(i => typeof i.latitude === 'number' && typeof i.longitude === 'number');
       const leafletMarkers: any[] = [];
@@ -211,13 +224,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
         const marker = L.marker([ind.latitude, ind.longitude], { icon: customIcon });
         
-        // Add permanent label if enabled
         if (showLabels) {
           marker.bindTooltip(sp?.commonName || ind.name, {
             permanent: true,
             direction: 'right',
             className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer',
-            interactive: true // Allow label clicking
+            interactive: true
           });
         }
 
@@ -227,20 +239,21 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         };
 
         marker.on('click', handleSelect);
-        // Tooltip clicks also trigger the selection
         marker.on('tooltipclick', handleSelect);
-
         marker.addTo(markersLayer);
         leafletMarkers.push(marker);
       });
 
-      if (leafletMarkers.length > 0) {
+      if (leafletMarkers.length > 0 && !hasInitialFit.current) {
         const group = L.featureGroup(leafletMarkers);
         const bounds = group.getBounds();
-        if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+        if (bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.2));
+          hasInitialFit.current = true;
+        }
       }
     }
-  }, [viewMode, currentProjectId, projectIndividuals, allSpecies, showLabels, userCoords]);
+  }, [viewMode, projectIndividuals, allSpecies, showLabels]);
 
   // Picker Map Initialization
   useEffect(() => {
@@ -395,17 +408,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   };
 
   const handleLocateMeMap = () => {
-    if (!mapInstanceRef.current || !navigator.geolocation) return;
+    if (!mapInstanceRef.current || !userCoords) return;
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const map = mapInstanceRef.current;
-      map.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { animate: true, duration: 1.5 });
-      L.popup().setLatLng([pos.coords.latitude, pos.coords.longitude]).setContent("📍 You are here").openOn(map);
-      setIsLocating(false);
-    }, (err) => {
-      alert("Could not retrieve location.");
-      setIsLocating(false);
-    });
+    mapInstanceRef.current.flyTo([userCoords.lat, userCoords.lng], 16, { animate: true, duration: 1.5 });
+    setIsLocating(false);
   };
 
   const handleEdit = (ind: Individual) => {
@@ -524,9 +530,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     return 0;
   });
 
-  const selectedSpecies = allSpecies.find(s => s.id === formData.speciesId);
-  const isPlantMode = isAutoSpecies ? newSpeciesType === 'Plant' : selectedSpecies?.type === 'Plant';
-  const showSexField = !isPlantMode || (isPlantMode && (isAutoSpecies ? true : selectedSpecies?.plantClassification === 'Dioecious'));
+  const selectedSpeciesObject = allSpecies.find(s => s.id === formData.speciesId);
+  const isPlantMode = isAutoSpecies ? newSpeciesType === 'Plant' : selectedSpeciesObject?.type === 'Plant';
+  const showSexField = !isPlantMode || (isPlantMode && (isAutoSpecies ? true : selectedSpeciesObject?.plantClassification === 'Dioecious'));
 
   const eligibleSires = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.sex === Sex.MALE && i.id !== editingId);
   const eligibleDams = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.sex === Sex.FEMALE && i.id !== editingId);
@@ -924,7 +930,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              </button>
              <button 
                onClick={handleLocateMeMap} 
-               className="bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" 
+               disabled={!userCoords}
+               className={`bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200 ${!userCoords ? 'opacity-50' : ''}`}
                title="Locate Me"
              >
                <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />

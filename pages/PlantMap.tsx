@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getIndividuals, getSpecies, getOrg } from '../services/storage';
 import { Individual, Species, Organization } from '../types';
-// Fixed: Added PawPrint to imports
 import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon, Calendar, Weight, Info, Users, Briefcase, Archive, PawPrint } from 'lucide-react';
 import { LanguageContext } from '../App';
 
@@ -15,6 +14,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null); 
   const userMarkerRef = useRef<any>(null);
+  const hasInitialFit = useRef<boolean>(false);
 
   const [selectedInd, setSelectedInd] = useState<Individual | null>(null);
   const [selectedSpecies, setSelectedSpecies] = useState<Species | null>(null);
@@ -32,14 +32,14 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
 
        const map = L.map(mapContainerRef.current, {
           zoomControl: false,
-          maxZoom: 22 // Increased from 20 to 22
+          maxZoom: 22
        }).setView([initialLat, initialLng], initialZoom);
        
        L.control.zoom({ position: 'topright' }).addTo(map);
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors',
-          maxZoom: 22, // Allow map to request zoom 22
-          maxNativeZoom: 19 // Tiles only exist natively up to 19, so stretched for 22
+          maxZoom: 22,
+          maxNativeZoom: 19
        }).addTo(map);
 
        const markersLayer = L.layerGroup().addTo(map);
@@ -67,7 +67,28 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     };
   }, []);
 
-  // 2. Update Markers when Project, Data, or Label Setting Changes
+  // 2. Separate User Marker Effect (No zooming/panning here)
+  useEffect(() => {
+    if (!mapInstanceRef.current || !userCoords) return;
+    const map = mapInstanceRef.current;
+
+    const userIcon = L.divIcon({
+      className: 'user-location-marker',
+      html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng([userCoords.lat, userCoords.lng]);
+    } else {
+      userMarkerRef.current = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon, zIndexOffset: 2000 })
+        .addTo(map)
+        .bindTooltip("You are here", { direction: 'top', offset: [0, -10] });
+    }
+  }, [userCoords]);
+
+  // 3. Update Data Markers
   useEffect(() => {
     if (!mapInstanceRef.current || !markersLayerRef.current) return;
 
@@ -78,20 +99,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     const allInds = getIndividuals();
     const allSpecies = getSpecies();
     const currentOrg = getOrg();
-
-    // Show User Location
-    if (userCoords) {
-      const userIcon = L.divIcon({
-        className: 'user-location-marker',
-        html: `<div style="background-color: #3b82f6; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);"></div>`,
-        iconSize: [18, 18],
-        iconAnchor: [9, 9]
-      });
-      if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);
-      userMarkerRef.current = L.marker([userCoords.lat, userCoords.lng], { icon: userIcon, zIndexOffset: 2000 })
-        .addTo(map)
-        .bindTooltip("You are here", { direction: 'top', offset: [0, -10] });
-    }
 
     // Show Organization Base
     if (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') {
@@ -139,7 +146,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        const handleSelect = () => {
           setSelectedInd(plant);
           setSelectedSpecies(sp || null);
-          map.flyTo([plant.latitude, plant.longitude], 19, { animate: true, duration: 1.5 }); // flyTo slightly deeper zoom
+          map.flyTo([plant.latitude, plant.longitude], 19, { animate: true, duration: 1.5 });
        };
 
        marker.on('click', handleSelect);
@@ -149,34 +156,26 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        leafletMarkers.push(marker);
     });
 
-    if (leafletMarkers.length > 0) {
+    // Fit bounds only once on initial data load
+    if (leafletMarkers.length > 0 && !hasInitialFit.current) {
        try {
           const group = L.featureGroup(leafletMarkers);
           const bounds = group.getBounds();
-          if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+          if (bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.2));
+            hasInitialFit.current = true;
+          }
        } catch (err) {
           console.warn("FitBounds failed on Map", err);
        }
     }
-  }, [currentProjectId, showLabels, userCoords]); 
+  }, [currentProjectId, showLabels]); 
 
   const handleLocateMe = () => {
-     if (!mapInstanceRef.current) return;
+     if (!mapInstanceRef.current || !userCoords) return;
      setIsLocating(true);
-     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((pos) => {
-           const map = mapInstanceRef.current;
-           map.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { animate: true, duration: 1.5 });
-           L.popup().setLatLng([pos.coords.latitude, pos.coords.longitude]).setContent("📍 You are here").openOn(map);
-           setIsLocating(false);
-        }, (err) => {
-           alert("Could not retrieve location.");
-           setIsLocating(false);
-        });
-     } else {
-        alert("Geolocation not supported.");
-        setIsLocating(false);
-     }
+     mapInstanceRef.current.flyTo([userCoords.lat, userCoords.lng], 16, { animate: true, duration: 1.5 });
+     setIsLocating(false);
   };
 
   return (
@@ -200,7 +199,8 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           </button>
           <button 
              onClick={handleLocateMe}
-             className="bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200"
+             disabled={!userCoords}
+             className={`bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200 ${!userCoords ? 'opacity-50 cursor-not-allowed' : ''}`}
              title="Locate Me"
           >
              <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />

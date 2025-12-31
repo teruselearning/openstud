@@ -19,6 +19,8 @@ const IndividualDetail: React.FC = () => {
   // Map state for plants
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<any>(null);
+  const userMarkerRef = useRef<any>(null);
+  const hasInitialFit = useRef<boolean>(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
 
   // Modals
@@ -109,17 +111,16 @@ const IndividualDetail: React.FC = () => {
     }
   }, [species]);
 
+  // 1. Map Initialization and Marker Setup
   useEffect(() => {
     if (species?.type !== 'Plant' || !individual?.latitude || !individual?.longitude || !mapRef.current) return;
 
     if (!leafletMap.current) {
-      // Set maxZoom to 22 on the map instance
       const map = L.map(mapRef.current, {
         maxZoom: 22
-      }).setView([individual.latitude, individual.longitude], 15);
+      }).setView([individual.latitude, individual.longitude], 18);
       leafletMap.current = map;
 
-      // Set maxZoom to 22 and maxNativeZoom to 19 for OpenStreetMap tiles
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 22,
@@ -128,8 +129,10 @@ const IndividualDetail: React.FC = () => {
     }
 
     const map = leafletMap.current;
+    
+    // Clear only static markers
     map.eachLayer((layer: any) => {
-      if (layer instanceof L.Marker) map.removeLayer(layer);
+      if (layer instanceof L.Marker && layer !== userMarkerRef.current) map.removeLayer(layer);
     });
 
     const plantIcon = L.divIcon({
@@ -143,28 +146,40 @@ const IndividualDetail: React.FC = () => {
       .addTo(map)
       .bindPopup(`<b>${individual.name}</b><br>Plant Location`);
 
-    if (userLocation) {
-      const userIcon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div style="background-color: #2563eb; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3);"></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
-      });
+    // Perform initial centering only once
+    if (!hasInitialFit.current) {
+        map.setView([individual.latitude, individual.longitude], 18);
+        hasInitialFit.current = true;
+    }
+    
+    setTimeout(() => map.invalidateSize(), 200);
+  }, [individual, species]);
 
-      L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
+  // 2. User Location Updates (No automatic zoom/center changes here)
+  useEffect(() => {
+    if (!leafletMap.current || !userLocation) return;
+    const map = leafletMap.current;
+
+    const userIcon = L.divIcon({
+      className: 'custom-div-icon',
+      html: `<div style="background-color: #2563eb; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3);"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng([userLocation.lat, userLocation.lng]);
+    } else {
+      userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], { icon: userIcon, zIndexOffset: 1000 })
         .addTo(map)
         .bindPopup("You are here");
-
-      const bounds = L.latLngBounds([
-        [individual.latitude, individual.longitude],
-        [userLocation.lat, userLocation.lng]
-      ]);
-      map.fitBounds(bounds.pad(0.2));
-    } else {
-      map.setView([individual.latitude, individual.longitude], 15);
     }
-    setTimeout(() => map.invalidateSize(), 200);
-  }, [individual, userLocation, species]);
+  }, [userLocation]);
+
+  const handleLocateMe = () => {
+    if (!leafletMap.current || !userLocation) return;
+    leafletMap.current.flyTo([userLocation.lat, userLocation.lng], 18);
+  };
 
   const saveUpdate = (updatedInd: Individual) => {
     const inds = getIndividuals();
@@ -397,7 +412,10 @@ const IndividualDetail: React.FC = () => {
           {isPlant && individual.latitude && individual.longitude && (
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                <div className="flex items-center gap-2 mb-3 text-slate-900 font-bold text-sm"><Navigation size={16} className="text-blue-600" /><span>Live Tracking</span></div>
-               <div className="h-48 w-full rounded-lg border border-slate-200 overflow-hidden relative z-0"><div ref={mapRef} className="h-full w-full"></div>{!userLocation && <div className="absolute bottom-2 left-2 bg-white/90 px-2 py-1 text-[10px] rounded shadow z-[1000] text-slate-500">Locating you...</div>}</div>
+               <div className="h-48 w-full rounded-lg border border-slate-200 overflow-hidden relative z-0 flex flex-col gap-2">
+                  <div ref={mapRef} className="flex-1 w-full rounded shadow-inner"></div>
+                  <button onClick={handleLocateMe} className="bg-white border border-slate-200 rounded p-1 text-[10px] font-bold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-1"><Navigation size={10}/> Center My Location</button>
+               </div>
                <div className="mt-2 text-xs text-slate-500 flex items-center gap-4"><div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-600"></div> Plant</div><div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-600"></div> You</div></div>
             </div>
           )}
