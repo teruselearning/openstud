@@ -158,9 +158,17 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       const initialLng = (typeof currentOrg.longitude === 'number') ? currentOrg.longitude : 0;
       const initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
 
-      const map = L.map(mapContainerRef.current, { zoomControl: false }).setView([initialLat, initialLng], initialZoom);
+      const map = L.map(mapContainerRef.current, { 
+        zoomControl: false,
+        maxZoom: 22 // Set maxZoom to 22 on the map instance
+      }).setView([initialLat, initialLng], initialZoom);
+      
       L.control.zoom({ position: 'topright' }).addTo(map);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 22,
+        maxNativeZoom: 19
+      }).addTo(map);
       
       const markersLayer = L.layerGroup().addTo(map);
       markersLayerRef.current = markersLayer;
@@ -240,8 +248,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
        const initialLat = formData.latitude || org?.latitude || 0;
        const initialLng = formData.longitude || org?.longitude || 0;
        
-       const map = L.map(mapPickerRef.current).setView([initialLat, initialLng], 15);
-       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
+       const map = L.map(mapPickerRef.current, {
+         maxZoom: 22
+       }).setView([initialLat, initialLng], 15);
+       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+         attribution: '© OSM',
+         maxZoom: 22,
+         maxNativeZoom: 19
+       }).addTo(map);
        
        const marker = L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
        pickerMarkerRef.current = marker;

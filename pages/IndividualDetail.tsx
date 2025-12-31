@@ -113,16 +113,16 @@ const IndividualDetail: React.FC = () => {
     if (species?.type !== 'Plant' || !individual?.latitude || !individual?.longitude || !mapRef.current) return;
 
     if (!leafletMap.current) {
-      // Set maxZoom to 20 on the map instance
+      // Set maxZoom to 22 on the map instance
       const map = L.map(mapRef.current, {
-        maxZoom: 20
+        maxZoom: 22
       }).setView([individual.latitude, individual.longitude], 15);
       leafletMap.current = map;
 
-      // Set maxZoom to 20 and maxNativeZoom to 19 for OpenStreetMap tiles
+      // Set maxZoom to 22 and maxNativeZoom to 19 for OpenStreetMap tiles
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 20,
+        maxZoom: 22,
         maxNativeZoom: 19
       }).addTo(map);
     }

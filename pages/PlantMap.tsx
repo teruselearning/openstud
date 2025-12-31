@@ -32,14 +32,14 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
 
        const map = L.map(mapContainerRef.current, {
           zoomControl: false,
-          maxZoom: 20 // Set maxZoom to 20 on the map instance
+          maxZoom: 22 // Increased from 20 to 22
        }).setView([initialLat, initialLng], initialZoom);
        
        L.control.zoom({ position: 'topright' }).addTo(map);
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors',
-          maxZoom: 20, // Allow map to request zoom 20
-          maxNativeZoom: 19 // Tiles only exist natively up to 19, so stretched for 20
+          maxZoom: 22, // Allow map to request zoom 22
+          maxNativeZoom: 19 // Tiles only exist natively up to 19, so stretched for 22
        }).addTo(map);
 
        const markersLayer = L.layerGroup().addTo(map);
