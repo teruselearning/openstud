@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
@@ -275,38 +274,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                         </button>
                      </div>
                   </div>
-
-                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-3">
-                     <h4 className="text-sm font-bold text-blue-900 flex items-center gap-2"><Info size={16}/> Range Status</h4>
-                     <div className="space-y-3">
-                        <div>
-                           <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">In {org?.location || 'Country'}</label>
-                           <select 
-                              className="w-full p-1.5 border border-blue-200 rounded text-xs bg-white text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
-                              value={formData.nativeStatusCountry}
-                              onChange={e => setFormData({...formData, nativeStatusCountry: e.target.value as NativeStatus})}
-                           >
-                              <option value="Unknown">Unknown</option>
-                              <option value="Native">Native</option>
-                              <option value="Introduced">Introduced</option>
-                              <option value="Invasive">Invasive</option>
-                           </select>
-                        </div>
-                        <div>
-                           <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">Local Region Status</label>
-                           <select 
-                              className="w-full p-1.5 border border-blue-200 rounded text-xs bg-white text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
-                              value={formData.nativeStatusLocal}
-                              onChange={e => setFormData({...formData, nativeStatusLocal: e.target.value as NativeStatus})}
-                           >
-                              <option value="Unknown">Unknown</option>
-                              <option value="Native">Native</option>
-                              <option value="Introduced">Introduced</option>
-                              <option value="Invasive">Invasive</option>
-                           </select>
-                        </div>
-                     </div>
-                  </div>
                </div>
 
                <div className="md:col-span-8 space-y-6">
@@ -387,6 +354,41 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                            </select>
                         </div>
                      </div>
+                  </div>
+
+                  {/* Range Status moved to bottom of content column for logical flow, especially on mobile */}
+                  <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-3">
+                      <h4 className="text-sm font-bold text-blue-900 flex items-center gap-2"><Info size={16}/> Range Status</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">In {org?.location || 'Country'}</label>
+                            <select 
+                                className="w-full p-2 border border-blue-200 rounded text-sm bg-white text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
+                                value={formData.nativeStatusCountry}
+                                onChange={e => setFormData({...formData, nativeStatusCountry: e.target.value as NativeStatus})}
+                            >
+                                <option value="Unknown">Unknown</option>
+                                <option value="Native">Native</option>
+                                <option value="Introduced">Introduced</option>
+                                <option value="Invasive">Invasive</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">Local Region Status</label>
+                            <select 
+                                className="w-full p-2 border border-blue-200 rounded text-sm bg-white text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
+                                value={formData.nativeStatusLocal}
+                                onChange={e => setFormData({...formData, nativeStatusLocal: e.target.value as NativeStatus})}
+                            >
+                                <option value="Unknown">Unknown</option>
+                                <option value="Native">Native</option>
+                                <option value="Introduced">Introduced</option>
+                                <option value="Invasive">Invasive</option>
+                            </select>
+                          </div>
+                      </div>
+                    </div>
                   </div>
                </div>
             </div>
