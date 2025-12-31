@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
+import { compressImage } from '../services/imageUtils';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
 import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
@@ -325,7 +326,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result as string);
+        setFormData(prev => ({ ...prev, imageUrl: compressed }));
+      };
       reader.readAsDataURL(file);
     }
   };
