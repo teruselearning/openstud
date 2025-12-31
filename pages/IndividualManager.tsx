@@ -235,7 +235,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
         const handleSelect = () => {
           setSelectedMapInd(ind);
-          map.flyTo([ind.latitude, ind.longitude], 18, { animate: true, duration: 1.5 });
+          map.flyTo([ind.latitude, ind.longitude], 20, { animate: true, duration: 1.5 });
         };
 
         marker.on('click', handleSelect);

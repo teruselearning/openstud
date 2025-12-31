@@ -146,7 +146,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        const handleSelect = () => {
           setSelectedInd(plant);
           setSelectedSpecies(sp || null);
-          map.flyTo([plant.latitude, plant.longitude], 19, { animate: true, duration: 1.5 });
+          map.flyTo([plant.latitude, plant.longitude], 20, { animate: true, duration: 1.5 });
        };
 
        marker.on('click', handleSelect);
@@ -174,7 +174,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
   const handleLocateMe = () => {
      if (!mapInstanceRef.current || !userCoords) return;
      setIsLocating(true);
-     mapInstanceRef.current.flyTo([userCoords.lat, userCoords.lng], 16, { animate: true, duration: 1.5 });
+     mapInstanceRef.current.flyTo([userCoords.lat, userCoords.lng], 19, { animate: true, duration: 1.5 });
      setIsLocating(false);
   };
 

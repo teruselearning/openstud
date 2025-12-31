@@ -130,7 +130,7 @@ const IndividualDetail: React.FC = () => {
 
     const map = leafletMap.current;
     
-    // Clear only static markers
+    // Clear only static markers (keep userMarkerRef.current if it exists)
     map.eachLayer((layer: any) => {
       if (layer instanceof L.Marker && layer !== userMarkerRef.current) map.removeLayer(layer);
     });
@@ -148,14 +148,22 @@ const IndividualDetail: React.FC = () => {
 
     // Perform initial centering only once
     if (!hasInitialFit.current) {
-        map.setView([individual.latitude, individual.longitude], 18);
+        if (userLocation) {
+          const bounds = L.latLngBounds([
+            [individual.latitude, individual.longitude],
+            [userLocation.lat, userLocation.lng]
+          ]);
+          map.fitBounds(bounds.pad(0.3));
+        } else {
+          map.setView([individual.latitude, individual.longitude], 18);
+        }
         hasInitialFit.current = true;
     }
     
     setTimeout(() => map.invalidateSize(), 200);
-  }, [individual, species]);
+  }, [individual, species]); // REMOVED userLocation from here to stop auto-zooming every update
 
-  // 2. User Location Updates (No automatic zoom/center changes here)
+  // 2. User Location Updates (Updates visual marker position only, never zooms/pans)
   useEffect(() => {
     if (!leafletMap.current || !userLocation) return;
     const map = leafletMap.current;
@@ -178,7 +186,7 @@ const IndividualDetail: React.FC = () => {
 
   const handleLocateMe = () => {
     if (!leafletMap.current || !userLocation) return;
-    leafletMap.current.flyTo([userLocation.lat, userLocation.lng], 18);
+    leafletMap.current.flyTo([userLocation.lat, userLocation.lng], 20);
   };
 
   const saveUpdate = (updatedInd: Individual) => {
@@ -220,7 +228,8 @@ const IndividualDetail: React.FC = () => {
       note: weightForm.note,
       imageUrl: weightForm.imageUrl
     };
-    const newHistory = [...(individual.weightHistory || []), newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const currentHistory = Array.isArray(individual.weightHistory) ? individual.weightHistory : [];
+    const newHistory = [...currentHistory, newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const updatedInd = { ...individual, weightKg: hasWeight ? Number(weightForm.weightKg) : individual.weightKg, weightHistory: newHistory };
     saveUpdate(updatedInd);
     checkAndNotifyLoanRecipient(updatedInd, 'Weight Log', `${newRecord.weightKg} kg recorded on ${newRecord.date}`);
@@ -232,7 +241,8 @@ const IndividualDetail: React.FC = () => {
     e.preventDefault();
     if (!individual || !growthForm.heightCm) return;
     const newRecord: GrowthRecord = { id: `g-${Date.now()}`, date: growthForm.date, heightCm: Number(growthForm.heightCm), imageUrl: growthForm.imageUrl, note: growthForm.note };
-    const newHistory = [...(individual.growthHistory || []), newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const currentHistory = Array.isArray(individual.growthHistory) ? individual.growthHistory : [];
+    const newHistory = [...currentHistory, newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const updatedInd = { ...individual, growthHistory: newHistory };
     saveUpdate(updatedInd);
     checkAndNotifyLoanRecipient(updatedInd, 'Growth Log', `${newRecord.heightCm} cm recorded on ${newRecord.date}`);
@@ -244,7 +254,8 @@ const IndividualDetail: React.FC = () => {
     e.preventDefault();
     if (!individual || !healthForm.description) return;
     const newRecord: HealthRecord = { id: `h-${Date.now()}`, date: healthForm.date, type: healthForm.type as any, description: healthForm.description, performedBy: healthForm.performedBy };
-    const newHistory = [...(individual.healthHistory || []), newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const currentHistory = Array.isArray(individual.healthHistory) ? individual.healthHistory : [];
+    const newHistory = [...currentHistory, newRecord].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const updatedInd = { ...individual, healthHistory: newHistory };
     saveUpdate(updatedInd);
     checkAndNotifyLoanRecipient(updatedInd, 'Health Record', `${newRecord.type}: ${newRecord.description}`);
@@ -293,7 +304,11 @@ const IndividualDetail: React.FC = () => {
     const sp = species;
     const isPattern = (url?: string) => !url || url.startsWith('data:image/svg+xml');
     if (individual.imageUrl && !isPattern(individual.imageUrl)) return individual.imageUrl;
-    const logs = [...(individual.weightHistory || []), ...(individual.growthHistory || [])]
+    
+    const weightHistory = Array.isArray(individual.weightHistory) ? individual.weightHistory : [];
+    const growthHistory = Array.isArray(individual.growthHistory) ? individual.growthHistory : [];
+    
+    const logs = [...weightHistory, ...growthHistory]
       .filter(r => r.imageUrl && !isPattern(r.imageUrl))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (logs.length > 0) return logs[0].imageUrl!;
@@ -309,11 +324,15 @@ const IndividualDetail: React.FC = () => {
   const myOrg = getOrg();
   const myActivePartners = partners.filter(p => myPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id)));
 
-  const weightData = individual.weightHistory?.filter(w => w.weightKg !== undefined && w.weightKg !== null).map(w => ({ date: w.date, value: w.weightKg })) || [];
-  const growthData = individual.growthHistory?.map(g => ({ date: g.date, value: g.heightCm })) || [];
+  const weightHistory = Array.isArray(individual.weightHistory) ? individual.weightHistory : [];
+  const growthHistory = Array.isArray(individual.growthHistory) ? individual.growthHistory : [];
+  const healthHistory = Array.isArray(individual.healthHistory) ? individual.healthHistory : [];
+
+  const weightData = weightHistory.filter(w => w.weightKg !== undefined && w.weightKg !== null).map(w => ({ date: w.date, value: w.weightKg })) || [];
+  const growthData = growthHistory.map(g => ({ date: g.date, value: g.heightCm })) || [];
   const chartData = isPlant ? growthData : weightData;
   const showGraph = chartData.length >= 2;
-  const historySource = isPlant ? individual.growthHistory : individual.weightHistory;
+  const historySource = isPlant ? growthHistory : weightHistory;
   const galleryRecords = [...(historySource || [])].reverse().filter(rec => rec.imageUrl); 
 
   const openGallery = (recordId: string) => {
@@ -454,7 +473,7 @@ const IndividualDetail: React.FC = () => {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                <div className="flex justify-between items-center mb-6"><div className="flex items-center space-x-2 text-blue-700"><Stethoscope size={20} /><h3 className="font-bold text-lg">Health Records</h3></div><button onClick={() => setShowHealthModal(true)} className="text-sm bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1"><Plus size={16} /> Add Record</button></div>
                <div className="space-y-4">
-                 {(individual.healthHistory || []).length === 0 ? <p className="text-center text-slate-400 italic py-4">No health records found.</p> : (individual.healthHistory || []).map(rec => (
+                 {healthHistory.length === 0 ? <p className="text-center text-slate-400 italic py-4">No health records found.</p> : healthHistory.map(rec => (
                      <div key={rec.id} className="flex gap-4 p-4 bg-slate-50 rounded-lg border border-slate-100"><div className={`mt-1 p-2 rounded-full flex-shrink-0 ${rec.type === 'Vaccination' ? 'bg-purple-100 text-purple-600' : rec.type === 'Injury' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{rec.type === 'Vaccination' ? <Syringe size={16} /> : <Activity size={16} />}</div><div className="flex-1"><div className="flex justify-between items-start"><h4 className="font-semibold text-slate-900">{rec.type}</h4><span className="text-xs text-slate-500 flex items-center"><Calendar size={12} className="mr-1"/> {rec.date}</span></div><p className="text-sm text-slate-700 mt-1">{rec.description}</p>{rec.performedBy && <p className="text-xs text-slate-500 mt-2">Performed by: {rec.performedBy}</p>}</div></div>
                  ))}
                </div>
