@@ -31,13 +31,15 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        const initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
 
        const map = L.map(mapContainerRef.current, {
-          zoomControl: false 
+          zoomControl: false,
+          maxZoom: 20 // Set maxZoom to 20 on the map instance
        }).setView([initialLat, initialLng], initialZoom);
        
        L.control.zoom({ position: 'topright' }).addTo(map);
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors',
-          maxZoom: 19
+          maxZoom: 20, // Allow map to request zoom 20
+          maxNativeZoom: 19 // Tiles only exist natively up to 19, so stretched for 20
        }).addTo(map);
 
        const markersLayer = L.layerGroup().addTo(map);
@@ -137,7 +139,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        const handleSelect = () => {
           setSelectedInd(plant);
           setSelectedSpecies(sp || null);
-          map.flyTo([plant.latitude, plant.longitude], 18, { animate: true, duration: 1.5 });
+          map.flyTo([plant.latitude, plant.longitude], 19, { animate: true, duration: 1.5 }); // flyTo slightly deeper zoom
        };
 
        marker.on('click', handleSelect);

@@ -113,11 +113,17 @@ const IndividualDetail: React.FC = () => {
     if (species?.type !== 'Plant' || !individual?.latitude || !individual?.longitude || !mapRef.current) return;
 
     if (!leafletMap.current) {
-      const map = L.map(mapRef.current).setView([individual.latitude, individual.longitude], 15);
+      // Set maxZoom to 20 on the map instance
+      const map = L.map(mapRef.current, {
+        maxZoom: 20
+      }).setView([individual.latitude, individual.longitude], 15);
       leafletMap.current = map;
 
+      // Set maxZoom to 20 and maxNativeZoom to 19 for OpenStreetMap tiles
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 20,
+        maxNativeZoom: 19
       }).addTo(map);
     }
 
@@ -290,10 +296,8 @@ const IndividualDetail: React.FC = () => {
 
   const weightData = individual.weightHistory?.filter(w => w.weightKg !== undefined && w.weightKg !== null).map(w => ({ date: w.date, value: w.weightKg })) || [];
   const growthData = individual.growthHistory?.map(g => ({ date: g.date, value: g.heightCm })) || [];
-  /* Fixed error on line 294: Changed iPlant to isPlant */
   const chartData = isPlant ? growthData : weightData;
   const showGraph = chartData.length >= 2;
-  /* Fixed error on line 296: Changed iPlant to isPlant */
   const historySource = isPlant ? individual.growthHistory : individual.weightHistory;
   const galleryRecords = [...(historySource || [])].reverse().filter(rec => rec.imageUrl); 
 
@@ -409,7 +413,6 @@ const IndividualDetail: React.FC = () => {
                 <div className="space-y-3">
                   {[...(historySource || [])].reverse().map(rec => (
                     <div key={rec.id} className="flex gap-4 items-start p-3 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-100 transition-all">
-                       {/* Fixed error on line 351 (approx): Changed iPlant to isPlant */}
                        <div className="relative group">{rec.imageUrl ? <img src={rec.imageUrl} className="w-16 h-16 rounded-lg object-cover bg-slate-200 cursor-pointer shadow-sm group-hover:shadow-md transition-all group-hover:scale-105" alt="Log Image" onClick={() => openGallery(rec.id)} /> : <div className="w-16 h-16 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300">{isPlant ? <Sprout size={20}/> : <Scale size={20} />}</div>}{rec.imageUrl && <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg text-white"><Maximize2 size={16}/></div>}</div>
                        <div><div className="flex items-center gap-2"><span className="font-bold text-slate-900">{isPlant ? (rec as GrowthRecord).heightCm + ' cm' : (rec as WeightRecord).weightKg + ' kg'}</span><span className="text-xs text-slate-500">• {rec.date}</span></div><p className="text-sm text-slate-600 mt-1">{rec.note}</p></div>
                     </div>
