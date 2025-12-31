@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -282,31 +281,35 @@ const App: React.FC = () => {
         if (result.success && result.data) {
            const { data } = result;
            
-           // LOCAL vs REMOTE reconciliation
            const localSpecies = getSpecies();
            const localInds = getIndividuals();
            const localProjects = getProjects();
            const localUsers = getUsers();
            
-           // CRITICAL: Protection against empty server wipe
-           // If the server returns empty species/individuals BUT we have local ones,
-           // treat this as a NEW organization that needs to push its first data.
            const serverIsEmpty = (data.species || []).length === 0 && (data.individuals || []).length === 0;
            const localHasData = localSpecies.length > 0 || localInds.length > 0;
 
            if (serverIsEmpty && localHasData) {
-              console.log("Sync: Server is empty but Client has data. Trigerring initial backup push...");
-              await syncPushOrg(getOrg());
-              await syncPushUsers(localUsers);
-              await syncPushProjects(localProjects);
-              await syncPushSpecies(localSpecies);
-              await syncPushIndividuals(localInds);
-              await syncPushBreedingEvents(getBreedingEvents());
-              await syncPushBreedingLoans(getBreedingLoans());
-              await syncPushPartnerships(getPartnerships());
-              await syncPushLanguages(getLanguages());
+              console.log("Sync: Server is empty but Client has data. Attempting backup push...");
+              try {
+                  await syncPushOrg(getOrg());
+                  await syncPushUsers(localUsers);
+                  await syncPushProjects(localProjects);
+                  await syncPushSpecies(localSpecies);
+                  await syncPushIndividuals(localInds);
+                  await syncPushBreedingEvents(getBreedingEvents());
+                  await syncPushBreedingLoans(getBreedingLoans());
+                  await syncPushPartnerships(getPartnerships());
+                  await syncPushLanguages(getLanguages());
+                  console.log("Sync: Initial backup push successful.");
+              } catch (pushErr: any) {
+                  console.error("Sync: Initial backup push failed. Overwrite prevented.", pushErr);
+                  setSyncError(`Backup Push Failed: ${pushErr.message}. Local data preserved.`);
+                  // STOP HERE to avoid overwriting local data with empty server data
+                  return;
+              }
            } else {
-              // Server has data or both are empty - proceed with "Server Wins" strategy
+              // Server has data or both are empty - proceed with PULL
               if (data.org) saveOrg(data.org, true);
               
               if (data.settings && Object.keys(data.settings).length > 2) { 

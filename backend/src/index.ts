@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -529,17 +528,43 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const db = getDb();
     try {
         for (const item of data) {
-            if (item.password && !item.password.startsWith('$2')) item.password = await bcrypt.hash(String(item.password), 10);
+            if (item.password && !item.password.startsWith('$2')) {
+                item.password = await bcrypt.hash(String(item.password), 10);
+            }
+            
             const keys = Object.keys(item);
             const vals = keys.map(k => (typeof item[k] === 'object' && item[k] !== null) ? JSON.stringify(item[k]) : (item[k] ?? null));
             const placeholders = keys.map(() => '?').join(', ');
             const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
             const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
-            let updateClause = nonPkKeys.length > 0 ? "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `${k} = VALUES(${k})`).join(', ') : `ON DUPLICATE KEY UPDATE ${primaryKeyCol} = ${primaryKeyCol}`;
-            await db.execute(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ${updateClause}`, vals);
+            
+            // CRITICAL: Escape column and table names with backticks to prevent conflict with reserved keywords like 'type'
+            const escapedTable = `\`${table}\``;
+            const escapedKeys = keys.map(k => `\`${k}\``).join(', ');
+            
+            let updateClause = "";
+            if (nonPkKeys.length > 0) {
+                // Use VALUES() function but ensure column names inside are backticked
+                updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
+            } else {
+                updateClause = `ON DUPLICATE KEY UPDATE \`${primaryKeyCol}\` = \`${primaryKeyCol}\``;
+            }
+            
+            const sql = `INSERT INTO ${escapedTable} (${escapedKeys}) VALUES (${placeholders}) ${updateClause}`;
+            
+            try {
+                await db.execute(sql, vals);
+            } catch (innerError: any) {
+                // Fallback for drivers/modes where execute might struggle with VALUES() function logic in some SQL versions
+                console.warn(`Prepared statement failed for ${table}, attempting raw query...`);
+                await db.query(sql, vals);
+            }
         }
         res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error(`Generic REST error on ${table}:`, e.message);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
