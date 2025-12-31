@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2 } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -38,6 +37,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [selectedMapInd, setSelectedMapInd] = useState<Individual | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
+
+  // Map Picker State
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const mapPickerRef = useRef<HTMLDivElement>(null);
+  const mapPickerInstance = useRef<any>(null);
+  const pickerMarkerRef = useRef<any>(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -110,7 +115,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   }, [location.state, allIndividuals]);
 
   const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
-  const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
+  const projectSpecies = allSpecies.filter(s => s.id && s.projectId === currentProjectId);
   const hasMappedIndividuals = projectIndividuals.some(i => i.latitude !== undefined && i.longitude !== undefined);
 
   // Map Initialization logic
@@ -176,6 +181,32 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       }
     }
   }, [viewMode, currentProjectId, projectIndividuals, allSpecies, showLabels]);
+
+  // Picker Map Initialization
+  useEffect(() => {
+    if (showMapPicker && mapPickerRef.current && !mapPickerInstance.current) {
+       const initialLat = formData.latitude || org?.latitude || 0;
+       const initialLng = formData.longitude || org?.longitude || 0;
+       
+       const map = L.map(mapPickerRef.current).setView([initialLat, initialLng], 15);
+       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
+       
+       const marker = L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
+       pickerMarkerRef.current = marker;
+       mapPickerInstance.current = map;
+
+       map.on('click', (e: any) => {
+          marker.setLatLng(e.latlng);
+       });
+
+       setTimeout(() => map.invalidateSize(), 200);
+    }
+    
+    if (!showMapPicker && mapPickerInstance.current) {
+       mapPickerInstance.current.remove();
+       mapPickerInstance.current = null;
+    }
+  }, [showMapPicker]);
 
   const generateUniqueId = () => {
     const year = new Date().getFullYear();
@@ -286,6 +317,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  };
+
+  const handleConfirmPicker = () => {
+     if (pickerMarkerRef.current) {
+        const { lat, lng } = pickerMarkerRef.current.getLatLng();
+        setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
+     }
+     setShowMapPicker(false);
   };
 
   const handleLocateMeMap = () => {
@@ -545,15 +584,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                </div>
 
-               {isPlant && (
-                 <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-green-700 border-b border-green-50 pb-2">
-                       <MapPin size={20}/>
-                       <h4 className="font-bold uppercase tracking-wider text-sm">Geo-Location</h4>
-                    </div>
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                          <p className="text-xs text-slate-500 max-w-md">Assign specific coordinates for tracking the individual in the project's Plant Map.</p>
+               <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-green-700 border-b border-green-50 pb-2">
+                     <MapPin size={20}/>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">Geo-Location</h4>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                        <p className="text-xs text-slate-500 max-w-md">Assign specific coordinates for tracking the individual in the project's Plant Map.</p>
+                        <div className="flex gap-2">
                           <button 
                              type="button" 
                              onClick={handleGetCurrentLocation}
@@ -561,36 +600,44 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
                           >
                              {isLocatingForm ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
-                             Use Device GPS
+                             Use GPS
                           </button>
-                       </div>
-                       <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1">
-                             <label className="text-[10px] font-bold text-slate-400 uppercase">Latitude</label>
-                             <input 
-                                type="number" 
-                                step="any" 
-                                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
-                                value={formData.latitude || ''} 
-                                onChange={e => setFormData({...formData, latitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} 
-                                placeholder="e.g. 45.5152"
-                             />
-                          </div>
-                          <div className="space-y-1">
-                             <label className="text-[10px] font-bold text-slate-400 uppercase">Longitude</label>
-                             <input 
-                                type="number" 
-                                step="any" 
-                                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
-                                value={formData.longitude || ''} 
-                                onChange={e => setFormData({...formData, longitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} 
-                                placeholder="e.g. -122.6784"
-                             />
-                          </div>
-                       </div>
-                    </div>
-                 </div>
-               )}
+                          <button 
+                             type="button" 
+                             onClick={() => setShowMapPicker(true)}
+                             className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2 whitespace-nowrap"
+                          >
+                             <MapIcon2 size={14} />
+                             Pick on Map
+                          </button>
+                        </div>
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Latitude</label>
+                           <input 
+                              type="number" 
+                              step="any" 
+                              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
+                              value={formData.latitude || ''} 
+                              onChange={e => setFormData({...formData, latitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} 
+                              placeholder="e.g. 45.5152"
+                           />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Longitude</label>
+                           <input 
+                              type="number" 
+                              step="any" 
+                              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
+                              value={formData.longitude || ''} 
+                              onChange={e => setFormData({...formData, longitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} 
+                              placeholder="e.g. -122.6784"
+                           />
+                        </div>
+                     </div>
+                  </div>
+               </div>
 
                {!isPlant && (
                  <div className="space-y-4">
@@ -705,7 +752,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                  ) : <div/>}
                  <div className="flex space-x-3">
                     <button type="button" onClick={handleCloseForm} className="px-6 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">{t('cancel')}</button>
-                    <button type="submit" disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2 rounded-lg font-bold transition-all shadow-lg shadow-emerald-100 flex items-center gap-2 disabled:opacity-50">
+                    <button type="submit" disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2 rounded-lg font-bold transition-all shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 disabled:opacity-50">
                        {isSubmitting && <Loader2 size={18} className="animate-spin"/>}
                        {editingId ? t('updateIndividual') : t('registerIndividual')}
                     </button>
@@ -715,6 +762,26 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Map Picker Modal */}
+      {showMapPicker && (
+         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden">
+               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><MapIcon2 size={18} className="text-emerald-600"/> Fine-tune Location</h3>
+                  <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+               </div>
+               <div className="h-[400px] w-full" ref={mapPickerRef}></div>
+               <div className="p-4 bg-white border-t border-slate-100 flex justify-between items-center">
+                  <p className="text-xs text-slate-500 italic">Drag the marker or click on the map to set the exact coordinates.</p>
+                  <div className="flex gap-2">
+                     <button onClick={() => setShowMapPicker(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">Cancel</button>
+                     <button onClick={handleConfirmPicker} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md">Confirm Location</button>
+                  </div>
+               </div>
+            </div>
+         </div>
       )}
 
       {viewMode === 'map' ? (
@@ -763,6 +830,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              const isIndPlant = sp?.type === 'Plant';
              const displayImg = ind.imageUrl || sp?.imageUrl;
              const isLocatingThis = locatingId === ind.id;
+             const isMapped = ind.latitude !== undefined && ind.longitude !== undefined;
              
              if (viewMode === 'grid') {
                return (
@@ -774,14 +842,16 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50"><PawPrint size={40} /></div>
                         )}
                         <div className="absolute top-3 right-3 flex gap-2">
-                          <button 
-                            onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
-                            className={`p-2 bg-white/90 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 ${isLocatingThis ? 'text-emerald-600 animate-pulse' : 'text-slate-600 hover:text-emerald-600'}`}
-                            title="Set Current Location"
-                            disabled={isLocatingThis}
-                          >
-                            {isLocatingThis ? <Loader2 size={14} className="animate-spin" /> : <LocateFixed size={14} />}
-                          </button>
+                          {!isMapped && (
+                            <button 
+                              onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
+                              className={`p-2 bg-white/90 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 ${isLocatingThis ? 'text-emerald-600 animate-pulse' : 'text-slate-600 hover:text-emerald-600'}`}
+                              title="Set Current Location"
+                              disabled={isLocatingThis}
+                            >
+                              {isLocatingThis ? <Loader2 size={14} className="animate-spin" /> : <LocateFixed size={14} />}
+                            </button>
+                          )}
                           <button onClick={() => handleEdit(ind)} className="p-2 bg-white/90 hover:bg-white text-slate-600 hover:text-emerald-600 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><Pencil size={14} /></button>
                           <Link to={`/individuals/${ind.id}`} className="p-2 bg-emerald-600 text-white rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><ArrowRight size={14} /></Link>
                         </div>
@@ -813,7 +883,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           {ind.isDeceased && <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded">Deceased</span>}
                           {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
                           {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> DNA</span>}
-                          {ind.latitude !== undefined && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><MapPin size={10}/> Mapped</span>}
+                          {isMapped && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><MapPin size={10}/> Mapped</span>}
                         </div>
                      </div>
                   </div>
@@ -840,21 +910,24 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       </div>
                       <div className="hidden md:block">
                          <p className="text-[10px] font-bold text-slate-400 uppercase">Status</p>
-                         <div className="flex gap-1">
+                         <div className="flex gap-1 items-center">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ind.isDeceased ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{ind.isDeceased ? 'Dead' : 'Active'}</span>
+                            {isMapped && <span className="text-emerald-600" title="GPS Location Set"><MapPin size={14} fill="currentColor" fillOpacity={0.2} /></span>}
                             {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
                          </div>
                       </div>
                    </div>
                    <div className="flex gap-2">
-                      <button 
-                         onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
-                         className={`p-2 transition-colors ${isLocatingThis ? 'text-emerald-600 animate-spin' : 'text-slate-400 hover:text-emerald-600'}`}
-                         title="Set Current Location"
-                         disabled={isLocatingThis}
-                      >
-                         {isLocatingThis ? <Loader2 size={18} /> : <LocateFixed size={18}/>}
-                      </button>
+                      {!isMapped && (
+                        <button 
+                           onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
+                           className={`p-2 transition-colors ${isLocatingThis ? 'text-emerald-600 animate-spin' : 'text-slate-400 hover:text-emerald-600'}`}
+                           title="Set Current Location"
+                           disabled={isLocatingThis}
+                        >
+                           {isLocatingThis ? <Loader2 size={18} /> : <LocateFixed size={18}/>}
+                        </button>
+                      )}
                       <button onClick={() => handleEdit(ind)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Pencil size={18}/></button>
                       <Link to={`/individuals/${ind.id}`} className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"><ArrowRight size={18}/></Link>
                    </div>
