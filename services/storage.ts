@@ -49,14 +49,24 @@ const get = <T>(key: string, defaultVal: T): T => {
 
 const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') {
+    const stringified = JSON.stringify(val);
     try {
-      localStorage.setItem(key, JSON.stringify(val));
+      localStorage.setItem(key, stringified);
     } catch (e) {
+      // Handle QuotaExceededError
       if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-         console.warn("Storage quota exceeded.");
-         localStorage.removeItem(KEYS.BACKUP);
-         localStorage.removeItem(KEYS.NOTIFICATIONS);
-         try { localStorage.setItem(key, JSON.stringify(val)); } catch (secondErr) { console.error("Critical: Storage remains full.", secondErr); }
+         console.warn(`Storage quota exceeded while writing ${key}. Clearing non-essential data.`);
+         
+         // Remove the biggest redundant keys first
+         localStorage.removeItem(KEYS.BACKUP); // Backup is usually the largest (full clone)
+         localStorage.removeItem(KEYS.NOTIFICATIONS); // Notifications can grow large
+         
+         // Try one more time
+         try {
+            localStorage.setItem(key, stringified);
+         } catch (secondErr) {
+            console.error("CRITICAL: Local storage is completely full even after cleanup. Future changes might not persist locally until next sync.", secondErr);
+         }
       }
     }
   }
@@ -76,7 +86,7 @@ export const getSystemSettings = (): SystemSettings => {
     privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected.</p>' },
     termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Standard open-source license.</p>' },
     enableMfa: false,
-    enableRegistration: true // Default enabled as requested
+    enableRegistration: true 
   };
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
   return { ...defaults, ...stored, emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) }, aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) }, privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) }, termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) } };
@@ -112,7 +122,7 @@ export const deleteLanguage = async (code: string) => {
 export const generatePattern = (text: string): string => {
   const settings = getSystemSettings();
   const baseColor = settings.themePrimaryColor || '#059669';
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 400 300"><rect width="400" height="300" fill="${baseColor}"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="24" fill="white">${text}</text></svg>`)}`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="${baseColor}"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="24" fill="white">${text}</text></svg>`)}`;
 };
 
 export const getSession = (): User | null => get(KEYS.SESSION, null);
@@ -356,7 +366,6 @@ export const redeemPartnerInvite = (code: string): { success: boolean, message: 
   const existingPartnerships = getPartnerships();
   const availablePartner = partners.find(p => p.id !== myOrg.id && !existingPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id)));
   if (!availablePartner) return { success: false, message: "No available partners found." };
-  /* Fixed Error: Changed property names from snake_case to camelCase to match Partnership type. */
   const newPartnership: Partnership = { id: `prt-${Date.now()}`, orgId1: myOrg.id, orgId2: availablePartner.id, status: 'Active', establishedDate: new Date().toISOString().split('T')[0] };
   const updated = [...existingPartnerships, newPartnership];
   savePartnerships(updated);
