@@ -550,7 +550,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           <h2 className="text-2xl font-bold text-slate-900">Individual Records</h2>
           <p className="text-slate-500">Track {org?.focus === 'Plants' ? 'botanical collection' : 'animal populations'} and lineage.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
             <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Grid View"><LayoutGrid size={18} /></button>
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="List View"><List size={18} /></button>
@@ -558,7 +558,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Map View"><MapIcon size={18} /></button>
             )}
           </div>
-          <button onClick={handleOpenNewForm} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all">
+          <button onClick={handleOpenNewForm} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all">
             <Plus size={18} />
             <span>{t('add')}</span>
           </button>
@@ -864,27 +864,44 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     </div>
                     <div className="space-y-2">
                        <label className="text-sm font-bold text-slate-700">Photo</label>
-                       <div className="flex items-center space-x-3">
-                         <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 shadow-sm">
-                           <Camera size={18} />
-                           <span>{formData.imageUrl ? 'Change Photo' : 'Upload Photo'}</span>
-                           <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-                         </label>
-                         {formData.imageUrl && <span className="text-xs text-emerald-600 font-bold flex items-center gap-1"><CheckCircle size={14}/> Image Ready</span>}
+                       <div className="space-y-4">
+                          <div className="flex items-center space-x-3">
+                            <label className="flex-1 cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg transition-colors flex items-center justify-center space-x-2 shadow-sm border-dashed border-2">
+                              <Camera size={20} />
+                              <span className="font-bold">{formData.imageUrl ? 'Change Photo' : 'Capture / Upload Photo'}</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                            </label>
+                          </div>
+                          
+                          {formData.imageUrl && (
+                             <div className="relative w-full aspect-video rounded-xl border border-slate-200 overflow-hidden bg-slate-50 animate-in fade-in zoom-in duration-200">
+                                <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Individual Preview" />
+                                <button 
+                                   type="button" 
+                                   onClick={() => setFormData({...formData, imageUrl: ''})}
+                                   className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-full transition-colors backdrop-blur-sm"
+                                >
+                                   <X size={16}/>
+                                </button>
+                                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                                   <span className="text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-1"><CheckCircle size={10}/> Image Loaded</span>
+                                </div>
+                             </div>
+                          )}
                        </div>
                     </div>
                   </div>
                </div>
 
-               <div className="flex justify-between pt-8 border-t border-slate-100">
+               <div className="flex flex-col sm:flex-row justify-between pt-8 border-t border-slate-100 gap-4">
                  {editingId ? (
-                    <button type="button" onClick={() => setShowDeleteConfirm(true)} className="text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors">
+                    <button type="button" onClick={() => setShowDeleteConfirm(true)} className="w-full sm:w-auto text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
                        <Trash2 size={18} /> {t('delete')}
                     </button>
                  ) : <div/>}
-                 <div className="flex space-x-3">
-                    <button type="button" onClick={handleCloseForm} className="px-6 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">{t('cancel')}</button>
-                    <button type="submit" disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2 rounded-lg font-bold transition-all shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 disabled:opacity-50">
+                 <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                    <button type="button" onClick={handleCloseForm} className="w-full sm:w-auto px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-bold order-2 sm:order-1">{t('cancel')}</button>
+                    <button type="submit" disabled={isSubmitting} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2.5 rounded-lg font-bold transition-all shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 disabled:opacity-50 order-1 sm:order-2">
                        {isSubmitting && <Loader2 size={18} className="animate-spin"/>}
                        {editingId ? t('updateIndividual') : t('registerIndividual')}
                     </button>
@@ -905,11 +922,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
                </div>
                <div className="h-[400px] w-full" ref={mapPickerRef}></div>
-               <div className="p-4 bg-white border-t border-slate-100 flex justify-between items-center">
-                  <p className="text-xs text-slate-500 italic">Drag the marker or click on the map to set the exact coordinates.</p>
-                  <div className="flex gap-2">
-                     <button onClick={() => setShowMapPicker(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">Cancel</button>
-                     <button onClick={handleConfirmPicker} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md">Confirm Location</button>
+               <div className="p-4 bg-white border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <p className="text-xs text-slate-500 italic text-center sm:text-left">Drag the marker or click on the map to set the exact coordinates.</p>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                     <button onClick={() => setShowMapPicker(false)} className="flex-1 sm:flex-none px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">Cancel</button>
+                     <button onClick={handleConfirmPicker} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md">Confirm Location</button>
                   </div>
                </div>
             </div>
