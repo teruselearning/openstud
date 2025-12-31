@@ -1,14 +1,16 @@
-
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2 } from 'lucide-react';
 import { LanguageContext } from '../App';
+
+declare const L: any; // Leaflet global
 
 type StatusFilter = 'current' | 'deceased' | 'all';
 type SortField = 'name' | 'studbookId' | 'birthDate';
+type ViewMode = 'grid' | 'list' | 'map';
 
 interface IndividualManagerProps {
   currentProjectId: string;
@@ -26,8 +28,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
+  // Map References
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markersLayerRef = useRef<any>(null);
+  const [selectedMapInd, setSelectedMapInd] = useState<Individual | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSpeciesId, setFilterSpeciesId] = useState<string>('');
@@ -52,7 +61,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [newSpeciesName, setNewSpeciesName] = useState('');
   const [newSpeciesType, setNewSpeciesType] = useState<SpeciesType>('Animal');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
+  const [isLocatingForm, setIsLocatingForm] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Individual>>({
@@ -99,6 +108,61 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
   const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
+  const hasMappedIndividuals = projectIndividuals.some(i => i.latitude !== undefined && i.longitude !== undefined);
+
+  // Map Initialization logic
+  useEffect(() => {
+    if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
+      const currentOrg = getOrg();
+      const initialLat = (typeof currentOrg.latitude === 'number') ? currentOrg.latitude : 0;
+      const initialLng = (typeof currentOrg.longitude === 'number') ? currentOrg.longitude : 0;
+      const initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
+
+      const map = L.map(mapContainerRef.current, { zoomControl: false }).setView([initialLat, initialLng], initialZoom);
+      L.control.zoom({ position: 'topright' }).addTo(map);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+      
+      const markersLayer = L.layerGroup().addTo(map);
+      markersLayerRef.current = markersLayer;
+      mapInstanceRef.current = map;
+
+      setTimeout(() => map.invalidateSize(), 200);
+    }
+
+    if (viewMode === 'map' && mapInstanceRef.current && markersLayerRef.current) {
+      const map = mapInstanceRef.current;
+      const markersLayer = markersLayerRef.current;
+      markersLayer.clearLayers();
+
+      const mappedInds = projectIndividuals.filter(i => typeof i.latitude === 'number' && typeof i.longitude === 'number');
+      const leafletMarkers: any[] = [];
+
+      mappedInds.forEach(ind => {
+        const sp = allSpecies.find(s => s.id === ind.speciesId);
+        const iconColor = sp?.type === 'Plant' ? '#16a34a' : '#2563eb';
+        const customIcon = L.divIcon({
+          className: 'custom-div-icon',
+          html: `<div style="background-color: ${iconColor}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+
+        const marker = L.marker([ind.latitude, ind.longitude], { icon: customIcon });
+        marker.on('click', () => {
+          setSelectedMapInd(ind);
+          map.flyTo([ind.latitude, ind.longitude], 18, { animate: true, duration: 1.5 });
+        });
+        marker.addTo(markersLayer);
+        leafletMarkers.push(marker);
+      });
+
+      if (leafletMarkers.length > 0) {
+        const group = L.featureGroup(leafletMarkers);
+        const bounds = group.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+      }
+    }
+  }, [viewMode, currentProjectId, projectIndividuals, allSpecies]);
 
   const generateUniqueId = () => {
     const year = new Date().getFullYear();
@@ -162,11 +226,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       }));
     };
 
-    if (isText) {
-      reader.readAsText(file);
-    } else {
-      reader.readAsDataURL(file);
-    }
+    if (isText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
   };
 
   const handleGetCurrentLocation = () => {
@@ -174,7 +235,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       alert("Geolocation is not supported by your browser.");
       return;
     }
-    setIsLocating(true);
+    setIsLocatingForm(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setFormData(prev => ({
@@ -182,15 +243,28 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           latitude: position.coords.latitude,
           longitude: position.coords.longitude
         }));
-        setIsLocating(false);
+        setIsLocatingForm(false);
       },
       (error) => {
-        console.error("GPS Error:", error);
         alert("Failed to get location: " + error.message);
-        setIsLocating(false);
+        setIsLocatingForm(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  };
+
+  const handleLocateMeMap = () => {
+    if (!mapInstanceRef.current || !navigator.geolocation) return;
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const map = mapInstanceRef.current;
+      map.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { animate: true, duration: 1.5 });
+      L.popup().setLatLng([pos.coords.latitude, pos.coords.longitude]).setContent("📍 You are here").openOn(map);
+      setIsLocating(false);
+    }, (err) => {
+      alert("Could not retrieve location.");
+      setIsLocating(false);
+    });
   };
 
   const handleEdit = (ind: Individual) => {
@@ -319,8 +393,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
-            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid size={18} /></button>
-            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
+            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Grid View"><LayoutGrid size={18} /></button>
+            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="List View"><List size={18} /></button>
+            {hasMappedIndividuals && (
+              <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Map View"><MapIcon size={18} /></button>
+            )}
           </div>
           <button onClick={handleOpenNewForm} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all">
             <Plus size={18} />
@@ -329,23 +406,25 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-4">
-        <div className="flex-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
-           <Search className="text-slate-400 ml-2" size={20} />
-           <input className="flex-1 outline-none text-slate-900 placeholder:text-slate-400 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+      {viewMode !== 'map' && (
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
+             <Search className="text-slate-400 ml-2" size={20} />
+             <input className="flex-1 outline-none text-slate-900 placeholder:text-slate-400 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          </div>
+          <div className="flex gap-4">
+            <select className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" value={filterSpeciesId} onChange={(e) => setFilterSpeciesId(e.target.value)}>
+              <option value="">All Species</option>
+              {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
+            </select>
+            <select className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as StatusFilter)}>
+              <option value="current">Current</option>
+              <option value="deceased">Deceased/Removed</option>
+              <option value="all">All</option>
+            </select>
+          </div>
         </div>
-        <div className="flex gap-4">
-          <select className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" value={filterSpeciesId} onChange={(e) => setFilterSpeciesId(e.target.value)}>
-            <option value="">All Species</option>
-            {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
-          </select>
-          <select className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as StatusFilter)}>
-            <option value="current">Current</option>
-            <option value="deceased">Deceased/Removed</option>
-            <option value="all">All</option>
-          </select>
-        </div>
-      </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 backdrop-blur-sm">
@@ -443,10 +522,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <button 
                              type="button" 
                              onClick={handleGetCurrentLocation}
-                             disabled={isLocating}
+                             disabled={isLocatingForm}
                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
                           >
-                             {isLocating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
+                             {isLocatingForm ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
                              Use Device GPS
                           </button>
                        </div>
@@ -603,96 +682,123 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       )}
 
-      <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
-        {sortedIndividuals.map(ind => {
-           const sp = allSpecies.find(s => s.id === ind.speciesId);
-           const isIndPlant = sp?.type === 'Plant';
-           const displayImg = ind.imageUrl || sp?.imageUrl;
-           
-           if (viewMode === 'grid') {
+      {viewMode === 'map' ? (
+        <div className="h-[calc(100vh-250px)] flex flex-col relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+          <div ref={mapContainerRef} className="w-full h-full z-0" />
+          <button onClick={handleLocateMeMap} className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" title="Locate Me">
+            <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />
+          </button>
+          
+          {selectedMapInd && (
+            <div className="absolute right-4 top-4 bottom-4 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
+              <div className="relative h-40 bg-slate-100">
+                {selectedMapInd.imageUrl ? <img src={selectedMapInd.imageUrl} className="w-full h-full object-cover" alt={selectedMapInd.name} /> : <div className="w-full h-full flex items-center justify-center text-slate-400">No Image</div>}
+                <button onClick={() => setSelectedMapInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors"><X size={16} /></button>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto">
+                <h3 className="font-bold text-slate-900">{selectedMapInd.name}</h3>
+                <p className="text-xs text-slate-500 font-mono mb-2">{selectedMapInd.studbookId}</p>
+                <p className="text-xs text-emerald-700 font-medium">{allSpecies.find(s => s.id === selectedMapInd.speciesId)?.commonName}</p>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => handleEdit(selectedMapInd)} className="flex-1 bg-slate-100 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200">Edit</button>
+                  <Link to={`/individuals/${selectedMapInd.id}`} className="flex-1 bg-emerald-600 py-1.5 rounded-lg text-xs font-bold text-white hover:bg-emerald-700 text-center">Details</Link>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
+          {sortedIndividuals.map(ind => {
+             const sp = allSpecies.find(s => s.id === ind.speciesId);
+             const isIndPlant = sp?.type === 'Plant';
+             const displayImg = ind.imageUrl || sp?.imageUrl;
+             
+             if (viewMode === 'grid') {
+               return (
+                  <div key={ind.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden group hover:shadow-xl transition-all flex flex-col h-full">
+                     <div className="relative h-48 bg-slate-100">
+                        {displayImg ? (
+                          <img src={displayImg} alt={ind.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50"><PawPrint size={40} /></div>
+                        )}
+                        <div className="absolute top-3 right-3 flex gap-2">
+                          <button onClick={() => handleEdit(ind)} className="p-2 bg-white/90 hover:bg-white text-slate-600 hover:text-emerald-600 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><Pencil size={14} /></button>
+                          <Link to={`/individuals/${ind.id}`} className="p-2 bg-emerald-600 text-white rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><ArrowRight size={14} /></Link>
+                        </div>
+                        <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border shadow-sm ${isIndPlant ? 'bg-green-600 border-green-400 text-white' : 'bg-blue-600 border-blue-400 text-white'}`}>
+                          {sp?.commonName || 'Unknown'}
+                        </div>
+                     </div>
+                     <div className="p-5 flex-1 flex flex-col">
+                        <div className="flex justify-between items-start mb-2">
+                           <div>
+                              <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">{ind.name || ind.studbookId}</h3>
+                              <p className="text-xs font-mono text-slate-400">{ind.studbookId}</p>
+                           </div>
+                           {!isIndPlant && ind.sex !== Sex.UNKNOWN && (
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ind.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>{ind.sex}</span>
+                           )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-50">
+                           <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Planted' : 'Birth Date'}</p>
+                              <p className="text-xs font-medium text-slate-700">{ind.birthDate || 'Not recorded'}</p>
+                           </div>
+                           <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Metric' : 'Current Weight'}</p>
+                              <p className="text-xs font-medium text-slate-700">{isIndPlant ? '--' : `${ind.weightKg} kg`}</p>
+                           </div>
+                        </div>
+                        <div className="mt-auto pt-4 flex gap-2">
+                          {ind.isDeceased && <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded">Deceased</span>}
+                          {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
+                          {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> DNA</span>}
+                          {ind.latitude !== undefined && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><MapPin size={10}/> Mapped</span>}
+                        </div>
+                     </div>
+                  </div>
+               );
+             }
+             
              return (
-                <div key={ind.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden group hover:shadow-xl transition-all flex flex-col h-full">
-                   <div className="relative h-48 bg-slate-100">
-                      {displayImg ? (
-                        <img src={displayImg} alt={ind.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-50"><PawPrint size={40} /></div>
-                      )}
-                      <div className="absolute top-3 right-3 flex gap-2">
-                        <button onClick={() => handleEdit(ind)} className="p-2 bg-white/90 hover:bg-white text-slate-600 hover:text-emerald-600 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><Pencil size={14} /></button>
-                        <Link to={`/individuals/${ind.id}`} className="p-2 bg-emerald-600 text-white rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"><ArrowRight size={14} /></Link>
+                <div key={ind.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4 group hover:border-emerald-200 hover:shadow-md transition-all">
+                   <div className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden">
+                      {displayImg ? <img src={displayImg} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><PawPrint size={20}/></div>}
+                   </div>
+                   <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                         <h4 className="font-bold text-slate-900">{ind.name || ind.studbookId}</h4>
+                         <p className="text-xs text-slate-500 font-mono">{ind.studbookId}</p>
                       </div>
-                      <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border shadow-sm ${isIndPlant ? 'bg-green-600 border-green-400 text-white' : 'bg-blue-600 border-blue-400 text-white'}`}>
-                        {sp?.commonName || 'Unknown'}
+                      <div>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase">Species</p>
+                         <p className="text-sm font-medium text-slate-700">{sp?.commonName}</p>
+                      </div>
+                      <div className="hidden md:block">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase">{isIndPlant ? 'Planted' : 'Sex / Birth'}</p>
+                         <p className="text-sm font-medium text-slate-700">{isIndPlant ? ind.birthDate : `${ind.sex} • ${ind.birthDate}`}</p>
+                      </div>
+                      <div className="hidden md:block">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase">Status</p>
+                         <div className="flex gap-1">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ind.isDeceased ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{ind.isDeceased ? 'Dead' : 'Active'}</span>
+                            {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
+                         </div>
                       </div>
                    </div>
-                   <div className="p-5 flex-1 flex flex-col">
-                      <div className="flex justify-between items-start mb-2">
-                         <div>
-                            <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">{ind.name || ind.studbookId}</h3>
-                            <p className="text-xs font-mono text-slate-400">{ind.studbookId}</p>
-                         </div>
-                         {!isIndPlant && ind.sex !== Sex.UNKNOWN && (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ind.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>{ind.sex}</span>
-                         )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-50">
-                         <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Planted' : 'Birth Date'}</p>
-                            <p className="text-xs font-medium text-slate-700">{ind.birthDate || 'Not recorded'}</p>
-                         </div>
-                         <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Metric' : 'Current Weight'}</p>
-                            <p className="text-xs font-medium text-slate-700">{isIndPlant ? '--' : `${ind.weightKg} kg`}</p>
-                         </div>
-                      </div>
-                      <div className="mt-auto pt-4 flex gap-2">
-                        {ind.isDeceased && <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded">Deceased</span>}
-                        {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
-                        {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> DNA</span>}
-                        {ind.latitude !== undefined && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><MapPin size={10}/> Mapped</span>}
-                      </div>
+                   <div className="flex gap-2">
+                      <button onClick={() => handleEdit(ind)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Pencil size={18}/></button>
+                      <Link to={`/individuals/${ind.id}`} className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"><ArrowRight size={18}/></Link>
                    </div>
                 </div>
              );
-           }
-           
-           return (
-              <div key={ind.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4 group hover:border-emerald-200 hover:shadow-md transition-all">
-                 <div className="w-12 h-12 rounded-lg bg-slate-100 flex-shrink-0 overflow-hidden">
-                    {displayImg ? <img src={displayImg} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><PawPrint size={20}/></div>}
-                 </div>
-                 <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                       <h4 className="font-bold text-slate-900">{ind.name || ind.studbookId}</h4>
-                       <p className="text-xs text-slate-500 font-mono">{ind.studbookId}</p>
-                    </div>
-                    <div>
-                       <p className="text-[10px] font-bold text-slate-400 uppercase">Species</p>
-                       <p className="text-sm font-medium text-slate-700">{sp?.commonName}</p>
-                    </div>
-                    <div className="hidden md:block">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase">{isIndPlant ? 'Planted' : 'Sex / Birth'}</p>
-                       <p className="text-sm font-medium text-slate-700">{isIndPlant ? ind.birthDate : `${ind.sex} • ${ind.birthDate}`}</p>
-                    </div>
-                    <div className="hidden md:block">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase">Status</p>
-                       <div className="flex gap-1">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ind.isDeceased ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{ind.isDeceased ? 'Dead' : 'Active'}</span>
-                          {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
-                       </div>
-                    </div>
-                 </div>
-                 <div className="flex gap-2">
-                    <button onClick={() => handleEdit(ind)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Pencil size={18}/></button>
-                    <Link to={`/individuals/${ind.id}`} className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"><ArrowRight size={18}/></Link>
-                 </div>
-              </div>
-           );
-        })}
-      </div>
+          })}
+        </div>
+      )}
 
-      {sortedIndividuals.length === 0 && (
+      {(sortedIndividuals.length === 0 && viewMode !== 'map') && (
          <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
             <UserIcon size={48} className="text-slate-300 mb-4 opacity-50"/>
             <p className="text-slate-500 font-medium">No individual records found.</p>

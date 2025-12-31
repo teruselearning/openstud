@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -97,7 +96,8 @@ const initDatabase = async () => {
                 status VARCHAR(50) NOT NULL,
                 password VARCHAR(255),
                 avatar_url LONGTEXT,
-                allowed_project_ids JSON
+                allowed_project_ids JSON,
+                CONSTRAINT fk_user_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
 
@@ -106,7 +106,8 @@ const initDatabase = async () => {
                 id VARCHAR(255) PRIMARY KEY,
                 org_id VARCHAR(255),
                 name VARCHAR(255) NOT NULL,
-                description LONGTEXT
+                description LONGTEXT,
+                CONSTRAINT fk_project_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
 
@@ -126,7 +127,8 @@ const initDatabase = async () => {
                 breeding_season_end INT,
                 image_url LONGTEXT,
                 native_status_country VARCHAR(50),
-                native_status_local VARCHAR(50)
+                native_status_local VARCHAR(50),
+                CONSTRAINT fk_species_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
         `);
 
@@ -157,7 +159,9 @@ const initDatabase = async () => {
                 transfer_note LONGTEXT,
                 weight_history JSON,
                 growth_history JSON,
-                health_history JSON
+                health_history JSON,
+                CONSTRAINT fk_ind_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
 
@@ -172,7 +176,8 @@ const initDatabase = async () => {
                 successful_births INT,
                 losses INT,
                 notes LONGTEXT,
-                offspring_ids JSON
+                offspring_ids JSON,
+                CONSTRAINT fk_event_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
 
@@ -240,12 +245,25 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-const getTransporter = async () => {
+const restrictToSuperAdmin = (req: any, res: any, next: express.NextFunction) => {
+    if (req.user && (req.user.role === 'Super Admin')) {
+        next();
+    } else {
+        res.status(403).json({ error: "Super Admin privileges required" });
+    }
+};
+
+const getGlobalConfig = async () => {
   const db = getDb();
   try {
     const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
     let s = rows?.[0]?.settings || {};
     if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { s = {}; } }
+    return s;
+  } catch (e) { return {}; }
+};
+
+const getTransporter = (s: any) => {
     const host = s.smtpHost || process.env.SMTP_HOST;
     const port = s.smtpPort || Number(process.env.SMTP_PORT) || 587;
     const user = s.smtpUser || process.env.SMTP_USER;
@@ -253,7 +271,6 @@ const getTransporter = async () => {
     const secure = s.smtpSecure ?? (process.env.SMTP_SECURE === 'true');
     if (!host || host === '') return null;
     return nodemailer.createTransport({ host, port, secure, auth: (user && pass) ? { user, pass } : undefined });
-  } catch (e) { return null; }
 };
 
 const replacePlaceholders = (text: string, data: Record<string, string>) => {
@@ -279,15 +296,24 @@ app.post('/api/register', async (req: any, res: any) => {
             expires: Date.now() + 1800000
         });
 
-        console.log(`CODE FOR ${cleanEmail}: ${code}`);
-        const transporter = await getTransporter();
+        const settings = await getGlobalConfig();
+        const transporter = getTransporter(settings);
+        
         if (transporter) {
             try {
+                const template = settings.emailTemplates?.registration;
+                const subject = (template?.enabled && template.subject) 
+                  ? replacePlaceholders(template.subject, { orgName, code, userName })
+                  : "Verify your OpenStudbook account";
+                const bodyHtml = (template?.enabled && template.bodyHtml)
+                  ? replacePlaceholders(template.bodyHtml, { orgName, code, userName })
+                  : `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`;
+
                 await transporter.sendMail({
                     from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
                     to: cleanEmail,
-                    subject: "Verify your OpenStudbook account",
-                    html: `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`
+                    subject,
+                    html: bodyHtml
                 });
             } catch (mailErr: any) { console.error("SMTP Failed", mailErr.message); }
         }
@@ -345,6 +371,18 @@ app.post('/api/login', async (req: any, res: any) => {
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user, organization: orgs[0] });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Permanent delete endpoint for Super Admin
+app.delete('/api/super-admin/organizations/:id', authenticate, restrictToSuperAdmin, async (req: any, res: any) => {
+    const orgId = req.params.id;
+    const db = getDb();
+    try {
+        await db.execute(`DELETE FROM organizations WHERE id = ?`, [orgId]);
+        res.json({ success: true, message: "Organization and all related data deleted permanently." });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // Generic REST endpoints

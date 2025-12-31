@@ -1,14 +1,14 @@
 
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
-import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage } from './syncService';
+import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization } from './syncService';
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 
 // Simplified API Base URL - handled by Vite Proxy
 const API_BASE_URL = '';
 
-export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage };
+export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization };
 
 const STORAGE_PREFIX = 'os_';
 const KEYS = {
@@ -319,6 +319,16 @@ export const deleteOrganization = async (orgId: string) => {
    saveNetworkPartners(getNetworkPartners().filter(p => p.id !== orgId));
 };
 
+export const permanentDeleteOrganization = async (orgId: string) => {
+    try {
+        await syncPermanentDeleteOrganization(orgId);
+        saveNetworkPartners(getNetworkPartners().filter(p => p.id !== orgId));
+    } catch (e: any) {
+        console.error("Permanent delete failed", e);
+        throw e;
+    }
+};
+
 export const isMfaTrustedDevice = (userId: string): boolean => !!JSON.parse(localStorage.getItem(KEYS.TRUSTED_DEVICES) || '{}')[userId];
 export const trustDevice = (userId: string) => {
    const trusted = JSON.parse(localStorage.getItem(KEYS.TRUSTED_DEVICES) || '{}');
@@ -346,6 +356,7 @@ export const redeemPartnerInvite = (code: string): { success: boolean, message: 
   const existingPartnerships = getPartnerships();
   const availablePartner = partners.find(p => p.id !== myOrg.id && !existingPartnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id)));
   if (!availablePartner) return { success: false, message: "No available partners found." };
+  /* Fixed Error: Changed property names from snake_case to camelCase to match Partnership type. */
   const newPartnership: Partnership = { id: `prt-${Date.now()}`, orgId1: myOrg.id, orgId2: availablePartner.id, status: 'Active', establishedDate: new Date().toISOString().split('T')[0] };
   const updated = [...existingPartnerships, newPartnership];
   savePartnerships(updated);
