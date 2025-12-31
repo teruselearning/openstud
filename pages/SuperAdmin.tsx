@@ -1,12 +1,12 @@
 import { useContext, useState, useEffect } from 'react';
-import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization } from '../services/storage';
+import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
 import { translateDictionary } from '../services/geminiService';
 import { 
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
   Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
-  Building2, Briefcase, MapPin, GripVertical, Info
+  Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature } from '../types';
@@ -270,48 +270,77 @@ const SuperAdmin: React.FC = () => {
       </div>
 
       {activeTab === 'overview' && (
-         <div className="space-y-4 animate-in fade-in">
-            <div className="flex justify-between items-center">
-               <h3 className="text-lg font-extrabold text-slate-900">Manage Organisations</h3>
-               <button onClick={() => setShowCreateOrg(true)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-100 flex items-center gap-2 transition-all">
-                  <Plus size={18}/> Create Organisation
-               </button>
-            </div>
-            
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-               <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                     <tr>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Organisation</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
-                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                     {allOrganizations.map(org => (
-                        <tr key={org.id} className="hover:bg-slate-50 group transition-colors">
-                           <td className="px-6 py-4">
-                              <div className="font-bold text-slate-900 flex items-center gap-2">
-                                 {org.name}
-                                 {org.id === myOrg?.id && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Host</span>}
-                              </div>
-                              <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
-                           </td>
-                           <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-slate-100 group-hover:bg-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
-                                   <LogIn size={12}/> Login As
-                                </button>
-                                {org.id !== myOrg?.id && (
-                                   <button onClick={() => setOrgToDelete(org)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white p-1.5 rounded-lg transition-all" title="Permanently Delete">
-                                      <Trash2 size={14}/>
-                                   </button>
-                                )}
-                              </div>
-                           </td>
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
+            <div className="lg:col-span-2 space-y-4">
+               <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-extrabold text-slate-900">Manage Organisations</h3>
+                  <button onClick={() => setShowCreateOrg(true)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-100 flex items-center gap-2 transition-all">
+                     <Plus size={18}/> Create Organisation
+                  </button>
+               </div>
+               
+               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                     <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                           <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Organisation</th>
+                           <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
                         </tr>
-                     ))}
-                  </tbody>
-               </table>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100">
+                        {allOrganizations.map(org => (
+                           <tr key={org.id} className="hover:bg-slate-50 group transition-colors">
+                              <td className="px-6 py-4">
+                                 <div className="font-bold text-slate-900 flex items-center gap-2">
+                                    {org.name}
+                                    {org.id === myOrg?.id && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Host</span>}
+                                 </div>
+                                 <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                 <div className="flex justify-end gap-2">
+                                   <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-slate-100 group-hover:bg-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
+                                      <LogIn size={12}/> Login As
+                                   </button>
+                                   {org.id !== myOrg?.id && (
+                                      <button onClick={() => setOrgToDelete(org)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white p-1.5 rounded-lg transition-all" title="Permanently Delete">
+                                         <Trash2 size={14}/>
+                                      </button>
+                                   )}
+                                 </div>
+                              </td>
+                           </tr>
+                        ))}
+                     </tbody>
+                  </table>
+               </div>
+            </div>
+
+            {/* Storage Maintenance Tool */}
+            <div className="space-y-4">
+               <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2"><Database size={20} className="text-blue-500"/> System Health</h3>
+               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3">
+                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Zap size={20}/></div>
+                     <div>
+                        <h4 className="font-bold text-slate-900">Local Cache Management</h4>
+                        <p className="text-xs text-slate-500">Fix "Storage Full" errors by purging cached data.</p>
+                     </div>
+                  </div>
+                  <div className="bg-amber-50 border-l-4 border-amber-400 p-3">
+                     <p className="text-[10px] text-amber-800 leading-relaxed font-medium">If users see "QuotaExceededError", clearing non-critical local storage will force a fresh, efficient sync from the database.</p>
+                  </div>
+                  <button 
+                     onClick={() => {
+                        if(confirm("This will clear the local browser cache for all species and individuals. Essential data will remain and non-essential data will be re-synced from the server. Continue?")) {
+                           clearLocalCache();
+                        }
+                     }}
+                     className="w-full bg-slate-900 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                     <RefreshCw size={14}/> Clear Local Cache & Re-Sync
+                  </button>
+               </div>
             </div>
          </div>
       )}

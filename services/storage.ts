@@ -1,4 +1,3 @@
-
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization } from './syncService';
@@ -53,23 +52,46 @@ const set = <T>(key: string, val: T) => {
     try {
       localStorage.setItem(key, stringified);
     } catch (e) {
-      // Handle QuotaExceededError
       if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-         console.warn(`Storage quota exceeded while writing ${key}. Clearing non-essential data.`);
+         console.warn(`CRITICAL: Storage full. Attempting emergency purge of non-essential data.`);
          
-         // Remove the biggest redundant keys first
-         localStorage.removeItem(KEYS.BACKUP); // Backup is usually the largest (full clone)
-         localStorage.removeItem(KEYS.NOTIFICATIONS); // Notifications can grow large
-         
-         // Try one more time
+         // Level 1: Clear obvious cache keys
+         localStorage.removeItem(KEYS.BACKUP);
+         localStorage.removeItem(KEYS.NOTIFICATIONS);
+         localStorage.removeItem(KEYS.PARTNERS); // Can be re-fetched
+
          try {
             localStorage.setItem(key, stringified);
-         } catch (secondErr) {
-            console.error("CRITICAL: Local storage is completely full even after cleanup. Future changes might not persist locally until next sync.", secondErr);
+            return;
+         } catch (e2) {
+            // Level 2: Purge breeding records and loans (they are synced to DB)
+            console.warn(`Purge Level 2: Clearing local breeding data.`);
+            localStorage.removeItem(KEYS.BREEDING);
+            localStorage.removeItem(KEYS.BREEDING_LOANS);
+            
+            try {
+               localStorage.setItem(key, stringified);
+            } catch (e3) {
+               console.error("CRITICAL: Storage remained full even after purge. This organizational record is too large for local browser storage. Please clear your history images or genetic sequences.", e3);
+            }
          }
       }
     }
   }
+};
+
+/**
+ * Emergency utility for the Super Admin to resolve quota issues for users
+ */
+export const clearLocalCache = () => {
+    const essentialKeys = [KEYS.SESSION, KEYS.TOKEN, KEYS.ORG, KEYS.CURRENT_PROJECT];
+    const allKeys = Object.keys(localStorage);
+    allKeys.forEach(k => {
+        if (k.startsWith(STORAGE_PREFIX) && !essentialKeys.includes(k)) {
+            localStorage.removeItem(k);
+        }
+    });
+    window.location.reload();
 };
 
 export const getSystemSettings = (): SystemSettings => {
@@ -86,10 +108,24 @@ export const getSystemSettings = (): SystemSettings => {
     privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected.</p>' },
     termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Standard open-source license.</p>' },
     enableMfa: false,
-    enableRegistration: true 
+    enableRegistration: true,
+    landingPageConfig: {
+      heroTitle: "The Future of Captive Breeding Management",
+      heroSubtitle: "Open-source platform for zoos and botanical gardens.",
+      showFeatures: true,
+      features: []
+    }
   };
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
-  return { ...defaults, ...stored, emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) }, aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) }, privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) }, termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) } };
+  return { 
+    ...defaults, 
+    ...stored, 
+    emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) }, 
+    aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) }, 
+    privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) }, 
+    termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) },
+    landingPageConfig: { ...defaults.landingPageConfig, ...(stored.landingPageConfig || {}) }
+  };
 };
 
 export const saveSystemSettings = async (s: SystemSettings, skipSync = false) => {

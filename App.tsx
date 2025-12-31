@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -190,11 +189,11 @@ const App: React.FC = () => {
   const [initialLandingView, setInitialLandingView] = useState<ViewMode>('landing');
   const [projects, setProjects] = useState<Project[]>(getProjects());
   const [currentProjectId, setCurrentProjectIdState] = useState<string>(getCurrentProjectId());
-  const [showBreeding, setShowBreeding] = useState(true);
-  const [showPlantMap, setShowPlantMap] = useState(false);
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
+  const [showBreeding, setShowBreeding] = useState(true);
+  const [showPlantMap, setShowPlantMap] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [pendingEmail, setPendingEmail] = useState('');
@@ -272,10 +271,24 @@ const App: React.FC = () => {
               await syncPushLanguages(getLanguages());
            } else {
               if (data.org) saveOrg(data.org, true);
+              
+              // NON-DESTRUCTIVE SETTINGS MERGE
+              // This ensures that new features (like LandingPageConfig) are not erased 
+              // by older settings objects retrieved from the database.
               if (data.settings && Object.keys(data.settings).length > 2) { 
-                 saveSystemSettings(data.settings, true); 
-                 setSystemSettings(data.settings); 
+                 const currentLocal = getSystemSettings();
+                 const merged = {
+                    ...currentLocal,
+                    ...data.settings,
+                    landingPageConfig: {
+                       ...currentLocal.landingPageConfig,
+                       ...(data.settings.landingPageConfig || {})
+                    }
+                 };
+                 saveSystemSettings(merged, true); 
+                 setSystemSettings(merged); 
               }
+              
               if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);
