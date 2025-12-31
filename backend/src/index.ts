@@ -248,7 +248,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 };
 
 const restrictToSuperAdmin = (req: any, res: any, next: express.NextFunction) => {
-    if (req.user && (req.user.role === 'Super Admin')) {
+    if (req.user && (req.user.role === 'Super Admin' || req.user.role === 'SUPER_ADMIN')) {
         next();
     } else {
         res.status(403).json({ error: "Super Admin privileges required" });
@@ -544,21 +544,79 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
+   const orgId = (req as any).user.orgId;
    try {
-      const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE is_deleted = 0`);
-      const [projects]: any = await db.execute(`SELECT * FROM projects`);
-      const [users]: any = await db.execute(`SELECT * FROM users`);
-      const [species]: any = await db.execute(`SELECT * FROM species`);
-      const [individuals]: any = await db.execute(`SELECT * FROM individuals`);
-      const [events]: any = await db.execute(`SELECT * FROM breeding_events`);
-      const [loans]: any = await db.execute(`SELECT * FROM breeding_loans`);
-      const [partnerships]: any = await db.execute(`SELECT * FROM partnerships`);
+      // 1. Get all public organizations for the network map
+      const [allOrgs]: any = await db.execute(`SELECT * FROM organizations WHERE is_deleted = 0`);
+      
+      // 2. Get my organization's data specifically
+      const [myOrgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? LIMIT 1`, [orgId]);
+      
+      // 3. Get projects belonging to my organization
+      const [projects]: any = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
+      
+      // 4. Get users belonging to my organization
+      const [users]: any = await db.execute(`SELECT * FROM users WHERE org_id = ?`, [orgId]);
+      
+      // 5. Get species belonging to my organization's projects
+      const [species]: any = await db.execute(`
+        SELECT * FROM species 
+        WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)
+      `, [orgId]);
+      
+      // 6. Get individuals belonging to my organization's projects
+      const [individuals]: any = await db.execute(`
+        SELECT * FROM individuals 
+        WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)
+      `, [orgId]);
+      
+      // 7. Get breeding events linked to my organization's species
+      const [events]: any = await db.execute(`
+        SELECT * FROM breeding_events 
+        WHERE species_id IN (
+            SELECT id FROM species 
+            WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)
+        )
+      `, [orgId]);
+      
+      // 8. Get breeding loans where my organization is proposer or partner
+      const [loans]: any = await db.execute(`
+        SELECT * FROM breeding_loans 
+        WHERE proposer_org_id = ? OR partner_org_id = ?
+      `, [orgId, orgId]);
+      
+      // 9. Get partnerships involving my organization
+      const [partnerships]: any = await db.execute(`
+        SELECT * FROM partnerships 
+        WHERE org_id_1 = ? OR org_id_2 = ?
+      `, [orgId, orgId]);
+      
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+      
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
-      res.json({ success: true, data: { partners: orgs, projects, users, species, individuals, breeding_events: events, breeding_loans: loans, partnerships, languages: langs, settings } });
-   } catch (e: any) { res.status(500).json({ error: e.message }); }
+      
+      res.json({ 
+        success: true, 
+        data: { 
+            org: myOrgRows[0] || null,
+            partners: allOrgs, 
+            projects, 
+            users, 
+            species, 
+            individuals, 
+            breeding_events: events, 
+            breeding_loans: loans, 
+            partnerships, 
+            languages: langs, 
+            settings 
+        } 
+      });
+   } catch (e: any) { 
+      console.error("Sync Error:", e.message);
+      res.status(500).json({ error: e.message }); 
+   }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
