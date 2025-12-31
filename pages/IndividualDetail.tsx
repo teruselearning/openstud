@@ -348,33 +348,52 @@ const IndividualDetail: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button onClick={() => navigate('/individuals')} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-600">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start md:items-center space-x-4">
+          <button onClick={() => navigate('/individuals')} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-600 flex-shrink-0 mt-1 md:mt-0">
             <ArrowLeft size={24} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-900 flex flex-wrap items-center gap-2">
               {individual.name}
-              {individual.loanStatus === 'Loaned Out' && <span className="text-xs bg-amber-500 text-white px-2 py-1 rounded-full uppercase font-bold flex items-center gap-1"><Briefcase size={12} /> Loaned Out</span>}
-              {individual.loanStatus === 'On Loan' && <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full uppercase font-bold flex items-center gap-1"><Briefcase size={12} /> On Loan</span>}
-              {individual.transferredToOrgId && <span className="text-xs bg-slate-700 text-white px-2 py-1 rounded-full uppercase font-bold flex items-center gap-1"><ArrowRightLeft size={12} /> Transferred</span>}
+              {individual.loanStatus === 'Loaned Out' && <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full uppercase font-bold flex items-center gap-1"><Briefcase size={10} /> Loaned Out</span>}
+              {individual.loanStatus === 'On Loan' && <span className="text-[10px] bg-purple-600 text-white px-2 py-0.5 rounded-full uppercase font-bold flex items-center gap-1"><Briefcase size={10} /> On Loan</span>}
+              {individual.transferredToOrgId && <span className="text-[10px] bg-slate-700 text-white px-2 py-0.5 rounded-full uppercase font-bold flex items-center gap-1"><ArrowRightLeft size={10} /> Transferred</span>}
             </h1>
-            <p className="text-slate-500 text-sm flex items-center gap-2">
-              <span>{individual.studbookId}</span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                {species?.commonName} ({species?.scientificName})
-                {species?.scientificName && <a href={`https://www.inaturalist.org/search?q=${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:text-emerald-800 inline-flex items-center ml-1" title="More info on iNaturalist"><ExternalLink size={12} /></a>}
-              </span>
-            </p>
+            <div className="text-slate-500 text-sm flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
+              <span className="font-mono text-xs">{individual.studbookId}</span>
+              <span className="hidden sm:inline">•</span>
+              <div className="flex items-center gap-2">
+                <span className="italic">
+                  {species?.commonName} ({species?.scientificName})
+                </span>
+                {species?.scientificName && (
+                  <a 
+                    href={`https://www.inaturalist.org/search?q=${encodeURIComponent(species.scientificName)}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-emerald-600 hover:text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1"
+                    title="View on iNaturalist"
+                  >
+                    iNat <ExternalLink size={10} />
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:flex gap-2 w-full md:w-auto">
            {myActivePartners.length > 0 && (
-             <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 text-slate-600 hover:text-purple-600 bg-white border border-slate-200 hover:border-purple-200 px-3 py-2 rounded-lg font-medium transition-colors shadow-sm" title="Transfer to Partner"><ArrowRightLeft size={16} /><span className="hidden sm:inline">Transfer</span></button>
+             <button onClick={() => setShowTransferModal(true)} className="flex items-center justify-center gap-2 text-slate-600 hover:text-purple-600 bg-white border border-slate-200 hover:border-purple-200 px-4 py-2.5 rounded-lg font-bold transition-colors shadow-sm text-sm">
+               <ArrowRightLeft size={18} />
+               <span>Transfer to Partner</span>
+             </button>
            )}
-           <button onClick={handleEditProfile} className="flex items-center gap-2 text-slate-600 hover:text-emerald-600 bg-white border border-slate-200 hover:border-emerald-200 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"><Edit size={16} /><span className="hidden sm:inline">Edit Profile</span></button>
+           <button onClick={handleEditProfile} className="flex items-center justify-center gap-2 text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2.5 rounded-lg font-bold transition-all shadow-md shadow-emerald-100 text-sm">
+             <Edit size={18} />
+             <span>Edit Profile</span>
+           </button>
         </div>
       </div>
 
@@ -517,7 +536,7 @@ const IndividualDetail: React.FC = () => {
             <form onSubmit={handleAddWeight} className="space-y-4">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Date</label><input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={weightForm.date} onChange={e => setWeightForm({...weightForm, date: e.target.value})} required /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Weight (kg) <span className="text-slate-400 font-normal">(Optional)</span></label><input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={weightForm.weightKg} onChange={e => setWeightForm({...weightForm, weightKg: e.target.value})} /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Photo (Optional)</label><div className="flex items-center space-x-3"><label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border border-slate-300 w-full justify-center"><Camera size={18} /><span>Take Photo / Upload</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleWeightImageUpload} /></label></div>{weightForm.imageUrl && <p className="text-xs text-emerald-600 mt-1 text-center">Image selected</p>}</div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Photo (Optional)</label><div className="flex items-center space-x-3"><label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border border-slate-300 w-full justify-center"><Camera size={18} /><span>Capture / Upload</span><input type="file" accept="image/*" className="hidden" onChange={handleWeightImageUpload} /></label></div>{weightForm.imageUrl && <p className="text-xs text-emerald-600 mt-1 text-center">Image selected</p>}</div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Note (Optional)</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={weightForm.note} onChange={e => setWeightForm({...weightForm, note: e.target.value})} /></div>
               <div className="flex justify-end space-x-3 pt-2"><button type="button" onClick={() => setShowWeightModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">Save</button></div>
             </form>
@@ -532,7 +551,7 @@ const IndividualDetail: React.FC = () => {
             <form onSubmit={handleAddGrowth} className="space-y-4">
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Date</label><input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={growthForm.date} onChange={e => setGrowthForm({...growthForm, date: e.target.value})} required /></div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Height (cm)</label><input type="number" step="0.1" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={growthForm.heightCm} onChange={e => setGrowthForm({...growthForm, heightCm: e.target.value})} required /></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Photo (Optional)</label><div className="flex items-center space-x-3"><label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border border-slate-300 w-full justify-center"><Camera size={18} /><span>Take Photo / Upload</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleGrowthImageUpload} /></label></div>{growthForm.imageUrl && <p className="text-xs text-emerald-600 mt-1 text-center">Image selected</p>}</div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Photo (Optional)</label><div className="flex items-center space-x-3"><label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border border-slate-300 w-full justify-center"><Camera size={18} /><span>Capture / Upload</span><input type="file" accept="image/*" className="hidden" onChange={handleGrowthImageUpload} /></label></div>{growthForm.imageUrl && <p className="text-xs text-emerald-600 mt-1 text-center">Image selected</p>}</div>
               <div><label className="block text-sm font-medium text-slate-700 mb-1">Note (Optional)</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={growthForm.note} onChange={e => setGrowthForm({...growthForm, note: e.target.value})} /></div>
               <div className="flex justify-end space-x-3 pt-2"><button type="button" onClick={() => setShowGrowthModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">Save Log</button></div>
             </form>
