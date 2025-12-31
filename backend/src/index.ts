@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -279,6 +280,30 @@ const replacePlaceholders = (text: string, data: Record<string, string>) => {
   Object.keys(data).forEach(key => { res = res.split(`{{${key}}}`).join(String(data[key])); });
   return res;
 };
+
+// --- PUBLIC ROUTES ---
+
+/**
+ * Public endpoint for landing page settings and branding
+ */
+app.get('/api/config', async (req: any, res: any) => {
+   const db = getDb();
+   try {
+      const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+      const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+      
+      let settings = config[0]?.settings || {};
+      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
+      
+      res.json({ 
+         success: true, 
+         data: { 
+            settings,
+            languages: langs 
+         } 
+      });
+   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 
 // --- AUTH ROUTES ---
 
