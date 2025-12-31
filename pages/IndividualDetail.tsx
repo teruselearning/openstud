@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg } from '../services/storage';
-import { compressImage } from '../services/imageUtils';
 import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, BreedingEvent, ExternalPartner, Partnership } from '../types';
 import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -131,7 +130,6 @@ const IndividualDetail: React.FC = () => {
 
     const map = leafletMap.current;
     
-    // Clear only static markers (keep userMarkerRef.current if it exists)
     map.eachLayer((layer: any) => {
       if (layer instanceof L.Marker && layer !== userMarkerRef.current) map.removeLayer(layer);
     });
@@ -147,7 +145,6 @@ const IndividualDetail: React.FC = () => {
       .addTo(map)
       .bindPopup(`<b>${individual.name}</b><br>Plant Location`);
 
-    // Perform initial centering only once
     if (!hasInitialFit.current) {
         if (userLocation) {
           const bounds = L.latLngBounds([
@@ -162,9 +159,8 @@ const IndividualDetail: React.FC = () => {
     }
     
     setTimeout(() => map.invalidateSize(), 200);
-  }, [individual, species]); // REMOVED userLocation from here to stop auto-zooming every update
+  }, [individual, species]);
 
-  // 2. User Location Updates (Updates visual marker position only, never zooms/pans)
   useEffect(() => {
     if (!leafletMap.current || !userLocation) return;
     const map = leafletMap.current;
@@ -213,9 +209,8 @@ const IndividualDetail: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        const compressed = await compressImage(reader.result as string);
-        setWeightForm(prev => ({ ...prev, imageUrl: compressed }));
+      reader.onloadend = () => {
+        setWeightForm(prev => ({ ...prev, imageUrl: reader.result as string }));
       };
       reader.readAsDataURL(file);
     }
@@ -279,9 +274,8 @@ const IndividualDetail: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        const compressed = await compressImage(reader.result as string);
-        setGrowthForm(prev => ({ ...prev, imageUrl: compressed }));
+      reader.onloadend = () => {
+        setGrowthForm(prev => ({ ...prev, imageUrl: reader.result as string }));
       };
       reader.readAsDataURL(file);
     }
@@ -377,7 +371,9 @@ const IndividualDetail: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
-           <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 text-slate-600 hover:text-purple-600 bg-white border border-slate-200 hover:border-purple-200 px-3 py-2 rounded-lg font-medium transition-colors shadow-sm" title="Transfer to Partner"><ArrowRightLeft size={16} /><span className="hidden sm:inline">Transfer</span></button>
+           {myActivePartners.length > 0 && (
+             <button onClick={() => setShowTransferModal(true)} className="flex items-center gap-2 text-slate-600 hover:text-purple-600 bg-white border border-slate-200 hover:border-purple-200 px-3 py-2 rounded-lg font-medium transition-colors shadow-sm" title="Transfer to Partner"><ArrowRightLeft size={16} /><span className="hidden sm:inline">Transfer</span></button>
+           )}
            <button onClick={handleEditProfile} className="flex items-center gap-2 text-slate-600 hover:text-emerald-600 bg-white border border-slate-200 hover:border-emerald-200 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"><Edit size={16} /><span className="hidden sm:inline">Edit Profile</span></button>
         </div>
       </div>

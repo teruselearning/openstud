@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getIndividuals, getSpecies, getOrg } from '../services/storage';
 import { Individual, Species, Organization } from '../types';
-import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon, Calendar, Weight, Info, Users, Briefcase, Archive, PawPrint } from 'lucide-react';
+import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon, Calendar, Weight, Info, Users, Briefcase, Archive, PawPrint, Sprout } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -178,6 +178,11 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
      setIsLocating(false);
   };
 
+  const getMonthName = (m?: number) => {
+    if (!m) return '';
+    return new Date(2024, m - 1).toLocaleString('default', { month: 'long' });
+  };
+
   return (
     <div className="h-[calc(100vh-100px)] flex flex-col relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
        <div className="absolute top-4 left-4 z-[1000] bg-white p-2 rounded-lg shadow-md border border-slate-200 flex items-center gap-2">
@@ -229,30 +234,58 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
              </div>
              
              <div className="p-5 flex-1 overflow-y-auto space-y-5">
-                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
-                  <p className="font-bold text-slate-900">{selectedSpecies?.commonName}</p>
-                  <p className="text-xs text-emerald-700 italic">{selectedSpecies?.scientificName}</p>
-                </div>
+                {(() => {
+                  const isPlant = selectedSpecies?.type === 'Plant';
+                  return (
+                    <>
+                      <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
+                        <p className="font-bold text-slate-900">{selectedSpecies?.commonName}</p>
+                        <p className="text-xs text-emerald-700 italic">{selectedSpecies?.scientificName}</p>
+                      </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Users size={10}/> Sex / Class</span>
-                      <p className="text-sm font-bold text-slate-800">{selectedInd.sex || 'Unknown'}</p>
-                   </div>
-                   <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Calendar size={10}/> {selectedSpecies?.type === 'Plant' ? 'Planted' : 'Born'}</span>
-                      <p className="text-sm font-bold text-slate-800">{selectedInd.birthDate || 'Unknown'}</p>
-                   </div>
-                   <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Archive size={10}/> Source</span>
-                      <p className="text-sm font-bold text-slate-800 truncate">{selectedInd.source || 'Unknown'}</p>
-                   </div>
-                   <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
-                      <p className={`text-sm font-bold ${selectedInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>{selectedInd.isDeceased ? 'Dead' : 'Active'}</p>
-                   </div>
-                </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                            {isPlant ? <Sprout size={10}/> : <Users size={10}/>} {isPlant ? 'Classification' : 'Sex'}
+                          </span>
+                          <p className="text-sm font-bold text-slate-800">
+                            {isPlant ? (selectedSpecies?.plantClassification || 'Unknown') : (selectedInd.sex || 'Unknown')}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                            <Calendar size={10}/> {isPlant ? 'Planted' : 'Born'}
+                          </span>
+                          <p className="text-sm font-bold text-slate-800">{selectedInd.birthDate || 'Unknown'}</p>
+                        </div>
+                        
+                        {!isPlant && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
+                            <p className="text-sm font-bold text-slate-800">{selectedInd.weightKg ? `${selectedInd.weightKg} kg` : 'N/A'}</p>
+                          </div>
+                        )}
+
+                        {isPlant && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Sprout size={10}/> Flowers</span>
+                            <p className="text-[10px] font-bold text-slate-800">
+                              {selectedSpecies?.breedingSeasonStart ? `${getMonthName(selectedSpecies.breedingSeasonStart)} - ${getMonthName(selectedSpecies.breedingSeasonEnd)}` : 'N/A'}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
+                          <p className={`text-sm font-bold ${selectedInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {selectedInd.isDeceased ? (isPlant ? 'Removed' : 'Deceased') : 'Active'}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <div className="pt-4 border-t border-slate-100">
                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Geo-Coordinates</span>

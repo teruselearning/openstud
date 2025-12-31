@@ -2,7 +2,6 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
-import { compressImage } from '../services/imageUtils';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
 import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
@@ -326,14 +325,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-           const compressed = await compressImage(reader.result as string);
-           setFormData(prev => ({ ...prev, imageUrl: compressed }));
-        } catch (err) {
-           console.error("Compression failed:", err);
-           setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
-        }
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
       };
       reader.readAsDataURL(file);
     }
@@ -480,6 +473,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              sexualMaturityAgeYears: aiData?.sexualMaturityAgeYears || 0, 
              averageAdultWeightKg: aiData?.averageAdultWeightKg || 0, 
              lifeExpectancyYears: aiData?.lifeExpectancyYears || 0, 
+             breedingSeasonStart: aiData?.breedingSeasonStart || 1,
+             breedingSeasonEnd: aiData?.breedingSeasonEnd || 12,
              imageUrl: aiData?.imageUrl || generatePattern(newSpeciesName)
           };
           const updatedSpeciesList = [...allSpecies, newSpecies];
@@ -552,6 +547,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     s.scientificName.toLowerCase().includes(speciesSearchQuery.toLowerCase())
   );
 
+  const getMonthName = (m?: number) => {
+    if (!m) return '';
+    return new Date(2024, m - 1).toLocaleString('default', { month: 'long' });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -595,7 +595,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[2000] overflow-y-auto bg-black/60 backdrop-blur-sm">
           <div className="flex min-h-full items-start justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl animate-in fade-in zoom-in duration-200 my-8">
              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
@@ -987,30 +987,60 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               </div>
               
               <div className="p-5 flex-1 overflow-y-auto space-y-5">
-                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
-                  <p className="font-bold text-slate-900">{allSpecies.find(s => s.id === selectedMapInd.speciesId)?.commonName}</p>
-                  <p className="text-xs text-emerald-700 italic">{allSpecies.find(s => s.id === selectedMapInd.speciesId)?.scientificName}</p>
-                </div>
+                {(() => {
+                  const sp = allSpecies.find(s => s.id === selectedMapInd.speciesId);
+                  const isPlant = sp?.type === 'Plant';
+                  
+                  return (
+                    <>
+                      <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
+                        <p className="font-bold text-slate-900">{sp?.commonName}</p>
+                        <p className="text-xs text-emerald-700 italic">{sp?.scientificName}</p>
+                      </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Users size={10}/> Sex</span>
-                    <p className="text-sm font-bold text-slate-800">{selectedMapInd.sex || 'Unknown'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Calendar size={10}/> Born / Planted</span>
-                    <p className="text-sm font-bold text-slate-800">{selectedMapInd.birthDate || 'Unknown'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
-                    <p className="text-sm font-bold text-slate-800">{selectedMapInd.weightKg ? `${selectedMapInd.weightKg} kg` : 'N/A'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
-                    <p className={`text-sm font-bold ${selectedMapInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>{selectedMapInd.isDeceased ? 'Deceased' : 'Active'}</p>
-                  </div>
-                </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                            {isPlant ? <Sprout size={10}/> : <Users size={10}/>} {isPlant ? 'Classification' : 'Sex'}
+                          </span>
+                          <p className="text-sm font-bold text-slate-800">
+                            {isPlant ? (sp?.plantClassification || 'Unknown') : (selectedMapInd.sex || 'Unknown')}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                            <Calendar size={10}/> {isPlant ? 'Planted' : 'Born'}
+                          </span>
+                          <p className="text-sm font-bold text-slate-800">{selectedMapInd.birthDate || 'Unknown'}</p>
+                        </div>
+                        
+                        {!isPlant && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
+                            <p className="text-sm font-bold text-slate-800">{selectedMapInd.weightKg ? `${selectedMapInd.weightKg} kg` : 'N/A'}</p>
+                          </div>
+                        )}
+                        
+                        {isPlant && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Sprout size={10}/> Flowers</span>
+                            <p className="text-[10px] font-bold text-slate-800">
+                              {sp?.breedingSeasonStart ? `${getMonthName(sp.breedingSeasonStart)} - ${getMonthName(sp.breedingSeasonEnd)}` : 'N/A'}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
+                          <p className={`text-sm font-bold ${selectedMapInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {selectedMapInd.isDeceased ? (isPlant ? 'Removed' : 'Deceased') : 'Active'}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <div className="pt-4 border-t border-slate-100">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Location Context</span>
