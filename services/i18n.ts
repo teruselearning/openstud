@@ -30,6 +30,15 @@ export const BASE_TRANSLATIONS = {
     adminName: "Admin Name",
     emailAddr: "Email Address",
     createAccount: "Create Account",
+    signIn: "Sign In",
+    welcomeBackTitle: "Welcome Back",
+    signInSubtitle: "Sign in to your organisation.",
+    about: "About",
+    privacyPolicy: "Privacy Policy",
+    termsConditions: "Terms & Conditions",
+    forgotPassword: "Forgot Password?",
+    resetPassword: "Reset Password",
+    sendCode: "Send Code",
 
     // Dashboard
     overview: "Overview",
@@ -166,7 +175,7 @@ export const BASE_TRANSLATIONS = {
     
     // Super Admin & Settings
     saDashboard: "Super Admin Dashboard",
-    saSubtitle: "Global system management and language settings.",
+    saSubtitle: "Global system management and oversight.",
     systemOverview: "System Overview",
     totalOrgs: "Total Organizations",
     globalSpeciesCount: "Global Species Count",
@@ -228,6 +237,43 @@ export const BASE_TRANSLATIONS = {
     apiKey: "API Key",
     enableMfa: "Enable Two-Factor Auth (Global)",
     enableMfaDesc: "Force MFA for all users across all organizations.",
+    manageOrgs: "Manage Organisations",
+    network: "Network",
+    security: "Security",
+    email: "Email",
+    landing: "Landing",
+    localisation: "Localisation",
+    cacheManage: "Local Cache Management",
+    cachePurgeDesc: "Fix 'Storage Full' errors by purging cached data.",
+    cachePurgeWarning: "If users see 'QuotaExceededError', clearing non-critical local storage will force a fresh, efficient sync from the database.",
+    clearCacheBtn: "Clear Local Cache & Re-Sync",
+    health: "Health",
+    createOrgBtn: "Create Organisation",
+    loginAs: "Login As",
+    hostTag: "Host",
+
+    // Records & History
+    geneticsTitle: "Genetics",
+    historyTitle: "History",
+    growthHistory: "Growth History",
+    healthRecords: "Health Records",
+    breedingHistory: "Breeding History",
+    liveTracking: "Live Tracking",
+    centerMyLocation: "Center My Location",
+    transferToPartner: "Transfer to Partner",
+    editProfile: "Edit Profile",
+    viewFullFile: "View Full File",
+    logWeight: "Log Weight",
+    addRecord: "Add Record",
+    batchOffspring: "Quick Register Offspring",
+
+    // Network Map
+    globalMap: "Global Map",
+    myPartners: "My Partners",
+    connectNewPartner: "Connect New Partner",
+    redeemCode: "Redeem Code",
+    yourInviteCode: "Your Invite Code",
+    partnerVisibilityPrivate: "Species list private",
 
     // Email Templates Localized - Styled
     emailVerifySubject: "Verify your OpenStudbook account",
