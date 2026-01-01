@@ -23,28 +23,53 @@ const speciesSchema = {
   required: ["scientificName", "conservationStatus", "type"],
 };
 
-// Fixed initialization of GoogleGenAI to use process.env.API_KEY directly
+/**
+ * Schema for dictionary translations
+ * Using an array of objects with short keys to minimize token usage and enforce structure
+ */
+const translationSchema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      k: { type: Type.STRING, description: "The original translation key." },
+      v: { type: Type.STRING, description: "The translated text value for this key." }
+    },
+    required: ["k", "v"]
+  }
+};
+
 const getAiClient = (): GoogleGenAI => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
-/**
- * Strips markdown code blocks and trims response
- */
 const sanitizeJsonResponse = (text: string): string => {
   if (!text) return "";
-  let clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  const start = clean.indexOf('{');
-  const end = clean.lastIndexOf('}');
+  let clean = text.trim();
+  // Strip markdown markers if present
+  if (clean.startsWith("```")) {
+    clean = clean.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "");
+  }
+  // Find boundaries
+  const firstBrace = clean.indexOf('{');
+  const firstBracket = clean.indexOf('[');
+  let start = -1;
+  let end = -1;
+
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    start = firstBrace;
+    end = clean.lastIndexOf('}');
+  } else if (firstBracket !== -1) {
+    start = firstBracket;
+    end = clean.lastIndexOf(']');
+  }
+
   if (start !== -1 && end !== -1 && end > start) {
-     clean = clean.substring(start, end + 1);
+    return clean.substring(start, end + 1);
   }
   return clean;
 };
 
-/**
- * Reverse Geocode coordinates to a human-readable address
- */
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
   try {
     const ai = getAiClient();
@@ -52,8 +77,7 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
       model: 'gemini-3-flash-preview',
       contents: `Identify the location at coordinates Latitude: ${lat}, Longitude: ${lng}. 
       Return a string in the format: "City, State/Region, Country". 
-      Be precise. If it's a remote area, use the nearest known town and region.
-      Return ONLY the location string, no other text.`,
+      Be precise. Return ONLY the location string, no other text.`,
     });
     return response.text?.trim() || "Unknown Location";
   } catch (error) {
@@ -98,24 +122,16 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
 
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("Gemini API Key missing.");
     if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
-
     const ai = getAiClient();
-    const locationPrompt = locationContext 
-      ? `The organization tracking this species is located in "${locationContext}". Determine if this species is Native, Invasive, or Introduced to that specific country AND that specific local area/region.`
-      : `No organization location context provided. Use general native range information.`;
-
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Provide biological data for "${commonName}". Determine if it is an Animal or a Plant. ${locationPrompt}. Return as JSON matching the schema.`,
+      contents: `Provide biological data for "${commonName}" (Type: ${type}). Org location: ${locationContext}. Return ONLY JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,
       },
     });
-
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
       return JSON.parse(sanitized) as Partial<Species>;
@@ -148,20 +164,46 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
   }
 };
 
-export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<Record<string, string>> => {
+/**
+ * Translates a dictionary of strings into a target language.
+ * Now uses a structured array format and explicit schema for maximum reliability.
+ */
+export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<{k: string, v: string}[]> => {
   try {
     if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
+    
+    // Transform to array of objects for easier processing by AI with schema
+    const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
+    
+    if (payload.length === 0) return [];
+
     const ai = getAiClient();
-    const prompt = `Translate values to ${targetLanguage}. Keep JSON keys intact: ${JSON.stringify(sourceData)}. Return ONLY JSON.`;
+    const prompt = `Translate the following interface strings into "${targetLanguage}". 
+    The input is an array of objects containing the English source text ("v").
+    IMPORTANT:
+    1. Maintain all HTML tags and variables like {{name}}, {{orgName}}, {{code}}.
+    2. Provide natural sounding translations suitable for a professional software UI.
+    3. Return an array of objects matching the original keys.
+
+    Input Data:
+    ${JSON.stringify(payload)}`;
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
-      config: { responseMimeType: "application/json" }
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: translationSchema
+      }
     });
+
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
       return JSON.parse(sanitized);
     }
-    return {};
-  } catch (e) { throw e; }
+    return [];
+  } catch (e) { 
+    console.error("Dictionary Translation Error:", e);
+    throw e; 
+  }
 };

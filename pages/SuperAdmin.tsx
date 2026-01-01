@@ -248,17 +248,19 @@ const SuperAdmin: React.FC = () => {
     setIsAutoFilling(true);
     setAiFillSuccess(false);
     try {
-      const translated = await translateDictionary(missingKeysDict, editingLang.name);
-      if (translated && typeof translated === 'object') {
+      // The service now returns an array of { k: string, v: string } objects
+      const translatedItems = await translateDictionary(missingKeysDict, editingLang.name);
+      
+      if (translatedItems && Array.isArray(translatedItems)) {
         // Merge AI results back into existing translations, preserving what's already there
         setEditingLang(prev => {
           if (!prev) return null;
           
           const mergedTranslations = { ...prev.translations };
-          Object.keys(translated).forEach(key => {
-            // Extra safety: only update if we originally identified it as missing
-            if (missingKeysDict[key]) {
-               mergedTranslations[key] = translated[key];
+          translatedItems.forEach(item => {
+            // Only update if we originally identified it as missing
+            if (missingKeysDict[item.k]) {
+               mergedTranslations[item.k] = item.v;
             }
           });
 
