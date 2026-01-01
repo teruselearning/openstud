@@ -233,7 +233,10 @@ const SuperAdmin: React.FC = () => {
     const missingKeysDict: Record<string, string> = {};
     Object.keys(BASE_TRANSLATIONS).forEach(key => {
       const currentVal = editingLang.translations[key];
-      if (!currentVal || currentVal.trim() === '') {
+      // Defensive check: Only attempt trim() if the value is actually a string
+      // This prevents the "trim is not a function" TypeError if values are null or objects
+      const isMissing = !currentVal || (typeof currentVal !== 'string') || currentVal.trim() === '';
+      if (isMissing) {
         missingKeysDict[key] = (BASE_TRANSLATIONS as any)[key];
       }
     });
@@ -248,7 +251,7 @@ const SuperAdmin: React.FC = () => {
     setIsAutoFilling(true);
     setAiFillSuccess(false);
     try {
-      // The service now returns an array of { k: string, v: string } objects
+      // The service returns an array of { k: string, v: string } objects
       const translatedItems = await translateDictionary(missingKeysDict, editingLang.name);
       
       if (translatedItems && Array.isArray(translatedItems)) {
@@ -258,7 +261,7 @@ const SuperAdmin: React.FC = () => {
           
           const mergedTranslations = { ...prev.translations };
           translatedItems.forEach(item => {
-            // Only update if we originally identified it as missing
+            // Only update if we originally identified it as missing to prevent data loss
             if (missingKeysDict[item.k]) {
                mergedTranslations[item.k] = item.v;
             }

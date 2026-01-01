@@ -179,13 +179,16 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
 
     const ai = getAiClient();
     const prompt = `Translate the following interface strings into "${targetLanguage}". 
-    The input is an array of objects containing the English source text ("v").
-    IMPORTANT:
-    1. Maintain all HTML tags and variables like {{name}}, {{orgName}}, {{code}}.
-    2. Provide natural sounding translations suitable for a professional software UI.
-    3. Return an array of objects matching the original keys.
+    The input is an array of objects containing the English source text in the "v" field.
+    
+    CRITICAL INSTRUCTIONS:
+    1. Preserve all HTML tags (e.g., <div>, <p>, <strong>).
+    2. Preserve all variables in double curly braces (e.g., {{name}}, {{orgName}}, {{code}}, {{year}}).
+    3. Use natural, professional phrasing suitable for a conservation management dashboard.
+    4. Maintain the exact key ("k") for each item in your response.
+    5. Return an array of objects matching the original structure.
 
-    Input Data:
+    Data to Translate:
     ${JSON.stringify(payload)}`;
 
     const response = await ai.models.generateContent({
@@ -199,7 +202,13 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
 
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
-      return JSON.parse(sanitized);
+      try {
+        const parsed = JSON.parse(sanitized);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (parseErr) {
+        console.error("Failed to parse AI translation JSON:", sanitized);
+        throw new Error("Invalid response format from translation service.");
+      }
     }
     return [];
   } catch (e) { 
