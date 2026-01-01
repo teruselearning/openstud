@@ -76,6 +76,7 @@ const initDatabase = async () => {
     try {
         await db.query('SELECT 1');
         
+        // Define all tables
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -103,18 +104,22 @@ const initDatabase = async () => {
             )
         `);
 
+        // Migrations helper for columns
         const ensureColumn = async (table: string, column: string, definition: string) => {
            try {
               const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
               if (rows.length === 0) {
+                 console.log(`Migrating: Adding column ${column} to ${table}`);
                  await db.execute(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
               }
            } catch (e) { console.warn(`Migration check failed for ${table}.${column}`); }
         };
 
+        // Ensure critical columns exist for organizations
         await ensureColumn('organizations', 'enable_mfa', 'BOOLEAN DEFAULT FALSE');
         await ensureColumn('organizations', 'enable_enclosures', 'BOOLEAN DEFAULT FALSE');
         await ensureColumn('organizations', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
+        await ensureColumn('organizations', 'dashboard_block', 'JSON');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS enclosures (
@@ -210,6 +215,9 @@ const initDatabase = async () => {
                 CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
+
+        // Migration check for enclosure_id in individuals
+        await ensureColumn('individuals', 'enclosure_id', 'VARCHAR(255)');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
@@ -311,6 +319,29 @@ app.post('/api/login', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// --- PUBLIC CONFIG ROUTE (Fixes 404) ---
+
+app.get('/api/config', async (req: any, res: any) => {
+   const db = getDb();
+   try {
+      const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+      const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+      
+      let settings = config[0]?.settings;
+      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
+
+      res.json({ 
+         success: true, 
+         data: { 
+            settings: settings || {}, 
+            languages: langs || [] 
+         } 
+      });
+   } catch (e: any) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
 // --- GENERIC UPSERT REST ROUTES ---
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
@@ -359,7 +390,7 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 
     try {
         if (Object.keys(updates).length === 0) {
-            const softDeleteField = (table === 'organizations' || table === 'languages') ? (table === 'languages' ? 'is_deleted' : 'is_deleted') : null;
+            const softDeleteField = (table === 'organizations' || table === 'languages') ? 'is_deleted' : null;
             if (softDeleteField) {
                 await db.execute(`UPDATE \`${table}\` SET \`${softDeleteField}\` = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
                 return res.json({ success: true });
