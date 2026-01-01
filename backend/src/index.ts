@@ -123,7 +123,7 @@ const initDatabase = async () => {
             )
         `);
 
-        // Other tables omitted for brevity but should exist in actual deployment
+        // Other tables
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, CONSTRAINT fk_project_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50), CONSTRAINT fk_species_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes LONGTEXT, source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON, CONSTRAINT fk_ind_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE, CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE)`);
@@ -136,10 +136,10 @@ const initDatabase = async () => {
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
         
-        // --- SEEDING: Demo User & Org ---
-        const [userCount]: any = await db.execute('SELECT COUNT(*) as count FROM users');
-        if (userCount[0].count === 0) {
-           console.log("[SEED] Creating default demo user (Sarah Keeper)...");
+        // --- SEEDING: Demo User & Org (Check specifically for Sarah) ---
+        const [sarahRows]: any = await db.execute('SELECT id FROM users WHERE email = ?', ['sarah@wild.org']);
+        if (sarahRows.length === 0) {
+           console.log("[SEED] Sarah Keeper not found. Re-provisioning demo environment...");
            const orgId = 'org-1';
            await db.execute(`INSERT IGNORE INTO organizations (id, name, location, focus) VALUES (?, ?, ?, ?)`, [orgId, 'Wilderness Trust', 'Global Sanctuary', 'Animals']);
            await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES (?, ?, ?, ?)`, ['p-1', orgId, 'General Collection', 'Initial project for demo.']);
@@ -161,10 +161,16 @@ const initDatabase = async () => {
  */
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized: No token provided" });
+  if (!authHeader) {
+      console.warn(`[AUTH] Protected request to ${req.path} denied: No Authorization header.`);
+      return res.status(401).json({ error: "Unauthorized: No token provided" });
+  }
 
   const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: "Unauthorized: Malformed token" });
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      console.warn(`[AUTH] Protected request to ${req.path} denied: Malformed header.`);
+      return res.status(401).json({ error: "Unauthorized: Malformed token" });
+  }
 
   const token = parts[1];
   try {
@@ -172,6 +178,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
     (req as any).user = decoded;
     next();
   } catch (e: any) {
+    console.error(`[AUTH] Protected request to ${req.path} denied: Invalid/Expired JWT.`);
     return res.status(401).json({ error: "Session expired. Please log in again." });
   }
 };
@@ -180,27 +187,39 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 
 app.post('/api/login', async (req: any, res: any) => {
     const { email, password } = req.body;
+    console.log(`[AUTH] Received login attempt for: ${email}`);
+    
+    if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required." });
+    }
+
     const db = getDb();
     try {
         const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
         const user = rows[0];
+        
         if (!user) {
-           console.warn(`[AUTH] Login failed for ${email}: Account not found.`);
+           console.warn(`[AUTH] Login failed for ${email}: Account not found in database.`);
            return res.status(401).json({ error: "Account not found." });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password).catch(() => user.password === password);
+        const isMatch = await bcrypt.compare(password, user.password).catch(() => {
+            console.log(`[AUTH] Bcrypt failed for ${email}, falling back to plain text check.`);
+            return user.password === password;
+        });
+
         if (!isMatch) {
-           console.warn(`[AUTH] Login failed for ${email}: Password mismatch.`);
+           console.warn(`[AUTH] Login failed for ${email}: Invalid credentials.`);
            return res.status(401).json({ error: "Invalid password." });
         }
 
         const [orgRows]: any = await db.execute('SELECT * FROM organizations WHERE id = ? LIMIT 1', [user.org_id]);
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
+        console.log(`[AUTH] Login successful for: ${email}`);
         res.json({ token, user, organization: orgRows[0] });
     } catch (e: any) { 
-        console.error(`[LOGIN ERROR]`, e);
+        console.error(`[AUTH ERROR] Critical exception during login for ${email}:`, e);
         res.status(500).json({ error: "Server error during login." }); 
     }
 });
