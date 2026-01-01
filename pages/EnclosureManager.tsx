@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId } from '../services/storage';
-import { Enclosure, Species, Individual, Organization } from '../types';
-import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, LayoutGrid, Loader2, Save, ChevronRight, Dna, Activity, LocateFixed } from 'lucide-react';
+import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals } from '../services/storage';
+import { Enclosure, Species, Individual, EnclosurePoint } from '../types';
+// Added Users and CheckCircle to lucide-react imports
+import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -23,12 +24,14 @@ const EnclosureManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
+  // Selection step
+  const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
+
   const [formData, setFormData] = useState<Partial<Enclosure>>({
     name: '',
     description: '',
-    latitude: undefined,
-    longitude: undefined,
-    speciesIds: []
+    boundary: [],
+    individualIds: []
   });
 
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -37,7 +40,8 @@ const EnclosureManager: React.FC = () => {
   const markersLayerRef = useRef<any>(null);
   const pickerMapRef = useRef<HTMLDivElement>(null);
   const pickerInstance = useRef<any>(null);
-  const pickerMarker = useRef<any>(null);
+  const pickerPolygon = useRef<any>(null);
+  const pickerMarkers = useRef<any[]>([]);
 
   useEffect(() => {
     setEnclosures(getEnclosures());
@@ -68,38 +72,70 @@ const EnclosureManager: React.FC = () => {
       layer.clearLayers();
       
       enclosures.forEach(enc => {
-        if (enc.latitude && enc.longitude) {
-          const icon = L.divIcon({
-            className: 'custom-div-icon',
-            html: `<div style="background-color: #9333ea; width: 18px; height: 18px; border-radius: 4px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9]
-          });
+        if (enc.boundary && enc.boundary.length > 0) {
+          const poly = L.polygon(enc.boundary.map(p => [p.lat, p.lng]), {
+            color: '#9333ea',
+            fillColor: '#9333ea',
+            fillOpacity: 0.2
+          }).addTo(layer);
           
-          const marker = L.marker([enc.latitude, enc.longitude], { icon }).addTo(layer);
-          marker.bindPopup(`<b>${enc.name}</b><br>${enc.description || ''}`);
+          poly.bindPopup(`
+            <div class="p-1">
+              <h4 class="font-bold text-slate-900">${enc.name}</h4>
+              <p class="text-xs text-slate-500">${enc.individualIds.length} individuals</p>
+            </div>
+          `);
         }
       });
     }
   }, [viewMode, enclosures]);
 
-  // Picker Map Effect
+  // Picker Map Effect (Polygon Drawing)
   useEffect(() => {
     if (showMapPicker && pickerMapRef.current && !pickerInstance.current) {
-       const initialLat = formData.latitude || org.latitude || 0;
-       const initialLng = formData.longitude || org.longitude || 0;
-       const map = L.map(pickerMapRef.current).setView([initialLat, initialLng], 16);
-       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-       const marker = L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
-       pickerMarker.current = marker;
+       const initialLat = (formData.boundary?.[0]?.lat) || org.latitude || 0;
+       const initialLng = (formData.boundary?.[0]?.lng) || org.longitude || 0;
+       
+       const map = L.map(pickerMapRef.current).setView([initialLat, initialLng], 18);
+       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22, maxNativeZoom: 19 }).addTo(map);
+       
        pickerInstance.current = map;
-       map.on('click', (e: any) => marker.setLatLng(e.latlng));
+       pickerMarkers.current = [];
+
+       const updatePolygon = () => {
+         const points = pickerMarkers.current.map(m => m.getLatLng());
+         if (pickerPolygon.current) {
+            pickerPolygon.current.setLatLngs(points);
+         } else if (points.length >= 2) {
+            pickerPolygon.current = L.polygon(points, { color: '#9333ea' }).addTo(map);
+         }
+       };
+
+       // Load existing boundary if editing
+       if (formData.boundary && formData.boundary.length > 0) {
+          formData.boundary.forEach(p => {
+             const marker = L.marker([p.lat, p.lng], { draggable: true }).addTo(map);
+             marker.on('drag', updatePolygon);
+             pickerMarkers.current.push(marker);
+          });
+          updatePolygon();
+       }
+
+       map.on('click', (e: any) => {
+          const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
+          marker.on('drag', updatePolygon);
+          pickerMarkers.current.push(marker);
+          updatePolygon();
+       });
+
        setTimeout(() => map.invalidateSize(), 200);
     }
     return () => {
        if (!showMapPicker && pickerInstance.current) {
           pickerInstance.current.remove();
           pickerInstance.current = null;
+          pickerPolygon.current = null;
+          pickerMarkers.current = [];
        }
     };
   }, [showMapPicker]);
@@ -110,18 +146,36 @@ const EnclosureManager: React.FC = () => {
       ...formData as Enclosure,
       id: editingId || `enc-${Date.now()}`,
       orgId: org.id,
-      speciesIds: formData.speciesIds || []
+      individualIds: formData.individualIds || []
     };
     
-    const updated = editingId 
-      ? enclosures.map(e => e.id === editingId ? newEnc : e)
+    // Update local state
+    const updatedEnclosures = editingId 
+      ? enclosures.map(enc => enc.id === editingId ? newEnc : enc)
       : [...enclosures, newEnc];
       
-    setEnclosures(updated);
-    saveEnclosures(updated);
+    setEnclosures(updatedEnclosures);
+    saveEnclosures(updatedEnclosures);
+
+    // Sync individual records - update their enclosureId
+    const updatedInds = allIndividuals.map(ind => {
+       // If this individual was added to the enclosure
+       if (newEnc.individualIds.includes(ind.id)) {
+          return { ...ind, enclosureId: newEnc.id };
+       }
+       // If this individual was previously in this enclosure but now removed
+       if (ind.enclosureId === newEnc.id && !newEnc.individualIds.includes(ind.id)) {
+          return { ...ind, enclosureId: undefined };
+       }
+       return ind;
+    });
+
+    setAllIndividuals(updatedInds);
+    saveIndividuals(updatedInds);
+
     setShowForm(false);
     setEditingId(null);
-    setFormData({ name: '', description: '', speciesIds: [], latitude: undefined, longitude: undefined });
+    setFormData({ name: '', description: '', individualIds: [], boundary: [] });
   };
 
   const handleEdit = (enc: Enclosure) => {
@@ -135,23 +189,30 @@ const EnclosureManager: React.FC = () => {
       const updated = enclosures.filter(e => e.id !== id);
       setEnclosures(updated);
       saveEnclosures(updated);
+      
+      // Also clear enclosureId from individuals
+      const updatedInds = allIndividuals.map(ind => ind.enclosureId === id ? { ...ind, enclosureId: undefined } : ind);
+      setAllIndividuals(updatedInds);
+      saveIndividuals(updatedInds);
     }
   };
 
-  const toggleSpecies = (sid: string) => {
-    const current = formData.speciesIds || [];
-    if (current.includes(sid)) setFormData({ ...formData, speciesIds: current.filter(id => id !== sid) });
-    else setFormData({ ...formData, speciesIds: [...current, sid] });
+  const toggleIndividual = (id: string) => {
+    const current = formData.individualIds || [];
+    if (current.includes(id)) setFormData({ ...formData, individualIds: current.filter(cid => cid !== id) });
+    else setFormData({ ...formData, individualIds: [...current, id] });
   };
 
   const filteredEnclosures = enclosures.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
+  const speciesIndividuals = allIndividuals.filter(i => i.speciesId === selectedSpeciesId && i.projectId === currentProjectId);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{labelsPlural}</h2>
-          <p className="text-slate-500">Manage physical {labelsPlural.toLowerCase()} and assign species to them.</p>
+          <p className="text-slate-500">Define physical {labelsPlural.toLowerCase()} and manage the individuals within them.</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
@@ -189,25 +250,25 @@ const EnclosureManager: React.FC = () => {
                   
                   <div className="space-y-3 pt-4 border-t border-slate-50">
                     <div className="flex items-center justify-between text-xs font-medium">
-                      <span className="text-slate-400 uppercase tracking-wider">Associated Species</span>
-                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{enc.speciesIds.length}</span>
+                      <span className="text-slate-400 uppercase tracking-wider">Individuals Inside</span>
+                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{enc.individualIds.length}</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {enc.speciesIds.slice(0, 3).map(sid => {
-                        const sp = allSpecies.find(s => s.id === sid);
-                        return <span key={sid} className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-100">{sp?.commonName || 'Unknown'}</span>;
+                      {enc.individualIds.slice(0, 5).map(id => {
+                        const ind = allIndividuals.find(i => i.id === id);
+                        return <span key={id} className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200">{ind?.name || 'Unknown'}</span>;
                       })}
-                      {enc.speciesIds.length > 3 && <span className="text-[10px] text-slate-400 font-bold flex items-center pl-1">+{enc.speciesIds.length - 3} more</span>}
-                      {enc.speciesIds.length === 0 && <span className="text-[10px] text-slate-300 italic">No species assigned</span>}
+                      {enc.individualIds.length > 5 && <span className="text-[10px] text-slate-400 font-bold flex items-center pl-1">+{enc.individualIds.length - 5} more</span>}
+                      {enc.individualIds.length === 0 && <span className="text-[10px] text-slate-300 italic">Unoccupied</span>}
                     </div>
                   </div>
                 </div>
-                {enc.latitude && enc.longitude && (
+                {enc.boundary && enc.boundary.length > 0 && (
                    <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                       <MapPin size={12} className="text-purple-500"/> Mapped
+                       <MapIcon size={12} className="text-purple-500"/> Polygon Boundary
                      </div>
-                     <span className="text-[10px] font-mono text-slate-400">{enc.latitude.toFixed(3)}, {enc.longitude.toFixed(3)}</span>
+                     <span className="text-[10px] font-mono text-slate-400">{enc.boundary.length} Points</span>
                    </div>
                 )}
               </div>
@@ -231,51 +292,151 @@ const EnclosureManager: React.FC = () => {
 
       {showForm && (
         <div className="fixed inset-0 z-[2000] overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl animate-in zoom-in duration-200 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl animate-in zoom-in duration-200 overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                <h3 className="text-xl font-bold text-slate-900">{editingId ? `Edit ${label}` : `Add New ${label}`}</h3>
                <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
             </div>
-            <form onSubmit={handleSave} className="p-8 space-y-6">
-              <div className="space-y-4">
-                 <div>
-                   <label className="text-sm font-bold text-slate-700 block mb-1">{label} Name</label>
-                   <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder={`e.g. ${isPlantOrg ? 'South Greenhouse' : 'Lion Habitat'}`} required />
-                 </div>
-                 <div>
-                   <label className="text-sm font-bold text-slate-700 block mb-1">Description</label>
-                   <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Location, climate, or special notes..." />
-                 </div>
-                 
-                 <div className="pt-4 border-t border-slate-100">
-                    <div className="flex justify-between items-center mb-3">
-                       <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><MapPin size={16} className="text-purple-600"/> Plot Location</label>
-                       <button type="button" onClick={() => setShowMapPicker(true)} className="text-xs font-bold text-emerald-600 hover:underline">Open Map Picker</button>
+            
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Left Side: Metadata & Boundaries */}
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-bold text-slate-700 block mb-1">{label} Name</label>
+                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder={`e.g. ${isPlantOrg ? 'South Greenhouse' : 'Lion Habitat'}`} required />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div><label className="text-[10px] font-bold text-slate-400 uppercase">Latitude</label><input type="number" step="any" className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-slate-50" value={formData.latitude || ''} readOnly /></div>
-                       <div><label className="text-[10px] font-bold text-slate-400 uppercase">Longitude</label><input type="number" step="any" className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-slate-50" value={formData.longitude || ''} readOnly /></div>
+                    <div>
+                      <label className="text-sm font-bold text-slate-700 block mb-1">Description</label>
+                      <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Location, climate, or special notes..." />
                     </div>
-                 </div>
+                  </div>
 
-                 <div className="pt-4 border-t border-slate-100">
-                    <label className="text-sm font-bold text-slate-700 block mb-2">Species in this {label}</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
-                      {allSpecies.filter(s => s.projectId === currentProjectId).map(sp => (
-                        <label key={sp.id} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-all ${formData.speciesIds?.includes(sp.id) ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:border-emerald-100'}`}>
-                          <input type="checkbox" className="rounded text-emerald-600 focus:ring-emerald-500" checked={formData.speciesIds?.includes(sp.id)} onChange={() => toggleSpecies(sp.id)} />
-                          <div className="overflow-hidden">
-                             <p className="text-xs font-bold text-slate-900 truncate">{sp.commonName}</p>
-                             <p className="text-[9px] text-slate-500 italic truncate">{sp.scientificName}</p>
-                          </div>
-                        </label>
-                      ))}
+                  <div className="pt-4 border-t border-slate-100">
+                    <div className="flex justify-between items-center mb-3">
+                       <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><MapIcon size={16} className="text-purple-600"/> Boundary Plot</label>
+                       <button type="button" onClick={() => setShowMapPicker(true)} className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"><Pencil size={12}/> {formData.boundary?.length ? 'Edit Polygon' : 'Draw Boundary'}</button>
                     </div>
-                 </div>
+                    <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 min-h-[100px] flex flex-col items-center justify-center text-center">
+                       {formData.boundary && formData.boundary.length > 0 ? (
+                          <div className="w-full">
+                            <p className="text-xs font-bold text-purple-700 mb-2">{formData.boundary.length} Coordinate Points Defined</p>
+                            <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                               {formData.boundary.map((p, i) => (
+                                  <span key={i} className="text-[9px] font-mono bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">P{i+1}</span>
+                               ))}
+                            </div>
+                          </div>
+                       ) : (
+                          <div className="space-y-1">
+                            <MapPin size={24} className="mx-auto text-slate-300 mb-1" />
+                            <p className="text-xs text-slate-500">No boundary defined yet. Click 'Draw Boundary' to plot the area on the map.</p>
+                          </div>
+                       )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Side: Step-by-Step Individual Selection */}
+                <div className="space-y-6">
+                   <div>
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4"><Users size={18} className="text-blue-600"/> Occupants</h4>
+                      <div className="space-y-4">
+                         {/* Step 1: Select Species */}
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Select Species</label>
+                            <select 
+                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+                               value={selectedSpeciesId}
+                               onChange={(e) => setSelectedSpeciesId(e.target.value)}
+                            >
+                               <option value="">Choose a species...</option>
+                               {projectSpecies.map(s => (
+                                  <option key={s.id} value={s.id}>{s.commonName} ({allIndividuals.filter(i => i.speciesId === s.id && i.projectId === currentProjectId).length} total)</option>
+                               ))}
+                            </select>
+                         </div>
+
+                         {/* Step 2: Select Individuals */}
+                         <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Select Individuals</label>
+                               {selectedSpeciesId && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{speciesIndividuals.length} available</span>}
+                            </div>
+                            <div className="border border-slate-200 rounded-xl bg-slate-50 min-h-[200px] max-h-[300px] overflow-y-auto">
+                               {!selectedSpeciesId ? (
+                                  <div className="h-[200px] flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                                     <MousePointer2 size={24} className="mb-2 opacity-30" />
+                                     <p className="text-xs">Select a species above to browse individuals.</p>
+                                  </div>
+                               ) : speciesIndividuals.length === 0 ? (
+                                  <div className="h-[200px] flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                                     <Info size={24} className="mb-2 opacity-30" />
+                                     <p className="text-xs">No individuals found for this species in this project.</p>
+                                  </div>
+                               ) : (
+                                  <div className="divide-y divide-slate-100">
+                                     {speciesIndividuals.map(ind => {
+                                        const isSelected = formData.individualIds?.includes(ind.id);
+                                        const inOtherEnclosure = ind.enclosureId && ind.enclosureId !== editingId;
+                                        const otherEncName = inOtherEnclosure ? enclosures.find(e => e.id === ind.enclosureId)?.name : null;
+
+                                        return (
+                                           <label key={ind.id} className={`flex items-center gap-4 p-3 transition-colors cursor-pointer hover:bg-white group ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                                              <input 
+                                                type="checkbox" 
+                                                className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4" 
+                                                checked={isSelected || false} 
+                                                onChange={() => toggleIndividual(ind.id)}
+                                              />
+                                              <div className="flex-1 overflow-hidden">
+                                                 <div className="flex items-center gap-2">
+                                                    <span className={`font-bold text-sm ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>{ind.name}</span>
+                                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 rounded">{ind.studbookId}</span>
+                                                 </div>
+                                                 <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className={`text-[10px] font-bold ${ind.sex === 'Male' ? 'text-blue-500' : ind.sex === 'Female' ? 'text-pink-500' : 'text-slate-400'}`}>{ind.sex}</span>
+                                                    {inOtherEnclosure && (
+                                                       <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">Moving from {otherEncName}</span>
+                                                    )}
+                                                 </div>
+                                              </div>
+                                              {isSelected && <CheckCircle className="text-blue-500" size={16}/>}
+                                           </label>
+                                        );
+                                     })}
+                                  </div>
+                               )}
+                            </div>
+                         </div>
+                         
+                         <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
+                            <h5 className="text-[10px] font-extrabold text-blue-800 uppercase tracking-widest mb-3 flex items-center gap-1"><Info size={12}/> Current Selection Summary</h5>
+                            <div className="flex flex-wrap gap-2">
+                               {(formData.individualIds || []).length > 0 ? (
+                                  (formData.individualIds || []).map(id => {
+                                     const ind = allIndividuals.find(i => i.id === id);
+                                     return (
+                                        <div key={id} className="bg-white border border-blue-200 text-blue-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 pr-1">
+                                           {ind?.name || 'Unknown'}
+                                           <button type="button" onClick={() => toggleIndividual(id)} className="p-0.5 hover:bg-red-50 hover:text-red-500 rounded transition-colors"><X size={10}/></button>
+                                        </div>
+                                     );
+                                  })
+                               ) : (
+                                  <span className="text-[10px] text-blue-400 italic">No individuals selected for this {label.toLowerCase()}.</span>
+                               )}
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                </div>
               </div>
-              <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
-                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
-                 <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2 rounded-lg font-bold shadow-lg shadow-emerald-100 flex items-center justify-center gap-2"><Save size={18}/> Save {label}</button>
+
+              <div className="pt-8 flex justify-end gap-4 border-t border-slate-100">
+                 <button type="button" onClick={() => setShowForm(false)} className="px-8 py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition-all">Cancel</button>
+                 <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-12 py-3 rounded-xl font-bold shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 transform active:scale-95 transition-all"><Save size={20}/> Save {label}</button>
               </div>
             </form>
           </div>
@@ -284,19 +445,63 @@ const EnclosureManager: React.FC = () => {
 
       {showMapPicker && (
          <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-               <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><MapPin size={18} className="text-emerald-600"/> Plot {label} Location</h3>
-                  <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200">
+               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <div className="flex items-center gap-3">
+                     <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><MapIcon size={20}/></div>
+                     <div>
+                        <h3 className="font-bold text-slate-900">Define {label} Boundaries</h3>
+                        <p className="text-xs text-slate-500">Click points on the map to create the enclosure perimeter.</p>
+                     </div>
+                  </div>
+                  <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
                </div>
-               <div className="h-[400px] w-full" ref={pickerMapRef} />
-               <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-                  <button onClick={() => setShowMapPicker(false)} className="px-4 py-2 text-slate-600 font-bold">Cancel</button>
-                  <button onClick={() => {
-                     const { lat, lng } = pickerMarker.current.getLatLng();
-                     setFormData({...formData, latitude: lat, longitude: lng});
-                     setShowMapPicker(false);
-                  }} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold shadow-md">Confirm Location</button>
+               <div className="h-[500px] w-full relative" ref={pickerMapRef}>
+                  <div className="absolute top-4 left-4 z-[1000] space-y-2">
+                     <div className="bg-white p-3 rounded-lg shadow-md border border-slate-200 max-w-[200px]">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Instructions</p>
+                        <ul className="text-[10px] text-slate-600 space-y-1.5">
+                           <li className="flex items-start gap-1.5"><ChevronRight size={10} className="mt-0.5 flex-shrink-0" /> Click anywhere to add a corner</li>
+                           <li className="flex items-start gap-1.5"><ChevronRight size={10} className="mt-0.5 flex-shrink-0" /> Drag markers to adjust</li>
+                        </ul>
+                     </div>
+                  </div>
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex gap-2">
+                     <button 
+                        type="button" 
+                        onClick={() => {
+                           pickerMarkers.current.forEach(m => pickerInstance.current.removeLayer(m));
+                           pickerMarkers.current = [];
+                           if (pickerPolygon.current) {
+                              pickerInstance.current.removeLayer(pickerPolygon.current);
+                              pickerPolygon.current = null;
+                           }
+                        }}
+                        className="bg-white border border-slate-200 text-red-600 px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-50 flex items-center gap-1.5"
+                     >
+                        <Trash size={14}/> Clear All Points
+                     </button>
+                  </div>
+               </div>
+               <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center px-6">
+                  <span className="text-xs font-bold text-slate-500">
+                     {formData.boundary?.length || 0} Points Defined
+                  </span>
+                  <div className="flex gap-3">
+                     <button onClick={() => setShowMapPicker(false)} className="px-6 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-lg">Cancel</button>
+                     <button onClick={() => {
+                        const points = pickerMarkers.current.map(m => {
+                           const ll = m.getLatLng();
+                           return { lat: ll.lat, lng: ll.lng };
+                        });
+                        if (points.length < 3) {
+                           alert("A boundary needs at least 3 points to form a shape.");
+                           return;
+                        }
+                        setFormData({...formData, boundary: points});
+                        setShowMapPicker(false);
+                     }} className="bg-purple-600 text-white px-8 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-all">Confirm Boundary</button>
+                  </div>
                </div>
             </div>
          </div>

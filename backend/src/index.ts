@@ -77,7 +77,6 @@ const initDatabase = async () => {
     try {
         await db.query('SELECT 1');
         
-        // Define Organizations table first
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -105,10 +104,8 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migration helper: Explicitly check for column existence and add if missing
         const ensureColumn = async (table: string, column: string, definition: string) => {
            try {
-              // Using information_schema for more reliable checks across different MySQL versions
               const [rows]: any = await db.execute(
                 `SELECT COLUMN_NAME FROM information_schema.COLUMNS 
                  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
@@ -125,7 +122,6 @@ const initDatabase = async () => {
            }
         };
 
-        // Run migrations for the organizations table
         await ensureColumn('organizations', 'enable_enclosures', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'dashboard_block', 'JSON');
         await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
@@ -135,7 +131,6 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'ai_usage_last_reset', 'VARCHAR(255)');
         await ensureColumn('organizations', 'show_native_status', 'TINYINT(1) DEFAULT 1');
 
-        // Create other tables
         await db.execute(`
             CREATE TABLE IF NOT EXISTS enclosures (
                 id VARCHAR(255) PRIMARY KEY,
@@ -148,6 +143,10 @@ const initDatabase = async () => {
                 CONSTRAINT fk_enclosure_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
+
+        // Migration for enclosures boundary and individuals
+        await ensureColumn('enclosures', 'boundary', 'JSON');
+        await ensureColumn('enclosures', 'individual_ids', 'JSON');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -311,8 +310,6 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-// --- API ROUTES ---
-
 app.post('/api/login', async (req: any, res: any) => {
     const { email, password } = req.body;
     const db = getDb();
@@ -344,7 +341,6 @@ app.get('/api/config', async (req: any, res: any) => {
    }
 });
 
-// Generic Rest Route with Column Filtering to prevent "Unknown Column" errors
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const db = getDb();
@@ -352,7 +348,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     if (data.length === 0) return res.json({ success: true });
     
     try {
-        // Fetch current columns for the table from information_schema
         const [columns]: any = await db.execute(
             `SELECT COLUMN_NAME FROM information_schema.COLUMNS 
              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
@@ -361,7 +356,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
         const validColumns = new Set(columns.map((c: any) => c.COLUMN_NAME));
 
         for (const item of data) {
-            // FILTER keys: only include those that actually exist in the DB
             const keys = Object.keys(item).filter(k => validColumns.has(k));
             if (keys.length === 0) continue;
             

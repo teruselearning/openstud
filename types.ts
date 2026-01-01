@@ -14,22 +14,22 @@ export enum UserStatus {
 
 export interface User {
   id: string;
-  orgId: string; // Linked organization
+  orgId: string;
   name: string;
   email: string;
   role: UserRole;
   status: UserStatus;
   avatarUrl?: string;
-  password?: string; // For mock auth
-  allowedProjectIds?: string[]; // If defined and not empty, restricts access to these project IDs
-  preferredLanguage?: string; // Persisted language preference
+  password?: string;
+  allowedProjectIds?: string[];
+  preferredLanguage?: string;
 }
 
 export interface Project {
   id: string;
   name: string;
   description?: string;
-  orgId?: string; // Links project to an organization for multi-tenancy
+  orgId?: string;
 }
 
 export type OrganizationFocus = 'Animals' | 'Plants';
@@ -46,34 +46,28 @@ export interface Organization {
   location: string;
   latitude?: number;
   longitude?: number;
-  // Privacy & Security Settings
-  isOrgPublic: boolean;     // Visible on the map/network
-  isSpeciesPublic: boolean; // Species list is visible to others
-  obscureLocation: boolean; // If true, shows approximate city location instead of exact coords
-  hideName?: boolean;       // If true, shows "Anonymous Organization" publicly
-  enableMfa?: boolean;      // Organization-specific MFA requirement
-  enableEnclosures?: boolean; // Enable Enclosure/Area management
-  
+  isOrgPublic: boolean;
+  isSpeciesPublic: boolean;
+  obscureLocation: boolean;
+  hideName?: boolean;
+  enableMfa?: boolean;
+  enableEnclosures?: boolean;
   foundedYear: number;
   description: string;
   focus: OrganizationFocus;
-  // Breeding Loan Settings
   allowBreedingRequests: boolean;
-  breedingRequestContactId?: string; // User ID of the receiver
-  
-  // Display Settings
-  showNativeStatus?: boolean; // Show Native/Invasive pills on species cards
-
-  // Custom Dashboard
+  breedingRequestContactId?: string;
+  showNativeStatus?: boolean;
   dashboardBlock?: DashboardBlockConfig;
-  
-  // AI Usage Limits
-  aiUsageLimit?: number;      // Monthly limit
-  aiUsageCount?: number;      // Current month count
-  aiUsageLastReset?: string;  // ISO Date of last reset
-
-  // Soft Delete
+  aiUsageLimit?: number;
+  aiUsageCount?: number;
+  aiUsageLastReset?: string;
   deleted?: boolean;
+}
+
+export interface EnclosurePoint {
+  lat: number;
+  lng: number;
 }
 
 export interface Enclosure {
@@ -81,9 +75,8 @@ export interface Enclosure {
   orgId: string;
   name: string;
   description?: string;
-  latitude?: number;
-  longitude?: number;
-  speciesIds: string[]; // Associated species
+  boundary?: EnclosurePoint[]; // Array of points for the polygon
+  individualIds: string[]; // Associated individuals
 }
 
 export interface ExternalPartner {
@@ -92,14 +85,13 @@ export interface ExternalPartner {
   location: string;
   latitude: number;
   longitude: number;
-  speciesIds: string[]; // IDs of species they have from the global/common list
+  speciesIds: string[];
   isOrgPublic: boolean;
   isSpeciesPublic: boolean;
   obscureLocation: boolean;
   hideName?: boolean;
   allowBreedingRequests: boolean;
-  // Cache for population display
-  populationCounts?: Record<string, string>; // e.g. { 's-1': '2.1.0' }
+  populationCounts?: Record<string, string>;
   deleted?: boolean;
 }
 
@@ -107,7 +99,7 @@ export interface Partnership {
   id: string;
   orgId1: string;
   orgId2: string;
-  status: 'Active' | 'Pending'; // Pending if we implement a 2-way handshake later, currently code-redemption makes it active immediately
+  status: 'Active' | 'Pending';
   establishedDate: string;
 }
 
@@ -126,15 +118,15 @@ export interface LandingFeature {
   id: string;
   title: string;
   description: string;
-  icon: string; // Name of the icon to render
+  icon: string;
 }
 
 export interface LandingPageConfig {
   heroTitle?: string;
   heroSubtitle?: string;
   showFeatures?: boolean;
-  features?: LandingFeature[]; // List of customizable feature cards
-  customContentHtml?: string; // HTML content to display below hero/features
+  features?: LandingFeature[];
+  customContentHtml?: string;
 }
 
 export interface StaticPageConfig {
@@ -150,38 +142,33 @@ export interface EmailTemplate {
 }
 
 export interface SystemSettings {
-  // SMTP
   smtpHost: string;
   smtpPort: number;
   smtpUser: string;
   smtpPass: string;
   smtpSecure: boolean;
   emailTemplates?: Record<string, EmailTemplate>;
-  // Theming
-  themePrimaryColor: string; // Hex code for primary brand color
-  themeSecondaryColor: string; // Hex code for secondary/accent
+  themePrimaryColor: string;
+  themeSecondaryColor: string;
   appLogoUrl?: string;
-  customCss?: string; // Custom CSS overrides
-  // Content
+  customCss?: string;
   landingPageConfig?: LandingPageConfig;
   aboutPage: StaticPageConfig;
   privacyPage: StaticPageConfig;
   termsPage: StaticPageConfig;
-  // Security
   recaptchaSiteKey?: string;
   recaptchaSecretKey?: string;
   enableMfa: boolean;
-  enableRegistration: boolean; // Toggle for public organization creation
-  // App Config
+  enableRegistration: boolean;
   aiModel?: string;
 }
 
 export interface LanguageConfig {
-  code: string; // 'en-GB', 'fr'
-  name: string; // 'English (UK)'
+  code: string;
+  name: string;
   translations: Record<string, string>;
   isDefault: boolean;
-  manualOverrides?: string[]; // Keys that have been manually edited and should be protected from auto-translate
+  manualOverrides?: string[];
   deleted?: boolean;
 }
 
@@ -191,22 +178,20 @@ export type NativeStatus = 'Native' | 'Introduced' | 'Invasive' | 'Unknown';
 
 export interface Species {
   id: string;
-  projectId: string; // Linked to a specific project
+  projectId: string;
   commonName: string;
   scientificName: string;
-  type: SpeciesType; // Distinguish between Animal and Plant
-  plantClassification?: PlantClassification; // Only if type is Plant
-  conservationStatus: string; // e.g., IUCN status
+  type: SpeciesType;
+  plantClassification?: PlantClassification;
+  conservationStatus: string;
   sexualMaturityAgeYears: number;
   averageAdultWeightKg: number;
   lifeExpectancyYears: number;
-  breedingSeasonStart?: number; // 1-12 (Jan-Dec)
-  breedingSeasonEnd?: number;   // 1-12 (Jan-Dec)
+  breedingSeasonStart?: number;
+  breedingSeasonEnd?: number;
   imageUrl?: string;
-  
-  // Native Status Context
-  nativeStatusCountry?: NativeStatus; // Is it native to the country of the Org
-  nativeStatusLocal?: NativeStatus;   // Is it native to the specific local region of the Org
+  nativeStatusCountry?: NativeStatus;
+  nativeStatusLocal?: NativeStatus;
 }
 
 export enum Sex {
@@ -227,7 +212,7 @@ export interface GrowthRecord {
   id: string;
   date: string;
   heightCm: number;
-  imageUrl?: string; // Image of the plant at this growth stage
+  imageUrl?: string;
   note?: string;
 }
 
@@ -244,43 +229,33 @@ export type AcquisitionSource = 'Bred in house' | 'Captive Bred' | 'Wild Caught'
 
 export interface Individual {
   id: string;
-  projectId: string; // Linked to a specific project
+  projectId: string;
   speciesId: string;
-  enclosureId?: string; // Linked enclosure/area
-  studbookId: string; // Unique identifier in the breeding program
+  enclosureId?: string;
+  studbookId: string;
   name: string;
   sex: Sex;
   birthDate: string;
-  weightKg: number; // Current weight (for animals)
-  sireId?: string; // Father
-  damId?: string; // Mother
+  weightKg: number;
+  sireId?: string;
+  damId?: string;
   imageUrl?: string;
-  dnaSequence?: string; // Base64 or Text content of the DNA file
-  dnaFileName?: string; // Original name of the uploaded file
-  dnaFileType?: string; // Format type (FASTA, VCF, BAM, etc.)
+  dnaSequence?: string;
+  dnaFileName?: string;
+  dnaFileType?: string;
   notes: string;
-  
-  // Origin / Source
   source?: AcquisitionSource;
   sourceDetails?: string;
-  
-  // Location (For Plants)
   latitude?: number;
   longitude?: number;
-
-  // Status
   isDeceased?: boolean;
   deathDate?: string;
-  loanStatus?: LoanStatus; // Tracks if animal is part of a loan
-  
-  // Transfer Info
-  transferredToOrgId?: string; // ID of external partner
+  loanStatus?: LoanStatus;
+  transferredToOrgId?: string;
   transferDate?: string;
   transferNote?: string;
-
-  // History
-  weightHistory?: WeightRecord[]; // For animals
-  growthHistory?: GrowthRecord[]; // For plants
+  weightHistory?: WeightRecord[];
+  growthHistory?: GrowthRecord[];
   healthHistory?: HealthRecord[];
 }
 
@@ -302,22 +277,22 @@ export type LoanRole = 'Provider' | 'Recipient';
 export interface BreedingLoanChangeRequest {
   requesterOrgId: string;
   type: 'Extension' | 'Conclusion' | 'Cancellation' | 'Modification';
-  newEndDate?: string; // For extension
-  newTerms?: string; // For modification
+  newEndDate?: string;
+  newTerms?: string;
   note?: string;
   requestedDate: string;
 }
 
 export interface BreedingLoan {
   id: string;
-  partnerOrgId: string; // ID of the external partner
-  proposerOrgId: string; // ID of the org who created/proposed the loan
-  role: LoanRole; // "My" role in this loan (Provider/Recipient)
+  partnerOrgId: string;
+  proposerOrgId: string;
+  role: LoanRole;
   startDate: string;
   endDate?: string;
   status: 'Proposed' | 'Active' | 'Rejected' | 'Completed' | 'Cancelled';
-  individualIds: string[]; // List of individuals involved in this loan
-  terms: string; // Description of agreement (offspring, duration, etc)
-  notificationRecipientId?: string; // Internal user ID to notify about updates
-  changeRequest?: BreedingLoanChangeRequest; // Pending change request
+  individualIds: string[];
+  terms: string;
+  notificationRecipientId?: string;
+  changeRequest?: BreedingLoanChangeRequest;
 }
