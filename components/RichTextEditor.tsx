@@ -17,13 +17,14 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
 
   // Initialize Quill
   useEffect(() => {
-    if (!containerRef.current || !wrapperRef.current || quillRef.current) return;
+    if (!containerRef.current || !wrapperRef.current) return;
+    if (quillRef.current) return; // Prevent double init
 
     // @ts-ignore
     const Quill = (window as any).Quill;
     if (!Quill) return;
 
-    // Prevent duplicate toolbars caused by remounting (common in Strict Mode or toggling)
+    // Clear any artifacts from previous mounts (crucial for React dev mode)
     const existingToolbars = wrapperRef.current.querySelectorAll('.ql-toolbar');
     existingToolbars.forEach(tb => tb.remove());
 
@@ -46,7 +47,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
       quill.clipboard.dangerouslyPasteHTML(value);
     }
 
-    // Crucial: Only trigger onChange if the source of the change is the 'user'
+    // Capture user changes
     quill.on('text-change', (delta: any, oldDelta: any, source: string) => {
       if (source === 'user') {
         const html = quill.root.innerHTML;
@@ -60,6 +61,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     // Proper Cleanup
     return () => {
        if (quillRef.current) {
+          // No official destroy() in Quill 1.x, so we clear the ref and manually clean DOM
           quillRef.current = null;
        }
     };
@@ -73,6 +75,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
       const incomingValue = value || '';
       
       if (normalize(incomingValue) !== normalize(currentHtml)) {
+        // Only update if significantly different to avoid cursor jumping
         const selection = quillRef.current.getSelection();
         quillRef.current.clipboard.dangerouslyPasteHTML(incomingValue);
         if (selection) {
@@ -111,7 +114,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
          <style>{`
            .ql-toolbar { border-top: none !important; border-left: none !important; border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; background: #f8fafc; }
            .ql-container { border: none !important; font-family: 'Inter', sans-serif; font-size: 0.875rem; }
-           .ql-editor { overflow-y: auto; }
+           .ql-editor { overflow-y: auto; padding: 12px 16px; }
            ${isExpanded ? '.ql-editor { height: 100%; }' : ''}
          `}</style>
       </div>

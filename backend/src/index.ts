@@ -75,6 +75,7 @@ const initDatabase = async () => {
     try {
         await db.query('SELECT 1');
         
+        // Ensure organizations table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -106,16 +107,20 @@ const initDatabase = async () => {
            try {
               const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
               if (rows.length === 0) {
-                 console.log(`Migration: Adding column ${column} to ${table}`);
+                 console.log(`Migration: Adding missing column '${column}' to '${table}'...`);
                  await db.execute(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+                 console.log(`Migration: Column '${column}' added successfully.`);
               }
-           } catch (e) { console.warn(`Migration check failed for ${table}.${column}`); }
+           } catch (e: any) { 
+              console.error(`Migration FAILED for ${table}.${column}:`, e.message); 
+           }
         };
 
-        await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
+        // Explicit migration for enclosure and dashboard functionality
         await ensureColumn('organizations', 'enable_enclosures', 'TINYINT(1) DEFAULT 0');
-        await ensureColumn('organizations', 'is_deleted', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'dashboard_block', 'JSON');
+        await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
+        await ensureColumn('organizations', 'is_deleted', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'ai_usage_limit', 'INT DEFAULT 100');
         await ensureColumn('organizations', 'ai_usage_count', 'INT DEFAULT 0');
 
@@ -212,6 +217,9 @@ const initDatabase = async () => {
             )
         `);
 
+        // Ensure individuals has enclosure_id
+        await ensureColumn('individuals', 'enclosure_id', 'VARCHAR(255)');
+
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
                 id VARCHAR(255) PRIMARY KEY,
@@ -273,7 +281,7 @@ const initDatabase = async () => {
         `);
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
-        console.log("Database schema synchronized.");
+        console.log("Database schema synchronized and migrations complete.");
     } catch (e: any) {
         console.error("CRITICAL: Database Initialization Failed!", e.message);
         process.exit(1);
@@ -328,10 +336,16 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const db = getDb();
     const data = Array.isArray(req.body) ? req.body : [req.body];
     if (data.length === 0) return res.json({ success: true });
+    
     try {
+        // Fetch valid columns for this table to prevent "Unknown column" errors
+        const [columns]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\``);
+        const validColumns = new Set(columns.map((c: any) => c.Field));
+
         for (const item of data) {
-            const keys = Object.keys(item);
+            const keys = Object.keys(item).filter(k => validColumns.has(k));
             if (keys.length === 0) continue;
+            
             const values = keys.map(k => {
                 const v = item[k];
                 if (v === undefined || v === null) return null;
@@ -360,12 +374,20 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const pkField = table === 'languages' ? 'code' : 'id';
     const pkValue = table === 'languages' ? (code || req.query.code) : (id || req.query.id);
     if (!pkValue) return res.status(400).json({ error: "Missing primary key" });
+    
     try {
+        const [columns]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\``);
+        const validColumns = new Set(columns.map((c: any) => c.Field));
+
         if (Object.keys(updates).length === 0) {
-            await db.execute(`UPDATE \`${table}\` SET is_deleted = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
-            return res.json({ success: true });
+            if (validColumns.has('is_deleted')) {
+                await db.execute(`UPDATE \`${table}\` SET is_deleted = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
+                return res.json({ success: true });
+            }
+            return res.status(400).json({ error: "No updates provided and deletion not supported on this table" });
         }
-        const keys = Object.keys(updates);
+        
+        const keys = Object.keys(updates).filter(k => validColumns.has(k));
         const values = keys.map(k => {
             const v = updates[k];
             if (v === undefined || v === null) return null;
