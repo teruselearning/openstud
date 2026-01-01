@@ -4,7 +4,7 @@ import { useLocation, Link } from 'react-router-dom';
 import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
-import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2 } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
 import UserManager from './UserManager';
@@ -108,7 +108,6 @@ const OrgSettings: React.FC = () => {
         markerRef.current = L.marker([lat, lng]).addTo(map);
       }
 
-      // Automatically determine location name via Gemini AI
       setIsGeocoding(true);
       try {
         const locationName = await reverseGeocode(lat, lng);
@@ -405,6 +404,44 @@ const OrgSettings: React.FC = () => {
                 <label className="text-sm font-medium text-slate-700">{t('description')}</label>
                 <textarea name="description" rows={3} value={org.description} onChange={handleChange} disabled={isDemoOrg} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500" />
               </div>
+              
+              {/* Security Section with MFA */}
+              <div className="border-t border-slate-100 pt-6 space-y-4">
+                 <h3 className="font-medium text-slate-900 flex items-center gap-2"><Lock size={18}/> {t('visibilityPrivacy')}</h3>
+                 
+                 <div className="flex items-center justify-between bg-red-50 p-4 rounded-lg border border-red-100">
+                    <div>
+                      <h4 className="font-medium text-slate-900 flex items-center gap-2"><ShieldAlert size={16} className="text-red-600"/> {t('enableOrgMfa')}</h4>
+                      <p className="text-sm text-slate-500">{t('enableOrgMfaDesc')}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={org.enableMfa || false} onChange={() => setOrg({...org, enableMfa: !org.enableMfa})} disabled={isDemoOrg} />
+                      <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isDemoOrg ? 'bg-slate-100 opacity-50' : 'bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 peer-checked:bg-red-600'}`}></div>
+                    </label>
+                 </div>
+
+                 <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div><h4 className="font-medium text-slate-900">{t('orgVisibility')}</h4><p className="text-sm text-slate-500">{t('orgVisibilityDesc')}</p></div>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.isOrgPublic} onChange={() => setOrg({...org, isOrgPublic: !org.isOrgPublic})} disabled={isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isDemoOrg ? 'bg-slate-100 opacity-50' : 'bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div><div className="flex items-center gap-2"><h4 className="font-medium text-slate-900">{t('obscureLocation')}</h4><EyeOff size={16} className="text-slate-400" /></div><p className="text-sm text-slate-500">{t('obscureLocationDesc')}</p></div>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.obscureLocation || false} onChange={() => setOrg({...org, obscureLocation: !org.obscureLocation})} disabled={!org.isOrgPublic || isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!org.isOrgPublic || isDemoOrg ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-200 peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div><div className="flex items-center gap-2"><h4 className="font-medium text-slate-900">{t('hideOrgName')}</h4><EyeOff size={16} className="text-slate-400" /></div><p className="text-sm text-slate-500">{t('hideOrgNameDesc')}</p></div>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.hideName || false} onChange={() => setOrg({...org, hideName: !org.hideName})} disabled={!org.isOrgPublic || isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!org.isOrgPublic || isDemoOrg ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-200 peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div><h4 className="font-medium text-slate-900">{t('speciesListVisibility')}</h4><p className="text-sm text-slate-500">{t('speciesListVisibilityDesc')} <span className="font-bold text-emerald-700 block mt-1">{t('speciesListVisibilityNote')}</span></p></div>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.isSpeciesPublic} onChange={() => setOrg({...org, isSpeciesPublic: !org.isSpeciesPublic})} disabled={!org.isOrgPublic || isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!org.isOrgPublic || isDemoOrg ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-200 peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div><div className="flex items-center gap-2"><h4 className="font-medium text-slate-900">{t('showNativeStatus')}</h4><Globe size={16} className="text-slate-400" /></div><p className="text-sm text-slate-500">{t('showNativeStatusDesc')}</p></div>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.showNativeStatus !== false} onChange={() => setOrg({...org, showNativeStatus: !org.showNativeStatus})} disabled={isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isDemoOrg ? 'bg-slate-100 opacity-50' : 'bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
+                </div>
+              </div>
+
               <div className="border-t border-slate-100 pt-6 space-y-4">
                  <div className="flex items-center justify-between">
                     <div><h3 className="font-medium text-slate-900 flex items-center gap-2"><LayoutTemplate size={18}/> {t('customDashBlock')}</h3><p className="text-sm text-slate-500">{t('customDashBlockDesc')}</p></div>
@@ -426,29 +463,6 @@ const OrgSettings: React.FC = () => {
                 {org.allowBreedingRequests && (
                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2"><label className="text-sm font-medium text-slate-700">{t('whoReceivesRequests')}</label><select name="breedingRequestContactId" value={org.breedingRequestContactId || ''} onChange={handleChange} disabled={isDemoOrg} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"><option value="">Select a member...</option>{users.map(u => (<option key={u.id} value={u.id}>{u.name} ({u.role})</option>))}</select><p className="text-xs text-slate-500">{t('whoReceivesRequestsDesc')}</p></div>
                 )}
-              </div>
-              <div className="border-t border-slate-100 pt-6 space-y-4">
-                <h3 className="font-medium text-slate-900 flex items-center gap-2"><Lock size={18}/> {t('visibilityPrivacy')}</h3>
-                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <div><h4 className="font-medium text-slate-900">{t('orgVisibility')}</h4><p className="text-sm text-slate-500">{t('orgVisibilityDesc')}</p></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.isOrgPublic} onChange={() => setOrg({...org, isOrgPublic: !org.isOrgPublic})} disabled={isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isDemoOrg ? 'bg-slate-100 opacity-50' : 'bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <div><div className="flex items-center gap-2"><h4 className="font-medium text-slate-900">{t('obscureLocation')}</h4><EyeOff size={16} className="text-slate-400" /></div><p className="text-sm text-slate-500">{t('obscureLocationDesc')}</p></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.obscureLocation || false} onChange={() => setOrg({...org, obscureLocation: !org.obscureLocation})} disabled={!org.isOrgPublic || isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!org.isOrgPublic || isDemoOrg ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-200 peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <div><div className="flex items-center gap-2"><h4 className="font-medium text-slate-900">{t('hideOrgName')}</h4><EyeOff size={16} className="text-slate-400" /></div><p className="text-sm text-slate-500">{t('hideOrgNameDesc')}</p></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.hideName || false} onChange={() => setOrg({...org, hideName: !org.hideName})} disabled={!org.isOrgPublic || isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!org.isOrgPublic || isDemoOrg ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-200 peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <div><h4 className="font-medium text-slate-900">{t('speciesListVisibility')}</h4><p className="text-sm text-slate-500">{t('speciesListVisibilityDesc')} <span className="font-bold text-emerald-700 block mt-1">{t('speciesListVisibilityNote')}</span></p></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.isSpeciesPublic} onChange={() => setOrg({...org, isSpeciesPublic: !org.isSpeciesPublic})} disabled={!org.isOrgPublic || isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${!org.isOrgPublic || isDemoOrg ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-200 peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <div><div className="flex items-center gap-2"><h4 className="font-medium text-slate-900">{t('showNativeStatus')}</h4><Globe size={16} className="text-slate-400" /></div><p className="text-sm text-slate-500">{t('showNativeStatusDesc')}</p></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={org.showNativeStatus !== false} onChange={() => setOrg({...org, showNativeStatus: !org.showNativeStatus})} disabled={isDemoOrg} /><div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${isDemoOrg ? 'bg-slate-100 opacity-50' : 'bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 peer-checked:bg-emerald-600'}`}></div></label>
-                </div>
               </div>
               {!isDemoOrg && (<div className="flex justify-end pt-4"><button type="submit" className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors shadow-sm"><Save size={18} /><span>{isSaved ? t('saved') : t('saveChanges')}</span></button></div>)}
             </form>

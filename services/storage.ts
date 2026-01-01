@@ -1,3 +1,4 @@
+
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization } from './syncService';
@@ -123,10 +124,10 @@ export const getSystemSettings = (): SystemSettings => {
   const defaults: SystemSettings = {
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
     emailTemplates: {
-      registration: { enabled: true, subject: "Verify your OpenStudbook account", bodyHtml: "<h3>Welcome to OpenStudbook!</h3><p>Your verification code for <strong>{{orgName}}</strong> is: <strong style='font-size: 24px; color: #059669;'>{{code}}</strong></p>" },
-      mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: "<h3>Security Verification</h3><p>Hello {{userName}},</p><p>Use the following code: <strong style='font-size: 24px; color: #3b82f6;'>{{code}}</strong></p>" },
-      invite: { enabled: true, subject: "You've been invited to join {{orgName}}", bodyHtml: "<h3>Team Invitation</h3><p>You have been invited to join the management team at <strong>{{orgName}}</strong>.</p>" },
-      notification: { enabled: true, subject: "OpenStudbook Update in {{orgName}}", bodyHtml: "<h3>Update</h3><p>{{message}}</p>" }
+      registration: { enabled: true, subject: BASE_TRANSLATIONS.emailVerifySubject, bodyHtml: BASE_TRANSLATIONS.emailVerifyBody },
+      mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, // Reuse style
+      invite: { enabled: true, subject: BASE_TRANSLATIONS.emailInviteSubject, bodyHtml: BASE_TRANSLATIONS.emailInviteBody },
+      notification: { enabled: true, subject: BASE_TRANSLATIONS.emailNotifySubject, bodyHtml: BASE_TRANSLATIONS.emailNotifyBody }
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
     aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management.</p>' },
@@ -227,7 +228,7 @@ export const getOrg = (): Organization => {
     id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', 
     focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, 
     obscureLocation: false, allowBreedingRequests: false,
-    aiUsageLimit: 100, aiUsageCount: 0 
+    aiUsageLimit: 100, aiUsageCount: 0, enableMfa: false
   };
   const org = get(KEYS.ORG, defaultOrg);
   if (!org || typeof org !== 'object') return defaultOrg;
@@ -373,6 +374,45 @@ export const login = async (email: string, pass: string): Promise<User | null> =
   return null;
 };
 
+export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[]): Promise<any> => {
+    const token = localStorage.getItem(KEYS.TOKEN);
+    const response = await fetch(`${API_BASE_URL}/api/users/invite`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name, email, role, allowedProjectIds })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Invitation failed");
+    return data;
+};
+
+export const checkInviteToken = async (token: string): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/api/users/check-invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Invalid invite link");
+    return data;
+};
+
+export const acceptInvite = async (token: string, password: string): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/api/users/accept-invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Invite accept failed");
+    localStorage.setItem(KEYS.TOKEN, data.token);
+    saveOrg(data.organization, true);
+    return data;
+};
+
 export const forgotPassword = async (email: string): Promise<any> => {
    try {
       const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.toLowerCase().trim() }) });
@@ -410,7 +450,7 @@ export const trustDevice = (userId: string) => {
 };
 
 export const sendMfaCode = async (email: string, code: string) => {
-   await sendSystemEmail(email, 'mfa', { code }, "Your Verification Code", `Code: ${code}`);
+   await sendSystemEmail(email, 'mfa', { code, year: new Date().getFullYear().toString(), orgName: 'OpenStudbook' }, "Your Verification Code", `Code: ${code}`);
 };
 
 export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []);
@@ -436,7 +476,7 @@ export const redeemPartnerInvite = (code: string): { success: boolean, message: 
 };
 
 export const regenerateDemoData = async () => {
-    const mockOrg: Organization = { id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805, isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998, description: 'The global demonstration sanctuary for OpenStudbook.', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true, aiUsageLimit: 1000, aiUsageCount: 42 };
+    const mockOrg: Organization = { id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805, isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998, description: 'The global demonstration sanctuary for OpenStudbook.', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true, aiUsageLimit: 1000, aiUsageCount: 42, enableMfa: false };
     const mockUsers: User[] = [
       { id: 'u-1', orgId: 'org-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
       { id: 'u-2', orgId: 'org-1', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },

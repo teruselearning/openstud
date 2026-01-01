@@ -46,11 +46,13 @@ export interface Organization {
   location: string;
   latitude?: number;
   longitude?: number;
-  // Privacy Settings
+  // Privacy & Security Settings
   isOrgPublic: boolean;     // Visible on the map/network
   isSpeciesPublic: boolean; // Species list is visible to others
   obscureLocation: boolean; // If true, shows approximate city location instead of exact coords
   hideName?: boolean;       // If true, shows "Anonymous Organization" publicly
+  enableMfa?: boolean;      // Organization-specific MFA requirement
+  
   foundedYear: number;
   description: string;
   focus: OrganizationFocus;

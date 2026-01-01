@@ -81,6 +81,8 @@ export const BASE_TRANSLATIONS = {
     speciesListVisibilityNote: "Note: Detailed individual records (Names, IDs, Dates) remain private to confirmed partners only.",
     showNativeStatus: "Show Native Status",
     showNativeStatusDesc: "Display native/invasive status indicators on species cards.",
+    enableOrgMfa: "Require Two-Factor Auth (MFA)",
+    enableOrgMfaDesc: "Enforce MFA for all members of this organization.",
     saveChanges: "Save Changes",
     saved: "Saved!",
     projectManagement: "Project Management",
@@ -224,15 +226,63 @@ export const BASE_TRANSLATIONS = {
     appLogo: "Application Logo",
     uploadLogo: "Upload Logo",
     apiKey: "API Key",
-    enableMfa: "Enable Two-Factor Auth",
+    enableMfa: "Enable Two-Factor Auth (Global)",
+    enableMfaDesc: "Force MFA for all users across all organizations.",
 
-    // Email Templates Localized
+    // Email Templates Localized - Styled
     emailVerifySubject: "Verify your OpenStudbook account",
-    emailVerifyBody: "<div style=\"font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;\"><h2 style=\"color: #059669;\">Welcome to OpenStudbook!</h2><p>To complete your registration for <strong>{{orgName}}</strong>, please enter the following verification code:</p><div style=\"font-size: 32px; font-weight: bold; letter-spacing: 5px; padding: 15px; background: #f0fdf4; color: #065f46; text-align: center; border-radius: 5px; margin: 20px 0;\">{{code}}</div><p style=\"color: #666; font-size: 12px;\">This code will expire in 30 minutes.</p></div>",
-    emailInviteSubject: "You've been invited to join {{orgName}} on OpenStudbook",
-    emailInviteBody: "<div style=\"font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;\"><h2 style=\"color: #059669;\">Invitation Received</h2><p>You have been invited to join <strong>{{orgName}}</strong> as a <strong>{{role}}</strong>.</p><p>Please use the following link to accept your invitation:</p><a href=\"{{inviteUrl}}\" style=\"display: inline-block; padding: 10px 20px; background: #059669; color: white; text-decoration: none; border-radius: 5px;\">Accept Invitation</a></div>",
+    emailVerifyBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
+  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
+  </div>
+  <div style="padding: 40px 32px; color: #1e293b;">
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Welcome! Verify your account</h2>
+    <p style="font-size: 16px; line-height: 1.6; color: #475569;">To complete your registration for <strong>{{orgName}}</strong>, please use the following verification code:</p>
+    <div style="margin: 32px 0; padding: 24px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center;">
+      <span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #065f46;">{{code}}</span>
+    </div>
+    <p style="font-size: 14px; color: #64748b;">This code will expire in 30 minutes. If you did not request this, please ignore this email.</p>
+  </div>
+  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
+  </div>
+</div>`,
+    emailInviteSubject: "Invitation to join {{orgName}} on OpenStudbook",
+    emailInviteBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
+  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
+  </div>
+  <div style="padding: 40px 32px; color: #1e293b;">
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">You've been invited!</h2>
+    <p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello <strong>{{userName}}</strong>,</p>
+    <p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>{{orgName}}</strong>.</p>
+    <div style="margin: 32px 0; text-align: center;">
+      <a href="{{inviteUrl}}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">Accept Invitation</a>
+    </div>
+    <p style="font-size: 14px; color: #64748b;">If the button doesn't work, copy and paste this link: <br> <span style="color: #059669; text-decoration: underline;">{{inviteUrl}}</span></p>
+  </div>
+  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
+  </div>
+</div>`,
     emailNotifySubject: "New Notification from OpenStudbook",
-    emailNotifyBody: "<div style=\"font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;\"><h2 style=\"color: #059669;\">New Activity</h2><p>{{message}}</p><p><a href=\"{{appUrl}}\">Click here</a> to view details in the app.</p></div>"
+    emailNotifyBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
+  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
+  </div>
+  <div style="padding: 40px 32px; color: #1e293b;">
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">New System Activity</h2>
+    <div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border-left: 4px solid #059669; border-radius: 4px;">
+      <p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">{{message}}</p>
+    </div>
+    <div style="margin: 32px 0; text-align: center;">
+      <a href="{{appUrl}}" style="background-color: #1e293b; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">View in Dashboard</a>
+    </div>
+  </div>
+  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
+  </div>
+</div>`
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
@@ -288,7 +338,7 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       organization: "Organização",
       signOut: "Sair",
       landingTitle: "O Futuro da Gestão de Criação em Cativeiro",
-      landingSubtitle: "OpenStudbook é uma plataforma de código aberto para zoológicos, aquários e jardins botânicos gerenciarem populações de espécies, rastrearem genética e colaborarem globalmente.",
+      landingSubtitle: "OpenStudbook é uma plataforma de código terbuka para zoológicos, aquários e jardins botânicos gerenciarem populações de espécies, rastrearem genética e colaborarem globalmente.",
       getStarted: "Começar",
       createOrg: "Criar Organização",
       save: "Salvar",

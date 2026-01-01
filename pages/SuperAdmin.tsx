@@ -1,3 +1,4 @@
+
 import { useContext, useState, useEffect } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
@@ -14,7 +15,7 @@ import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 import React from 'react';
 
-type AdminTab = 'overview' | 'email' | 'settings' | 'languages';
+type AdminTab = 'overview' | 'email' | 'settings' | 'security' | 'languages';
 
 const SuperAdmin: React.FC = () => {
   const { t, refreshTranslations } = useContext(LanguageContext);
@@ -114,7 +115,7 @@ const SuperAdmin: React.FC = () => {
     setIsTestingSmtp(true);
     setTestResult(null);
     
-    // CRITICAL: Ensure settings are saved to backend before testing
+    // Ensure settings are saved to backend before testing
     await handleSaveAllSettings();
 
     try {
@@ -175,7 +176,6 @@ const SuperAdmin: React.FC = () => {
       }
   };
 
-  // Feature block management
   const handleAddFeature = () => {
     const features = settings.landingPageConfig?.features || [];
     const newFeature: LandingFeature = {
@@ -263,8 +263,9 @@ const SuperAdmin: React.FC = () => {
         </div>
         <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
            <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>Network</button>
+           <button onClick={() => setActiveTab('security')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'security' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Lock size={16} /> Security</button>
            <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> Email</button>
-           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> App Settings</button>
+           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> Landing</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> Localisation</button>
         </div>
       </div>
@@ -316,7 +317,6 @@ const SuperAdmin: React.FC = () => {
                </div>
             </div>
 
-            {/* Storage Maintenance Tool */}
             <div className="space-y-4">
                <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2"><Database size={20} className="text-blue-500"/> System Health</h3>
                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -339,6 +339,52 @@ const SuperAdmin: React.FC = () => {
                      className="w-full bg-slate-900 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
                   >
                      <RefreshCw size={14}/> Clear Local Cache & Re-Sync
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {activeTab === 'security' && (
+         <div className="max-w-4xl space-y-6 animate-in fade-in">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
+                  <div className="p-2 bg-red-100 text-red-600 rounded-lg"><Shield size={20}/></div>
+                  <h3 className="font-extrabold text-lg text-slate-900">Global Security Settings</h3>
+               </div>
+               
+               <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                     <div className="max-w-md">
+                        <h4 className="font-bold text-slate-900 flex items-center gap-2">{t('enableMfa')}</h4>
+                        <p className="text-xs text-slate-500 leading-relaxed">{t('enableMfaDesc')}</p>
+                     </div>
+                     <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={settings.enableMfa} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                     </label>
+                  </div>
+
+                  <div className="pt-4 space-y-4">
+                     <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest flex items-center gap-2"><Lock size={16} className="text-blue-500" /> Bot Protection (reCAPTCHA)</h4>
+                     <p className="text-xs text-slate-500">{t('recaptchaHelp')}</p>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">{t('siteKey')}</label>
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={settings.recaptchaSiteKey || ''} onChange={e => setSettings({...settings, recaptchaSiteKey: e.target.value})} />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">{t('secretKey')}</label>
+                           <input type="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={settings.recaptchaSecretKey || ''} onChange={e => setSettings({...settings, recaptchaSecretKey: e.target.value})} />
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="pt-6 border-t border-slate-100 flex justify-end">
+                  <button onClick={handleSaveAllSettings} disabled={isSaving} className="bg-slate-900 hover:bg-slate-800 text-white px-10 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                     {isSaving ? <Loader2 size={16} className="animate-spin" /> : settingsSaved ? <CheckCircle2 size={16}/> : <Save size={16} />}
+                     <span>{settingsSaved ? 'Security Saved' : 'Save Security Config'}</span>
                   </button>
                </div>
             </div>
@@ -447,7 +493,7 @@ const SuperAdmin: React.FC = () => {
                      <RichTextEditor value={editingTemplate.bodyHtml} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-50 p-2 rounded">
-                     <span>Available Variables: {'{{orgName}}, {{userName}}, {{code}}, {{message}}'}</span>
+                     <span>Available Variables: {'{{orgName}}, {{userName}}, {{code}}, {{message}}, {{year}}'}</span>
                   </div>
                </div>
                <div className="mt-6">
@@ -756,15 +802,15 @@ const SuperAdmin: React.FC = () => {
                 </div>
                 <h3 className="text-2xl font-bold text-slate-900 mb-2">Delete Permanently?</h3>
                 <p className="text-slate-500 mb-2 font-bold">{orgToDelete.name}</p>
-                <p className="text-slate-500 mb-8 leading-relaxed text-sm">
-                    This action is <span className="text-red-600 font-bold">permanent</span> and will delete all:
-                    <ul className="list-disc text-left px-8 mt-2 space-y-1">
+                <div className="text-slate-500 mb-8 leading-relaxed text-sm text-left">
+                    <p className="mb-2">This action is <span className="text-red-600 font-bold">permanent</span> and will delete all:</p>
+                    <ul className="list-disc px-8 space-y-1">
                         <li>Users and accounts</li>
                         <li>All projects and species data</li>
                         <li>Individual records and breeding logs</li>
                         <li>Genetic data and photos</li>
                     </ul>
-                </p>
+                </div>
                 <div className="flex gap-3">
                    <button onClick={() => setOrgToDelete(null)} disabled={isDeleting} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors disabled:opacity-50">Cancel</button>
                    <button onClick={handleDeleteOrg} disabled={isDeleting} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200 flex items-center justify-center gap-2 disabled:opacity-50">

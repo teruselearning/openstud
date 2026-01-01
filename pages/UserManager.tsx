@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 // Import getOrg to provide orgId for new users
-import { getUsers, saveUsers, getProjects, getOrg } from '../services/storage';
+import { getUsers, saveUsers, getProjects, getOrg, inviteUser } from '../services/storage';
 import { User, UserRole, UserStatus, Project } from '../types';
-import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, HelpCircle, Check, Briefcase } from 'lucide-react';
+import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, HelpCircle, Check, Briefcase, Loader2 } from 'lucide-react';
 
 const UserManager: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -11,6 +11,7 @@ const UserManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [showRoleKey, setShowRoleKey] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<User>>({
@@ -66,45 +67,48 @@ const UserManager: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) return;
 
+    setIsSubmitting(true);
     // Logic: if 'all' is selected, ensure allowedProjectIds is empty or undefined
-    const finalAllowedProjects = projectAccessType === 'all' ? [] : formData.allowedProjectIds;
+    const finalAllowedProjects = projectAccessType === 'all' ? [] : (formData.allowedProjectIds || []);
 
-    let updatedUsers = [...users];
-
-    if (editingUser) {
-      updatedUsers = updatedUsers.map(u => {
-        if (u.id === editingUser) {
-          return {
-            ...u,
-            name: formData.name!,
-            email: formData.email!,
-            role: formData.role as UserRole,
-            allowedProjectIds: finalAllowedProjects
-          };
-        }
-        return u;
-      });
-    } else {
-      // Fix: Added missing orgId property required by User interface
-      const newUser: User = {
-        id: `u-${Date.now()}`,
-        orgId: getOrg().id,
-        name: formData.name!,
-        email: formData.email!,
-        role: formData.role as UserRole,
-        status: UserStatus.INVITED,
-        allowedProjectIds: finalAllowedProjects
-      };
-      updatedUsers.push(newUser);
+    try {
+      /* Fixed: Changed editingId to editingUser to match state variable name */
+      if (editingUser) {
+        // Just update via standard sync later or immediate patch if needed
+        const updatedUsers = users.map(u => {
+          if (u.id === editingUser) {
+            return {
+              ...u,
+              name: formData.name!,
+              email: formData.email!,
+              role: formData.role as UserRole,
+              allowedProjectIds: finalAllowedProjects
+            };
+          }
+          return u;
+        });
+        setUsers(updatedUsers);
+        saveUsers(updatedUsers);
+        handleCloseForm();
+      } else {
+        // Invite Flow (Sends Email)
+        await inviteUser(formData.name!, formData.email!, formData.role as UserRole, finalAllowedProjects);
+        alert("Invitation email sent successfully!");
+        
+        // Refresh local list (backend will have updated the users table)
+        // In a real app, we'd trigger a sync pull here.
+        handleCloseForm();
+        window.location.reload(); // Quick way to trigger App-level sync
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setUsers(updatedUsers);
-    saveUsers(updatedUsers);
-    handleCloseForm();
   };
 
   const getRoleDescription = (role: UserRole) => {
@@ -182,6 +186,7 @@ const UserManager: React.FC = () => {
                  value={formData.email}
                  onChange={e => setFormData({...formData, email: e.target.value})}
                  required
+                 disabled={!!editingUser}
                />
             </div>
             <div className="space-y-2">
@@ -248,8 +253,9 @@ const UserManager: React.FC = () => {
 
           <div className="flex justify-end space-x-3 pt-2">
              <button type="button" onClick={handleCloseForm} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-             <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
-               {editingUser ? 'Save Changes' : 'Send Invite'}
+             <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 shadow-sm disabled:opacity-50">
+               {isSubmitting ? <Loader2 size={18} className="animate-spin"/> : (editingUser ? <Check size={18}/> : <Mail size={18}/>)}
+               {editingUser ? 'Save Changes' : 'Send Invitation'}
              </button>
           </div>
         </form>

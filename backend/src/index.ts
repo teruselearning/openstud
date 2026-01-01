@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -8,6 +9,8 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import crypto from 'crypto';
+// Import process explicitly to resolve typing issues in some environments
+import process from 'process';
 
 declare const __dirname: string;
 
@@ -83,9 +86,15 @@ const initDatabase = async () => {
                 ai_usage_limit INT DEFAULT 100,
                 ai_usage_count INT DEFAULT 0,
                 ai_usage_last_reset VARCHAR(255),
+                enable_mfa BOOLEAN DEFAULT FALSE,
                 is_deleted BOOLEAN DEFAULT FALSE
             )
         `);
+
+        // Migration check for existing databases
+        try {
+            await db.execute('ALTER TABLE organizations ADD COLUMN enable_mfa BOOLEAN DEFAULT FALSE');
+        } catch(e) {}
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -98,9 +107,17 @@ const initDatabase = async () => {
                 password VARCHAR(255),
                 avatar_url LONGTEXT,
                 allowed_project_ids JSON,
+                invite_token VARCHAR(255),
+                invite_expires BIGINT,
                 CONSTRAINT fk_user_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
+
+        // Migration check for users table invite columns
+        try {
+            await db.execute('ALTER TABLE users ADD COLUMN invite_token VARCHAR(255)');
+            await db.execute('ALTER TABLE users ADD COLUMN invite_expires BIGINT');
+        } catch(e) {}
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS projects (
@@ -162,7 +179,7 @@ const initDatabase = async () => {
                 growth_history JSON,
                 health_history JSON,
                 CONSTRAINT fk_ind_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
+                CONSTRAINT fk_ind_species KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
 
@@ -327,11 +344,12 @@ app.post('/api/register', async (req: any, res: any) => {
         if (transporter) {
             try {
                 const template = settings.emailTemplates?.registration;
+                const placeholders = { orgName, code, userName, year: new Date().getFullYear().toString() };
                 const subject = (template?.enabled && template.subject) 
-                  ? replacePlaceholders(template.subject, { orgName, code, userName })
+                  ? replacePlaceholders(template.subject, placeholders)
                   : "Verify your OpenStudbook account";
                 const bodyHtml = (template?.enabled && template.bodyHtml)
-                  ? replacePlaceholders(template.bodyHtml, { orgName, code, userName })
+                  ? replacePlaceholders(template.bodyHtml, placeholders)
                   : `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`;
 
                 await transporter.sendMail({
@@ -398,102 +416,51 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Email Support Routes
-app.post('/api/email/send', authenticate, async (req: any, res: any) => {
-    const { to, subject, html } = req.body;
-    const settings = await getGlobalConfig();
-    const transporter = getTransporter(settings);
-    
-    if (!transporter) {
-        return res.status(400).json({ error: "SMTP is not configured in Super Admin settings." });
-    }
+// --- USER INVITE WORKFLOW ---
 
-    try {
-        await transporter.sendMail({
-            from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
-            to,
-            subject,
-            html
-        });
-        res.json({ success: true });
-    } catch (e: any) {
-        res.status(500).json({ error: `Mail send failed: ${e.message}` });
-    }
-});
-
-app.post('/api/email/test', authenticate, restrictToSuperAdmin, async (req: any, res: any) => {
-    const { to } = req.body;
-    const settings = await getGlobalConfig();
-    const transporter = getTransporter(settings);
-    
-    if (!transporter) {
-        return res.status(400).json({ error: "SMTP is not configured. Save settings first." });
-    }
-
-    try {
-        await transporter.sendMail({
-            from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
-            to,
-            subject: "OpenStudbook SMTP Test",
-            html: `
-                <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #f8fafc;">
-                    <h2 style="color: #059669; margin-top: 0;">SMTP Test Successful!</h2>
-                    <p style="color: #475569; font-size: 16px;">This confirms that OpenStudbook can send automated notifications using your current configuration.</p>
-                    <div style="margin-top: 20px; padding: 12px; background-color: #ffffff; border-radius: 6px; font-size: 12px; color: #94a3b8;">
-                        Sent at: ${new Date().toLocaleString()}
-                    </div>
-                </div>
-            `
-        });
-        res.json({ success: true, message: "Test email sent." });
-    } catch (e: any) {
-        res.status(500).json({ error: `SMTP Connection Failed: ${e.message}` });
-    }
-});
-
-// Super Admin: Create Organization & Admin
-app.post('/api/super-admin/organizations', authenticate, restrictToSuperAdmin, async (req: any, res: any) => {
-    const { orgName, adminName, adminEmail, focus, location } = req.body;
-    const cleanEmail = adminEmail.toLowerCase().trim();
+app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
+    const { name, email, role, allowedProjectIds } = req.body;
+    const adminOrgId = (req as any).user.orgId;
+    const cleanEmail = email.toLowerCase().trim();
     const db = getDb();
 
     try {
+        // Check permissions: only Admins of the same org or Super Admins
+        if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') {
+            return res.status(403).json({ error: "Unauthorized to invite users." });
+        }
+
         const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
-        if (existing.length > 0) return res.status(400).json({ error: "Email already registered" });
+        if (existing.length > 0) return res.status(400).json({ error: "User with this email already exists." });
 
-        const orgId = `org-${Date.now()}`;
+        const inviteToken = crypto.randomBytes(32).toString('hex');
+        const inviteExpires = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7 days
         const userId = `u-${Date.now()}`;
-        const projectId = `p-default-${Date.now()}`;
-        const tempPassword = crypto.randomBytes(6).toString('hex'); // Simple 12-char hex password
-        const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
         await db.execute(`
-           INSERT INTO organizations (id, name, focus, location, founded_year) 
-           VALUES (?, ?, ?, ?, ?)
-        `, [orgId, orgName, focus, location || 'Unknown', new Date().getFullYear()]);
-        
-        await db.execute(`
-           INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) 
-           VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')
-        `, [userId, orgId, adminName, cleanEmail, hashedPassword]);
+            INSERT INTO users (id, org_id, name, email, role, status, allowed_project_ids, invite_token, invite_expires)
+            VALUES (?, ?, ?, ?, ?, 'Invited', ?, ?, ?)
+        `, [userId, adminOrgId, name, cleanEmail, role, JSON.stringify(allowedProjectIds || []), inviteToken, inviteExpires]);
 
-        await db.execute(`
-           INSERT INTO projects (id, org_id, name, description) 
-           VALUES (?, ?, 'Main Collection', 'Initial organization project')
-        `, [projectId, orgId]);
+        const [orgRows]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [adminOrgId]);
+        const orgName = orgRows[0]?.name || 'Your Organization';
 
-        // Send Welcome Email
+        // Send Email
         const settings = await getGlobalConfig();
         const transporter = getTransporter(settings);
         if (transporter) {
             const template = settings.emailTemplates?.invite;
+            const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+            const inviteUrl = `${appUrl}/#/accept-invite?token=${inviteToken}`;
+            
+            const placeholders = { orgName, userName: name, inviteUrl, year: new Date().getFullYear().toString() };
             const subject = (template?.enabled && template.subject) 
-              ? replacePlaceholders(template.subject, { orgName, userName: adminName })
-              : `Welcome to ${orgName} on OpenStudbook`;
+              ? replacePlaceholders(template.subject, placeholders)
+              : `Invitation to join ${orgName} on OpenStudbook`;
             
             const bodyHtml = (template?.enabled && template.bodyHtml)
-              ? replacePlaceholders(template.bodyHtml, { orgName, userName: adminName, message: `An account has been created for you. Your temporary password is: <strong>${tempPassword}</strong><br><br>Please log in and change your password immediately.` })
-              : `<p>Hello ${adminName},</p><p>An administrator account for <strong>${orgName}</strong> has been created for you.</p><p>Your temporary password is: <strong>${tempPassword}</strong></p><p>Please log in and change your password as soon as possible.</p>`;
+              ? replacePlaceholders(template.bodyHtml, placeholders)
+              : `<p>Hello ${name},</p><p>You have been invited to join <strong>${orgName}</strong> on OpenStudbook.</p><p><a href="${inviteUrl}">Click here to accept the invitation and set your password.</a></p>`;
 
             await transporter.sendMail({
                 from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
@@ -503,19 +470,49 @@ app.post('/api/super-admin/organizations', authenticate, restrictToSuperAdmin, a
             });
         }
 
-        res.json({ success: true, orgId, userId, tempPassword });
+        res.json({ success: true, message: "Invitation sent." });
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
 });
 
-// Permanent delete endpoint for Super Admin
-app.delete('/api/super-admin/organizations/:id', authenticate, restrictToSuperAdmin, async (req: any, res: any) => {
-    const orgId = req.params.id;
+app.post('/api/users/accept-invite', async (req: any, res: any) => {
+    const { token, password } = req.body;
     const db = getDb();
     try {
-        await db.execute(`DELETE FROM organizations WHERE id = ?`, [orgId]);
-        res.json({ success: true, message: "Organization and all related data deleted permanently." });
+        const [users]: any = await db.execute(`SELECT * FROM users WHERE invite_token = ? AND invite_expires > ?`, [token, Date.now()]);
+        const user = users[0];
+        if (!user) return res.status(400).json({ error: "Invalid or expired invitation token." });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await db.execute(`
+            UPDATE users 
+            SET status = 'Active', password = ?, invite_token = NULL, invite_expires = NULL 
+            WHERE id = ?
+        `, [hashedPassword, user.id]);
+
+        const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
+        const authToken = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
+        
+        res.json({ success: true, token: authToken, user: { ...user, status: 'Active' }, organization: orgs[0] });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/users/check-invite', async (req: any, res: any) => {
+    const { token } = req.body;
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute(`
+            SELECT u.name, u.email, o.name as orgName 
+            FROM users u 
+            JOIN organizations o ON u.org_id = o.id 
+            WHERE u.invite_token = ? AND u.invite_expires > ?
+        `, [token, Date.now()]);
+        
+        if (rows.length === 0) return res.status(400).json({ error: "Invalid token" });
+        res.json({ success: true, data: rows[0] });
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
