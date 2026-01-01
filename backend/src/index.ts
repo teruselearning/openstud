@@ -47,7 +47,11 @@ const getDb = () => {
 
 const app: any = express();
 const PORT = Number(process.env.PORT) || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
+// CRITICAL: Ensure this is stable. If env is missing, use a hardcoded fallback 
+// so tokens don't expire every time the server process restarts.
+const JWT_SECRET = process.env.JWT_SECRET || 'openstudbook-stable-dev-secret-2024';
+
+console.log(`[AUTH] JWT Secret initialized (hash prefix): ${crypto.createHash('sha256').update(JWT_SECRET).digest('hex').substring(0, 8)}`);
 
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
@@ -77,6 +81,7 @@ const initDatabase = async () => {
     try {
         await db.query('SELECT 1');
         
+        // Organizations table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -131,23 +136,20 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'ai_usage_last_reset', 'VARCHAR(255)');
         await ensureColumn('organizations', 'show_native_status', 'TINYINT(1) DEFAULT 1');
 
+        // Enclosures table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS enclosures (
                 id VARCHAR(255) PRIMARY KEY,
                 org_id VARCHAR(255),
                 name VARCHAR(255) NOT NULL,
                 description LONGTEXT,
-                latitude DOUBLE,
-                longitude DOUBLE,
-                species_ids JSON,
+                boundary JSON,
+                individual_ids JSON,
                 CONSTRAINT fk_enclosure_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
 
-        // Migration for enclosures boundary and individuals
-        await ensureColumn('enclosures', 'boundary', 'JSON');
-        await ensureColumn('enclosures', 'individual_ids', 'JSON');
-
+        // Users table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
@@ -163,6 +165,7 @@ const initDatabase = async () => {
             )
         `);
 
+        // Projects table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS projects (
                 id VARCHAR(255) PRIMARY KEY,
@@ -173,6 +176,7 @@ const initDatabase = async () => {
             )
         `);
 
+        // Species table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS species (
                 id VARCHAR(255) PRIMARY KEY,
@@ -194,6 +198,7 @@ const initDatabase = async () => {
             )
         `);
 
+        // Individuals table
         await db.execute(`
             CREATE TABLE IF NOT EXISTS individuals (
                 id VARCHAR(255) PRIMARY KEY,
@@ -227,8 +232,6 @@ const initDatabase = async () => {
                 CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
-
-        await ensureColumn('individuals', 'enclosure_id', 'VARCHAR(255)');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
@@ -298,17 +301,35 @@ const initDatabase = async () => {
     }
 };
 
+/**
+ * TOKEN VERIFICATION MIDDLEWARE
+ */
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token provided" });
-  const token = authHeader.split(' ')[1];
+  if (!authHeader) {
+      console.warn(`[AUTH] Rejected request to ${req.path}: No Authorization header.`);
+      return res.status(401).json({ error: "Unauthorized: No token provided" });
+  }
+
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      console.warn(`[AUTH] Rejected request to ${req.path}: Malformed Authorization header.`);
+      return res.status(401).json({ error: "Unauthorized: Malformed token header" });
+  }
+
+  const token = parts[1];
   try {
-    (req as any).user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    (req as any).user = decoded;
     next();
-  } catch (e) {
-    return res.status(401).json({ error: "Invalid token" });
+  } catch (e: any) {
+    console.error(`[AUTH] Token verification failed for ${req.path}: ${e.message}`);
+    const message = e.name === 'TokenExpiredError' ? "Session expired. Please log in again." : "Invalid session. Please log in again.";
+    return res.status(401).json({ error: message });
   }
 };
+
+// --- API ROUTES ---
 
 app.post('/api/login', async (req: any, res: any) => {
     const { email, password } = req.body;
@@ -316,16 +337,31 @@ app.post('/api/login', async (req: any, res: any) => {
     try {
         const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
         const user = rows[0];
-        if (!user) return res.status(401).json({ error: "User not found" });
+        if (!user) {
+           return res.status(401).json({ error: "Account not found." });
+        }
 
+        // Handle plain text (dev/demo) or hashed passwords
         const isMatch = user.password === password || (user.password && await bcrypt.compare(password, user.password));
-        if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
+        if (!isMatch) {
+           return res.status(401).json({ error: "Invalid password." });
+        }
 
         const [orgRows]: any = await db.execute('SELECT * FROM organizations WHERE id = ? LIMIT 1', [user.org_id]);
-        const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        
+        // Generate Token
+        const token = jwt.sign(
+            { id: user.id, orgId: user.org_id, role: user.role }, 
+            JWT_SECRET, 
+            { expiresIn: '7d' }
+        );
 
+        console.log(`[AUTH] User ${user.email} logged in successfully.`);
         res.json({ token, user, organization: orgRows[0] });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error(`[LOGIN ERROR]`, e);
+        res.status(500).json({ error: "Server error during login." }); 
+    }
 });
 
 app.get('/api/config', async (req: any, res: any) => {
@@ -341,6 +377,7 @@ app.get('/api/config', async (req: any, res: any) => {
    }
 });
 
+// Generic Rest Route with Column Filtering
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const db = getDb();
@@ -426,7 +463,7 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
    const orgId = (req as any).user.orgId;
-   const isSuper = req.user.role === 'Super Admin';
+   const isSuper = (req as any).user.role === 'Super Admin';
    try {
       const [allOrgs]: any = await db.execute(`SELECT * FROM organizations WHERE is_deleted = 0`);
       const [myOrgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? LIMIT 1`, [orgId]);

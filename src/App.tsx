@@ -50,7 +50,6 @@ import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
 import EnclosureManager from './pages/EnclosureManager';
-// Fix: Added missing getNotifications, sendMfaCode, and syncPushEnclosures to the storage imports
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
 import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
@@ -324,10 +323,11 @@ const App: React.FC = () => {
                   await syncPushLanguages(getLanguages());
                   await syncPushSettings(getSystemSettings());
               } catch (pushErr: any) {
-                  setSyncError(`Backup Push Failed: ${pushErr.message}. Local data preserved.`);
+                  setSyncError(`Backup Push Failed: ${pushErr.message}`);
                   return;
               }
            } else {
+              // Priority sync from server to client
               if (data.org) saveOrg(data.org, true);
               if (data.settings && Object.keys(data.settings).length > 2) { 
                  const currentLocal = getSystemSettings();
@@ -356,17 +356,22 @@ const App: React.FC = () => {
            }
         } else if (!result.success) {
            setSyncError(result.message || "Unknown sync error");
-           if (result.message.includes('Unexpected response (404)') || result.message.includes('Failed to fetch')) setShowBackendSetup(true);
+           // Only show setup modal if it's a structural 404 or connection failure, not a 401
+           if (!result.message.includes('expired') && (result.message.includes('404') || result.message.includes('fetch'))) {
+              setShowBackendSetup(true);
+           }
         }
      } catch (e: any) { setSyncError(e.message || "Sync Exception"); } finally { setIsSyncing(false); }
   };
 
   const loadData = async (session: User) => {
+    // If we have a session, perform initial pull
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
     const isImpersonatingSession = isImpersonating();
     setImpersonating(isImpersonatingSession);
+    
     let activeOrg = getOrg();
     if (!isImpersonatingSession && activeOrg.id !== session.orgId) {
        const allPartners = getNetworkPartners();
@@ -374,6 +379,7 @@ const App: React.FC = () => {
        if (matchedOrg) { saveOrg(matchedOrg as any, true); activeOrg = matchedOrg as any; }
     }
     setCurrentOrg(activeOrg);
+    
     const allProjects = getProjects();
     let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
     let savedPid = getCurrentProjectId();
