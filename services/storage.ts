@@ -37,6 +37,7 @@ const KEYS = {
 // In-Memory Cache for heavy collections to maintain synchronous performance
 let individualsCache: Individual[] = [];
 let speciesCache: Species[] = [];
+let languagesCache: LanguageConfig[] = [];
 let isLoaded = false;
 
 /**
@@ -45,19 +46,32 @@ let isLoaded = false;
 export const initHighCapacityStorage = async () => {
   if (isLoaded) return;
   try {
-    const [inds, specs] = await Promise.all([
+    const [inds, specs, langs] = await Promise.all([
       localDb.getAll<Individual>('individuals'),
-      localDb.getAll<Species>('species')
+      localDb.getAll<Species>('species'),
+      localDb.getAll<LanguageConfig>('languages')
     ]);
+    
     individualsCache = inds;
     speciesCache = specs;
+    
+    // Initial Seed for languages if IndexedDB is empty
+    if (langs.length === 0) {
+      languagesCache = SEED_LANGUAGES;
+      await localDb.saveAll('languages', SEED_LANGUAGES);
+      syncPushLanguages(SEED_LANGUAGES).catch(() => {});
+    } else {
+      languagesCache = langs;
+    }
+
     isLoaded = true;
-    console.log(`OpenStudbook Storage: Loaded ${inds.length} individuals and ${specs.length} species from IndexedDB.`);
+    console.log(`OpenStudbook Storage: Loaded ${inds.length} individuals, ${specs.length} species, and ${langs.length} languages from IndexedDB.`);
   } catch (err) {
     console.error("Failed to initialize IndexedDB storage:", err);
-    // Fallback to empty if DB fails
+    // Fallback to minimal state if DB fails
     individualsCache = [];
     speciesCache = [];
+    languagesCache = SEED_LANGUAGES;
     isLoaded = true;
   }
 };
@@ -78,8 +92,9 @@ const get = <T>(key: string, defaultVal: T): T => {
 
 const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') {
-    if (key === KEYS.INDIVIDUALS || key === KEYS.SPECIES) {
-       console.warn(`Attempted to save giant collection ${key} to localStorage. Redirecting to IndexedDB.`);
+    // PROTECT: Don't allow large items to clog localStorage
+    if ([KEYS.INDIVIDUALS, KEYS.SPECIES, KEYS.LANGUAGES].includes(key)) {
+       console.warn(`Attempted to save giant collection ${key} to localStorage. High-capacity storage should handle this.`);
        return;
     }
 
@@ -114,8 +129,10 @@ export const clearLocalCache = () => {
     // Also clear IndexedDB
     individualsCache = [];
     speciesCache = [];
+    languagesCache = [];
     localDb.saveAll('individuals', []);
     localDb.saveAll('species', []);
+    localDb.saveAll('languages', []);
     window.location.reload();
 };
 
@@ -160,24 +177,19 @@ export const saveSystemSettings = async (s: SystemSettings, skipSync = false) =>
 };
 
 export const getLanguages = (): LanguageConfig[] => {
-  const stored = get<LanguageConfig[]>(KEYS.LANGUAGES, []);
-  if (stored.length === 0) {
-    set(KEYS.LANGUAGES, SEED_LANGUAGES);
-    syncPushLanguages(SEED_LANGUAGES).catch(() => {});
-    return SEED_LANGUAGES;
-  }
-  return stored.filter(l => !l.deleted);
+  return languagesCache.filter(l => !l.deleted);
 };
 
 export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
-  set(KEYS.LANGUAGES, langs);
+  languagesCache = langs;
+  localDb.saveAll('languages', langs).catch(err => console.error("Languages DB Save Failed:", err));
   if (!skipSync) syncPushLanguages(langs).catch(() => {});
 };
 
 export const deleteLanguage = async (code: string) => {
-  const current = get<LanguageConfig[]>(KEYS.LANGUAGES, []);
-  const updated = current.filter(l => l.code !== code);
-  set(KEYS.LANGUAGES, updated);
+  const updated = languagesCache.filter(l => l.code !== code);
+  languagesCache = updated;
+  await localDb.saveAll('languages', updated);
   try { await syncDeleteLanguage(code); } catch (e) {}
 };
 

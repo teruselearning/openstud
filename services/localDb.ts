@@ -1,14 +1,16 @@
+
 /**
  * OpenStudbook High-Capacity Local Database
- * Uses IndexedDB to store large records (images, DNA, histories) 
+ * Uses IndexedDB to store large records (images, DNA, histories, translations) 
  * that exceed the 5MB localStorage limit.
  */
 
 const DB_NAME = 'OpenStudbookDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented version to trigger upgrade for new store
 const STORES = {
   INDIVIDUALS: 'individuals',
-  SPECIES: 'species'
+  SPECIES: 'species',
+  LANGUAGES: 'languages'
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -26,6 +28,9 @@ const getDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(STORES.SPECIES)) {
         db.createObjectStore(STORES.SPECIES, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORES.LANGUAGES)) {
+        db.createObjectStore(STORES.LANGUAGES, { keyPath: 'code' });
       }
     };
 
@@ -48,13 +53,12 @@ export const localDb = {
     });
   },
 
-  async saveAll<T extends { id: string }>(storeName: string, items: T[]): Promise<void> {
+  async saveAll<T extends { id?: string; code?: string }>(storeName: string, items: T[]): Promise<void> {
     const db = await getDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(storeName, 'readwrite');
       const store = transaction.objectStore(storeName);
       
-      // Clear current and rewrite (simplest for sync logic)
       store.clear();
       items.forEach(item => store.put(item));
 

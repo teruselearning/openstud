@@ -228,7 +228,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initializeApp = async () => {
+       // 1. Initialize High-Capacity Storage (IndexedDB)
+       // This MUST finish before we proceed as it populates the language and record caches
        await initHighCapacityStorage();
+
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
        
