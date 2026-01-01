@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -31,7 +32,8 @@ import {
   Save, 
   Loader2,
   Check,
-  Server
+  Server,
+  Box
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -44,7 +46,8 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage } from './services/storage';
+// Fix: Added missing getNotifications, sendMfaCode, and syncPushEnclosures to the storage imports
+import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
 import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
@@ -312,6 +315,7 @@ const App: React.FC = () => {
                   await syncPushProjects(localProjects);
                   await syncPushSpecies(localSpecies);
                   await syncPushIndividuals(localInds);
+                  await syncPushEnclosures(getEnclosures());
                   await syncPushBreedingEvents(getBreedingEvents());
                   await syncPushBreedingLoans(getBreedingLoans());
                   await syncPushPartnerships(getPartnerships());
@@ -344,6 +348,7 @@ const App: React.FC = () => {
               if (data.users) saveUsers(data.users, true);
               if (data.species) saveSpecies(data.species, true);
               if (data.individuals) saveIndividuals(data.individuals, true);
+              if (data.enclosures) saveEnclosures(data.enclosures, true);
               // Fix: Corrected data property names to match camelCase keys in fetchRemoteData response
               if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
               if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
@@ -461,7 +466,7 @@ const App: React.FC = () => {
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
       <HashRouter>
         <div className="min-h-screen bg-slate-50 flex">
-          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
+          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organisation: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
             {(currentOrg?.id === 'org-1' && (user.role as string) !== 'Super Admin') && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organisation</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organisation</button></div>}

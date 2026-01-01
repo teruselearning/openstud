@@ -1,4 +1,5 @@
-import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
+
+import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig, Enclosure } from '../types';
 import { getOrg } from './storage'; 
 
 // Using relative paths to leverage the Vite proxy (defined in vite.config.ts)
@@ -82,6 +83,7 @@ const fromDbOrg = (o: any): Organization => ({
   showNativeStatus: !!o.show_native_status, 
   dashboardBlock: safeParse(o.dashboard_block, null), 
   enableMfa: !!o.enable_mfa, 
+  enableEnclosures: !!o.enable_enclosures,
   deleted: !!o.is_deleted 
 });
 
@@ -125,6 +127,7 @@ const fromDbInd = (i: any): Individual => ({
   id: i.id, 
   projectId: i.project_id, 
   speciesId: i.species_id, 
+  enclosureId: i.enclosure_id,
   studbookId: i.studbook_id, 
   name: i.name, 
   sex: i.sex, 
@@ -150,7 +153,16 @@ const fromDbInd = (i: any): Individual => ({
   healthHistory: safeParse(i.health_history, []) 
 });
 
-// Corrected fromDbEvent to map correctly to BreedingEvent interface
+const fromDbEnclosure = (e: any): Enclosure => ({
+  id: e.id,
+  orgId: e.org_id,
+  name: e.name,
+  description: e.description,
+  latitude: e.latitude,
+  longitude: e.longitude,
+  speciesIds: safeParse(e.species_ids, [])
+});
+
 const fromDbEvent = (e: any): BreedingEvent => ({ 
   id: e.id, 
   speciesId: e.species_id, 
@@ -202,11 +214,10 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
     return isNaN(n) ? fallback : n;
 };
 
-export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, is_deleted: o.deleted || false });
+export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
 
-// Corrected mapSpeciesToDb property scientific_name
 export const mapSpeciesToDb = (s: Species) => ({ 
   id: s.id, 
   project_id: s.projectId, 
@@ -214,7 +225,7 @@ export const mapSpeciesToDb = (s: Species) => ({
   scientific_name: s.scientificName, 
   type: s.type, 
   plant_classification: s.plantClassification || null, 
-  conservation_status: s.conservationStatus, 
+  conservation_status: s.conservation_status, 
   sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), 
   average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), 
   life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), 
@@ -229,6 +240,7 @@ export const mapIndToDb = (i: Individual) => ({
   id: i.id, 
   project_id: i.projectId, 
   species_id: i.speciesId, 
+  enclosure_id: i.enclosureId || null,
   studbook_id: i.studbookId, 
   name: i.name, 
   sex: i.sex, 
@@ -244,7 +256,7 @@ export const mapIndToDb = (i: Individual) => ({
   latitude: i.latitude ?? null, 
   longitude: i.longitude ?? null, 
   is_deceased: i.isDeceased ?? false, 
-  death_date: i.deathDate || null, 
+  death_date: i.death_date || null, 
   loan_status: i.loanStatus || null, 
   transferred_to_org_id: i.transferredToOrgId || null, 
   transfer_date: i.transferDate || null, 
@@ -254,8 +266,33 @@ export const mapIndToDb = (i: Individual) => ({
   health_history: i.healthHistory || [] 
 });
 
-export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
-export const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
+export const mapEnclosureToDb = (e: Enclosure) => ({
+  id: e.id,
+  org_id: e.orgId,
+  name: e.name,
+  description: e.description || null,
+  latitude: e.latitude ?? null,
+  longitude: e.longitude ?? null,
+  species_ids: e.speciesIds || []
+});
+
+export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sire_id || null, dam_id: e.dam_id || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
+
+// Fix: mapLoanToDb property names from camelCase to snake_case for DB mapping
+export const mapLoanToDb = (l: BreedingLoan) => ({ 
+  id: l.id, 
+  partner_org_id: l.partnerOrgId, 
+  proposer_org_id: l.proposerOrgId, 
+  role: l.role, 
+  start_date: l.startDate, 
+  end_date: l.endDate || null, 
+  status: l.status, 
+  individual_ids: l.individualIds || [], 
+  terms: l.terms, 
+  notification_recipient_id: l.notificationRecipientId || null, 
+  change_request: l.changeRequest || null 
+});
+
 export const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });
 export const mapLanguageToDb = (l: LanguageConfig) => ({ code: l.code, name: l.name, translations: l.translations || {}, is_default: !!l.isDefault, manual_overrides: l.manualOverrides || [], is_deleted: !!l.deleted });
 
@@ -269,16 +306,13 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
   const indWithParents = individuals.filter(i => i.sireId || i.damId);
   if (indWithParents.length > 0) await apiRequest('/rest/v1/individuals', 'POST', indWithParents.map(mapIndToDb));
 };
+export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(mapEventToDb));
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(mapLoanToDb));
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(mapPartnershipToDb));
 
 export const syncPushSettings = async (settings: SystemSettings) => {
-    // Sanitization to prevent NaN breaking JSON stringification
-    const cleanSettings = {
-        ...settings,
-        smtpPort: sanitizeNum(settings.smtpPort, 587)
-    };
+    const cleanSettings = { ...settings, smtpPort: sanitizeNum(settings.smtpPort, 587) };
     return apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings: cleanSettings });
 };
 
@@ -288,24 +322,17 @@ export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/l
 export const syncDeleteOrganization = async (orgId: string) => apiRequest(`/rest/v1/organizations?id=${orgId}`, 'PATCH');
 export const syncPermanentDeleteOrganization = async (orgId: string) => apiRequest(`/api/super-admin/organizations/${orgId}`, 'DELETE');
 
-/**
- * Fetches settings and languages without requiring authentication.
- */
 export const fetchPublicConfig = async () => {
    try {
       const response = await fetch(`${API_BASE_URL}/api/config`);
       if (!response.ok) return { success: false };
       const res = await response.json();
       if (res.success && res.data) {
-         return { 
-            success: true, 
-            settings: res.data.settings, 
-            languages: (res.data.languages || []).map(fromDbLanguage) 
-         };
+         return { success: true, settings: res.data.settings, languages: (res.data.languages || []).map(fromDbLanguage) };
       }
       return { success: false };
    } catch (e) {
-      console.warn("Public config fetch failed (offline mode or backend down).");
+      console.warn("Public config fetch failed.");
       return { success: false };
    }
 };
@@ -323,6 +350,7 @@ export const fetchRemoteData = async () => {
        users: (raw.users || []).map(fromDbUser),
        species: (raw.species || []).map(fromDbSpecies),
        individuals: (raw.individuals || []).map(fromDbInd),
+       enclosures: (raw.enclosures || []).map(fromDbEnclosure),
        breedingEvents: (raw.breedingEvents || []).map(fromDbEvent),
        breedingLoans: (raw.breedingLoans || []).map(fromDbLoan),
        partnerships: (raw.partnerships || []).map(fromDbPartnership),

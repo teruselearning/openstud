@@ -6,11 +6,12 @@
  */
 
 const DB_NAME = 'OpenStudbookDB';
-const DB_VERSION = 2; // Incremented version to trigger upgrade for new store
+const DB_VERSION = 3; // Incremented version for enclosures store
 const STORES = {
   INDIVIDUALS: 'individuals',
   SPECIES: 'species',
-  LANGUAGES: 'languages'
+  LANGUAGES: 'languages',
+  ENCLOSURES: 'enclosures'
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -31,6 +32,9 @@ const getDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(STORES.LANGUAGES)) {
         db.createObjectStore(STORES.LANGUAGES, { keyPath: 'code' });
+      }
+      if (!db.objectStoreNames.contains(STORES.ENCLOSURES)) {
+        db.createObjectStore(STORES.ENCLOSURES, { keyPath: 'id' });
       }
     };
 

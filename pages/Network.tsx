@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useContext, useMemo } from 'react';
+
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { getNetworkPartners, getOrg, getSpecies, sendMockNotification, getPartnerships, generatePartnerInvite, redeemPartnerInvite, getSession, getIndividuals, getProjects } from '../services/storage';
 import { ExternalPartner, Organization, Species, Partnership, Sex, UserRole } from '../types';
 import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock, AlertTriangle, Globe2, Activity, Leaf, ChevronRight, Info } from 'lucide-react';
@@ -6,33 +7,7 @@ import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
 
-type ViewMode = 'map' | 'partners' | 'species';
-
-interface DiscoverySpecies {
-  scientificName: string;
-  commonName: string;
-  type: string;
-  imageUrl?: string;
-  conservationStatus?: string;
-}
-
-// Fix: Added missing helper function to generate mock individual data for partners based on population ratios
-const generateMockPartnerIndividuals = (speciesId: string, counts: string) => {
-  const [m, f, u] = counts.split('.').map(n => parseInt(n) || 0);
-  const results: { id: string; name: string; sex: Sex; age: number }[] = [];
-  
-  for (let i = 0; i < m; i++) {
-    results.push({ id: `m-${speciesId}-${i}`, name: `Male ${i + 1}`, sex: Sex.MALE, age: Math.floor(Math.random() * 10) + 2 });
-  }
-  for (let i = 0; i < f; i++) {
-    results.push({ id: `f-${speciesId}-${i}`, name: `Female ${i + 1}`, sex: Sex.FEMALE, age: Math.floor(Math.random() * 10) + 2 });
-  }
-  for (let i = 0; i < u; i++) {
-    results.push({ id: `u-${speciesId}-${i}`, name: `Individual ${i + 1}`, sex: Sex.UNKNOWN, age: Math.floor(Math.random() * 5) + 1 });
-  }
-  
-  return results;
-};
+type ViewMode = 'map' | 'partners';
 
 const Network: React.FC = () => {
   const { t } = useContext(LanguageContext);
@@ -41,7 +16,6 @@ const Network: React.FC = () => {
   const [myOrg, setMyOrg] = useState<Organization | null>(null);
   const [localSpecies, setLocalSpecies] = useState<Species[]>([]);
   const [partnerships, setPartnerships] = useState<Partnership[]>([]);
-  const [discoverySpecies, setDiscoverySpecies] = useState<DiscoverySpecies[]>([]);
   
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -56,7 +30,6 @@ const Network: React.FC = () => {
   const [sending, setSending] = useState(false);
   
   const [selectedPartnerForSummary, setSelectedPartnerForSummary] = useState<ExternalPartner | null>(null);
-  const [selectedSpeciesForHolders, setSelectedSpeciesForHolders] = useState<DiscoverySpecies | null>(null);
   const [summaryTab, setSummaryTab] = useState<'population' | 'individuals'>('population');
   
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -69,21 +42,6 @@ const Network: React.FC = () => {
     setMyOrg(getOrg());
     setLocalSpecies(getSpecies() || []);
     setPartnerships(getPartnerships() || []);
-
-    // Try to get discovery species from the latest sync data if available
-    // For now we'll derive it from current partners if the discovery endpoint isn't fully active
-    const discovery: DiscoverySpecies[] = [];
-    const seenSciNames = new Set<string>();
-
-    // Add local species
-    getSpecies().forEach(s => {
-       if (!seenSciNames.has(s.scientificName)) {
-          seenSciNames.add(s.scientificName);
-          discovery.push({ scientificName: s.scientificName, commonName: s.commonName, type: s.type, imageUrl: s.imageUrl, conservationStatus: s.conservationStatus });
-       }
-    });
-
-    setDiscoverySpecies(discovery);
   }, []);
 
   const filteredPartners = partners.filter(p => {
@@ -103,15 +61,6 @@ const Network: React.FC = () => {
     return true;
   });
 
-  const uniqueDiscoverySpecies = useMemo(() => {
-    const query = searchQuery.toLowerCase().trim();
-    if (!query) return discoverySpecies;
-    return discoverySpecies.filter(s => 
-       s.commonName.toLowerCase().includes(query) || 
-       s.scientificName.toLowerCase().includes(query)
-    );
-  }, [discoverySpecies, searchQuery]);
-  
   const myPartners = partners.filter(p => {
      if (!myOrg) return false;
      return partnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg?.id));
@@ -153,7 +102,6 @@ const Network: React.FC = () => {
       const color = isMyPartner ? "#9333ea" : (p.obscureLocation ? "#f59e0b" : "#3b82f6");
       const displayName = p.hideName ? "Anonymous Partner" : p.name;
       
-      const pSpeciesIds = p.speciesIds || [];
       let marker = p.obscureLocation ? L.circleMarker([lat, lng], { radius: 8, fillColor: color, color: "#000", weight: 1, opacity: 1, fillOpacity: 0.8 }) : L.marker([lat, lng]);
       
       const popupContent = document.createElement('div');
@@ -212,41 +160,14 @@ const Network: React.FC = () => {
     });
   };
 
-  const holdersOfSpecies = useMemo(() => {
-     if (!selectedSpeciesForHolders) return [];
-     const results: { org: ExternalPartner | Organization, isLocal: boolean, count?: string }[] = [];
-     
-     // Check My Org
-     const myIndividuals = getIndividuals();
-     const mySpecies = getSpecies();
-     const matchesMySpecies = mySpecies.filter(s => s.scientificName === selectedSpeciesForHolders.scientificName);
-     const myMatchIds = matchesMySpecies.map(s => s.id);
-     const myIndsHolding = myIndividuals.filter(i => myMatchIds.includes(i.speciesId) && !i.isDeceased);
-     
-     if (myIndsHolding.length > 0 && myOrg) {
-        const m = myIndsHolding.filter(i => i.sex === Sex.MALE).length;
-        const f = myIndsHolding.filter(i => i.sex === Sex.FEMALE).length;
-        const u = myIndsHolding.filter(i => i.sex === Sex.UNKNOWN || !i.sex).length;
-        results.push({ org: myOrg, isLocal: true, count: `${m}.${f}.${u}` });
-     }
-
-     // Check Partners
-     partners.forEach(p => {
-        if (!p.isSpeciesPublic) return;
-        // In this implementation, partners expose species names/scientific names via the sync data
-        // We'll simulate finding matches based on the species list we have
-        const pMatches = localSpecies.filter(s => s.scientificName === selectedSpeciesForHolders.scientificName);
-        const pMatchIds = pMatches.map(s => s.id);
-        const holds = p.speciesIds?.some(sid => pMatchIds.includes(sid));
-        if (holds) {
-           // Find the first matching count record
-           const countKey = p.speciesIds.find(sid => pMatchIds.includes(sid));
-           results.push({ org: p, isLocal: false, count: countKey ? p.populationCounts?.[countKey] : undefined });
-        }
-     });
-
-     return results;
-  }, [selectedSpeciesForHolders, partners, myOrg, localSpecies]);
+  const generateMockPartnerIndividuals = (speciesId: string, counts: string) => {
+    const [m, f, u] = counts.split('.').map(n => parseInt(n) || 0);
+    const results: { id: string; name: string; sex: Sex; age: number }[] = [];
+    for (let i = 0; i < m; i++) results.push({ id: `m-${speciesId}-${i}`, name: `Male ${i + 1}`, sex: Sex.MALE, age: Math.floor(Math.random() * 10) + 2 });
+    for (let i = 0; i < f; i++) results.push({ id: `f-${speciesId}-${i}`, name: `Female ${i + 1}`, sex: Sex.FEMALE, age: Math.floor(Math.random() * 10) + 2 });
+    for (let i = 0; i < u; i++) results.push({ id: `u-${speciesId}-${i}`, name: `Individual ${i + 1}`, sex: Sex.UNKNOWN, age: Math.floor(Math.random() * 5) + 1 });
+    return results;
+  };
 
   const session = getSession();
   const isSuperAdmin = session?.role === UserRole.SUPER_ADMIN || (session?.role as string) === 'Super Admin';
@@ -262,12 +183,11 @@ const Network: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-center">
           <div className="flex bg-slate-100 p-1 rounded-lg">
              <button onClick={() => setViewMode('map')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'map' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}><Globe2 size={16} className="inline mr-1.5" />{t('network')}</button>
-             <button onClick={() => setViewMode('species')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'species' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-900'}`}><Leaf size={16} className="inline mr-1.5" />Browse Species</button>
              <button onClick={() => setViewMode('partners')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'partners' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-900'}`}><Handshake size={16} className="inline mr-1.5" />My Partners</button>
           </div>
           <div className="relative flex-1 min-w-[200px]">
              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-             <input type="text" placeholder={viewMode === 'species' ? "Search species..." : "Search locations..."} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 shadow-sm text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+             <input type="text" placeholder="Search locations..." className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 shadow-sm text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
         </div>
       </div>
@@ -296,39 +216,6 @@ const Network: React.FC = () => {
             </div>
          )}
 
-         {viewMode === 'species' && (
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {uniqueDiscoverySpecies.map(s => (
-                     <div key={s.scientificName} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl transition-all group flex flex-col h-full cursor-pointer" onClick={() => setSelectedSpeciesForHolders(s)}>
-                        <div className="h-40 bg-slate-200 relative">
-                           {s.imageUrl ? <img src={s.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-slate-400"><Leaf size={40} className="opacity-20" /></div>}
-                           <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm text-white text-[9px] font-bold px-2 py-1 rounded uppercase tracking-widest border border-white/10">{s.conservationStatus || 'Unknown'}</div>
-                           <div className={`absolute bottom-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${s.type === 'Plant' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}`}>{s.type}</div>
-                        </div>
-                        <div className="p-4 flex-1 flex flex-col">
-                           <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors leading-tight">{s.commonName}</h3>
-                           <p className="text-xs text-slate-500 italic mb-4 font-serif">{s.scientificName}</p>
-                           
-                           <div className="mt-auto pt-4 border-t border-slate-50 flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Activity size={10}/> Population</span>
-                              <div className="flex items-center text-emerald-600 font-bold text-xs">
-                                 View Holders <ChevronRight size={14}/>
-                              </div>
-                           </div>
-                        </div>
-                     </div>
-                  ))}
-               </div>
-               {uniqueDiscoverySpecies.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-20 text-slate-400 opacity-50">
-                     <Search size={64} strokeWidth={1} className="mb-4" />
-                     <p className="text-lg font-bold">No species found matching your search.</p>
-                  </div>
-               )}
-            </div>
-         )}
-
          {viewMode === 'partners' && (
             <div className="flex-1 p-6 overflow-y-auto">
                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -347,75 +234,6 @@ const Network: React.FC = () => {
             </div>
          )}
       </div>
-
-      {/* Holder Modal (Discovery Species Details) */}
-      {selectedSpeciesForHolders && (
-         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in duration-200">
-               <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
-                  <div className="flex items-center gap-4">
-                     <div className="w-14 h-14 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center overflow-hidden border border-emerald-200">
-                        {selectedSpeciesForHolders.imageUrl ? <img src={selectedSpeciesForHolders.imageUrl} className="w-full h-full object-cover" /> : <Leaf size={28}/>}
-                     </div>
-                     <div>
-                        <h2 className="text-xl font-bold text-slate-900">{selectedSpeciesForHolders.commonName}</h2>
-                        <p className="text-xs text-slate-500 italic">{selectedSpeciesForHolders.scientificName}</p>
-                     </div>
-                  </div>
-                  <button onClick={() => setSelectedSpeciesForHolders(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
-               </div>
-               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Building2 size={16}/> Organizations Holding this Species</h3>
-                  <div className="grid gap-3">
-                     {holdersOfSpecies.length === 0 ? (
-                        <div className="py-12 text-center text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                           No public records for this species found in the network.
-                        </div>
-                     ) : (
-                        holdersOfSpecies.map(({ org, isLocal, count }) => (
-                           <div key={org.id} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm hover:border-emerald-200 transition-colors">
-                              <div className="flex items-center gap-3">
-                                 <div className={`p-2 rounded-lg ${isLocal ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
-                                    <Building2 size={20} />
-                                 </div>
-                                 <div>
-                                    <h4 className="font-bold text-slate-900 flex items-center gap-2">
-                                       {org.hideName ? "Anonymous Partner" : org.name}
-                                       {isLocal && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded uppercase">Your Org</span>}
-                                    </h4>
-                                    <p className="text-xs text-slate-500">{org.location}</p>
-                                 </div>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                 <div className="text-right">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Pop (M.F.U)</p>
-                                    <p className="text-sm font-mono font-bold text-slate-700">{count || "???"}</p>
-                                 </div>
-                                 <button 
-                                    onClick={() => {
-                                       if (!isLocal) {
-                                          setSelectedSpeciesForHolders(null);
-                                          setSelectedPartnerForSummary(org as ExternalPartner);
-                                       }
-                                    }}
-                                    className={`p-2 rounded-lg border transition-all ${isLocal ? 'bg-slate-50 border-slate-100 text-slate-400' : 'bg-white border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 shadow-sm'}`}
-                                    title="View Profile"
-                                    disabled={isLocal}
-                                 >
-                                    <ChevronRight size={18} />
-                                 </button>
-                              </div>
-                           </div>
-                        ))
-                     )}
-                  </div>
-               </div>
-               <div className="p-4 bg-slate-50 border-t border-slate-200 text-center">
-                  <p className="text-[10px] text-slate-400 font-medium">Population metrics are displayed as Male.Female.Unknown (M.F.U)</p>
-               </div>
-            </div>
-         </div>
-      )}
 
       {selectedPartnerForSummary && (
          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">

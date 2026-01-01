@@ -52,6 +52,7 @@ export interface Organization {
   obscureLocation: boolean; // If true, shows approximate city location instead of exact coords
   hideName?: boolean;       // If true, shows "Anonymous Organization" publicly
   enableMfa?: boolean;      // Organization-specific MFA requirement
+  enableEnclosures?: boolean; // Enable Enclosure/Area management
   
   foundedYear: number;
   description: string;
@@ -73,6 +74,16 @@ export interface Organization {
 
   // Soft Delete
   deleted?: boolean;
+}
+
+export interface Enclosure {
+  id: string;
+  orgId: string;
+  name: string;
+  description?: string;
+  latitude?: number;
+  longitude?: number;
+  speciesIds: string[]; // Associated species
 }
 
 export interface ExternalPartner {
@@ -235,6 +246,7 @@ export interface Individual {
   id: string;
   projectId: string; // Linked to a specific project
   speciesId: string;
+  enclosureId?: string; // Linked enclosure/area
   studbookId: string; // Unique identifier in the breeding program
   name: string;
   sex: Sex;

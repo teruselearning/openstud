@@ -33,7 +33,10 @@ import {
   Loader2,
   Check,
   Server,
-  Users as UsersIcon
+  Users as UsersIcon,
+  Box,
+  Map as MapIcon,
+  Grid
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -46,7 +49,9 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage } from './services/storage';
+import EnclosureManager from './pages/EnclosureManager';
+// Fix: Added missing getNotifications, sendMfaCode, and syncPushEnclosures to the storage imports
+import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
 import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
@@ -116,10 +121,12 @@ const NavItem = ({ to, icon: Icon, label, active, badge }: { to: string, icon: a
   </Link>
 );
 
-const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, logoUrl, projects, currentProjectId, onChangeProject, onAddProject, onEditProfile }: { isOpen: boolean, onClose: () => void, user: User, onLogout: () => void, showBreeding: boolean, showPlantMap: boolean, logoUrl?: string, projects: Project[], currentProjectId: string, onChangeProject: (id: string) => void, onAddProject: () => void, onEditProfile: () => void }) => {
+const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, showEnclosures, logoUrl, projects, currentProjectId, onChangeProject, onAddProject, onEditProfile }: { isOpen: boolean, onClose: () => void, user: User, onLogout: () => void, showBreeding: boolean, showPlantMap: boolean, showEnclosures: boolean, logoUrl?: string, projects: Project[], currentProjectId: string, onChangeProject: (id: string) => void, onAddProject: () => void, onEditProfile: () => void }) => {
   const location = useLocation();
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
+  const org = getOrg();
+  const enclosureLabel = org.focus === 'Plants' ? 'Areas' : 'Enclosures';
   
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
@@ -159,6 +166,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           <NavItem to="/" icon={LayoutDashboard} label={t('dashboard')} active={path === '/'} />
           <NavItem to="/species" icon={Dna} label={t('species')} active={path.startsWith('/species')} />
           <NavItem to="/individuals" icon={PawPrint} label={t('individuals')} active={path.startsWith('/individuals')} />
+          {showEnclosures && <NavItem to="/enclosures" icon={Box} label={enclosureLabel} active={path.startsWith('/enclosures')} />}
           {showPlantMap && <NavItem to="/plant-map" icon={Map} label={t('plantMap')} active={path === '/plant-map'} />}
           {showBreeding && <NavItem to="/breeding" icon={HeartHandshake} label={t('breeding')} active={path.startsWith('/breeding')} />}
           
@@ -217,6 +225,7 @@ const App: React.FC = () => {
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [showBreeding, setShowBreeding] = useState(true);
   const [showPlantMap, setShowPlantMap] = useState(false);
+  const [showEnclosures, setShowEnclosures] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [pendingEmail, setPendingEmail] = useState('');
@@ -228,17 +237,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initializeApp = async () => {
-       // 1. Initialize High-Capacity Storage (IndexedDB)
-       // This MUST finish before we proceed as it populates the language and record caches
        await initHighCapacityStorage();
-
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
-       
        const session = getSession();
        if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
        else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
-
        try {
           const res = await fetchPublicConfig();
           if (res.success) {
@@ -248,13 +252,9 @@ const App: React.FC = () => {
                 saveSystemSettings(merged, true); 
                 setSystemSettings(merged);
              }
-             if (res.languages && res.languages.length > 0) { 
-                saveLanguages(res.languages, true); 
-                setLanguages(res.languages); 
-             }
+             if (res.languages && res.languages.length > 0) { saveLanguages(res.languages, true); setLanguages(res.languages); }
           }
        } catch (e) { console.warn("Public config failed."); }
-
        if (session) await loadData(session);
        else setIsLoading(false);
     };
@@ -286,10 +286,12 @@ const App: React.FC = () => {
 
   const calculateFeatureVisibility = (pid: string) => {
      if (!pid) return;
+     const org = getOrg();
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
      const projectSpecies = allSpecies.filter(s => s.projectId === pid);
-     setShowBreeding(getOrg().focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     setShowEnclosures(!!org.enableEnclosures);
      const hasMappedPlants = allInds.some(i => i.projectId === pid && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
      setShowPlantMap(hasMappedPlants);
   };
@@ -315,6 +317,7 @@ const App: React.FC = () => {
                   await syncPushProjects(localProjects);
                   await syncPushSpecies(localSpecies);
                   await syncPushIndividuals(localInds);
+                  await syncPushEnclosures(getEnclosures());
                   await syncPushBreedingEvents(getBreedingEvents());
                   await syncPushBreedingLoans(getBreedingLoans());
                   await syncPushPartnerships(getPartnerships());
@@ -332,15 +335,12 @@ const App: React.FC = () => {
                  saveSystemSettings(merged, true); 
                  setSystemSettings(merged); 
               }
-              // PROTECTION: Only overwrite local languages if the server returns a valid list
-              if (data.languages && data.languages.length > 0) { 
-                 saveLanguages(data.languages, true); 
-                 setLanguages(data.languages); 
-              }
+              if (data.languages && data.languages.length > 0) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);
               if (data.species) saveSpecies(data.species, true);
               if (data.individuals) saveIndividuals(data.individuals, true);
+              if (data.enclosures) saveEnclosures(data.enclosures, true);
               if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
               if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
               if (data.partnerships) savePartnerships(data.partnerships, true);
@@ -432,7 +432,7 @@ const App: React.FC = () => {
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
       <HashRouter>
         <div className="min-h-screen bg-slate-50 flex">
-          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
+          <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organisation: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
@@ -452,14 +452,12 @@ const App: React.FC = () => {
                   <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} />
                   <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} />
                   <Route path="/individuals/:id" element={<IndividualDetail />} />
+                  <Route path="/enclosures" element={<EnclosureManager />} />
                   {showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}
                   {showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}
                   <Route path="/notifications" element={<Notifications />} />
-                  
-                  {/* Admin Restricted Routes */}
                   <Route path="/settings" element={isAdmin ? <OrgSettings /> : <Navigate to="/" replace />} />
                   <Route path="/super-admin" element={isSuper ? <SuperAdminPage /> : <Navigate to="/" replace />} />
-                  
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </ErrorBoundary>
