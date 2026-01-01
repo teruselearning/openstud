@@ -225,7 +225,8 @@ export const mapSpeciesToDb = (s: Species) => ({
   scientific_name: s.scientificName, 
   type: s.type, 
   plant_classification: s.plantClassification || null, 
-  conservation_status: s.conservation_status, 
+  // Fix: changed s.conservation_status to s.conservationStatus
+  conservation_status: s.conservationStatus, 
   sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), 
   average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), 
   life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), 
@@ -256,7 +257,8 @@ export const mapIndToDb = (i: Individual) => ({
   latitude: i.latitude ?? null, 
   longitude: i.longitude ?? null, 
   is_deceased: i.isDeceased ?? false, 
-  death_date: i.death_date || null, 
+  // Fix: changed i.death_date to i.deathDate
+  death_date: i.deathDate || null, 
   loan_status: i.loanStatus || null, 
   transferred_to_org_id: i.transferredToOrgId || null, 
   transfer_date: i.transferDate || null, 
@@ -276,7 +278,19 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
   species_ids: e.speciesIds || []
 });
 
-export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sire_id || null, dam_id: e.dam_id || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
+export const mapEventToDb = (e: BreedingEvent) => ({ 
+  id: e.id, 
+  species_id: e.speciesId, 
+  // Fix: changed e.sire_id/e.dam_id to e.sireId/e.damId
+  sire_id: e.sireId || null, 
+  dam_id: e.damId || null, 
+  date: e.date, 
+  offspring_count: sanitizeNum(e.offspringCount), 
+  successful_births: sanitizeNum(e.successfulBirths), 
+  losses: sanitizeNum(e.losses), 
+  notes: e.notes, 
+  offspring_ids: e.offspringIds || [] 
+});
 
 // Fix: mapLoanToDb property names from camelCase to snake_case for DB mapping
 export const mapLoanToDb = (l: BreedingLoan) => ({ 

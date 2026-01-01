@@ -33,7 +33,7 @@ import {
   Loader2,
   Check,
   Server,
-  Box
+  Box // Added Box icon for enclosures
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -46,6 +46,7 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
+import EnclosureManager from './pages/EnclosureManager'; // Added EnclosureManager import
 // Fix: Added missing getNotifications, sendMfaCode, and syncPushEnclosures to the storage imports
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
 import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
@@ -117,11 +118,15 @@ const NavItem = ({ to, icon: Icon, label, active, badge }: { to: string, icon: a
   </Link>
 );
 
-const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, logoUrl, projects, currentProjectId, onChangeProject, onAddProject, onEditProfile }: { isOpen: boolean, onClose: () => void, user: User, onLogout: () => void, showBreeding: boolean, showPlantMap: boolean, logoUrl?: string, projects: Project[], currentProjectId: string, onChangeProject: (id: string) => void, onAddProject: () => void, onEditProfile: () => void }) => {
+// Fix: Added showEnclosures to Sidebar props and used it to render the Enclosures/Areas NavItem
+const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, showEnclosures, logoUrl, projects, currentProjectId, onChangeProject, onAddProject, onEditProfile }: { isOpen: boolean, onClose: () => void, user: User, onLogout: () => void, showBreeding: boolean, showPlantMap: boolean, showEnclosures: boolean, logoUrl?: string, projects: Project[], currentProjectId: string, onChangeProject: (id: string) => void, onAddProject: () => void, onEditProfile: () => void }) => {
   const location = useLocation();
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
+  const org = getOrg();
+  const enclosureLabel = org.focus === 'Plants' ? 'Areas' : 'Enclosures';
+  
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} />}
@@ -148,6 +153,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           <NavItem to="/" icon={LayoutDashboard} label={t('dashboard')} active={path === '/'} />
           <NavItem to="/species" icon={Dna} label={t('species')} active={path.startsWith('/species')} />
           <NavItem to="/individuals" icon={PawPrint} label={t('individuals')} active={path.startsWith('/individuals')} />
+          {showEnclosures && <NavItem to="/enclosures" icon={Box} label={enclosureLabel} active={path.startsWith('/enclosures')} />}
           {showPlantMap && <NavItem to="/plant-map" icon={Map} label={t('plantMap')} active={path === '/plant-map'} />}
           {showBreeding && <NavItem to="/breeding" icon={HeartHandshake} label={t('breeding')} active={path.startsWith('/breeding')} />}
           <div className="pt-4 mt-4 border-t border-slate-100">
@@ -197,6 +203,7 @@ const App: React.FC = () => {
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [showBreeding, setShowBreeding] = useState(true);
   const [showPlantMap, setShowPlantMap] = useState(false);
+  const [showEnclosures, setShowEnclosures] = useState(false); // Added missing state
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [pendingEmail, setPendingEmail] = useState('');
@@ -275,13 +282,16 @@ const App: React.FC = () => {
     `;
   }, [systemSettings]);
 
+  // Fix: Added showEnclosures logic to calculateFeatureVisibility
   const calculateFeatureVisibility = (pid: string) => {
      if (!pid) return;
+     const org = getOrg();
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
      const projectSpecies = allSpecies.filter(s => s.projectId === pid);
      
-     setShowBreeding(getOrg().focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     setShowEnclosures(!!org.enableEnclosures);
      
      const hasMappedPlants = allInds.some(i => 
         i.projectId === pid && 
@@ -480,7 +490,7 @@ const App: React.FC = () => {
               </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
+              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} /><Route path="/enclosures" element={<EnclosureManager />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
             </div>
           </main>
         </div>

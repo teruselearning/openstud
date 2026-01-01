@@ -50,9 +50,6 @@ const app: any = express();
 const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
-const pendingRegistrations = new Map<string, { data: any, code: string, expires: number }>();
-const passwordResets = new Map<string, { code: string, expires: number }>();
-
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -291,7 +288,95 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-// ... existing email and auth logic ...
+// --- AUTH ROUTES ---
+
+app.post('/api/login', async (req: any, res: any) => {
+    const { email, password } = req.body;
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+        const user = rows[0];
+        if (!user) return res.status(401).json({ error: "User not found" });
+
+        // In this simple implementation, we allow common passwords if not hashed, 
+        // or check against bcrypt if hashed.
+        const isMatch = user.password === password || (user.password && await bcrypt.compare(password, user.password));
+        if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
+
+        const [orgRows]: any = await db.execute('SELECT * FROM organizations WHERE id = ? LIMIT 1', [user.org_id]);
+        const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+
+        res.json({ token, user, organization: orgRows[0] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// --- GENERIC UPSERT REST ROUTES ---
+// This handles the calls from syncService.ts during performSync in App.tsx
+
+app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const { table } = req.params;
+    const db = getDb();
+    const data = Array.isArray(req.body) ? req.body : [req.body];
+    
+    if (data.length === 0) return res.json({ success: true, message: "No data to upsert" });
+
+    try {
+        for (const item of data) {
+            const keys = Object.keys(item);
+            const values = Object.values(item).map(v => {
+                if (v !== null && typeof v === 'object') return JSON.stringify(v);
+                return v;
+            });
+            
+            const placeholders = keys.map(() => '?').join(', ');
+            const updateClause = keys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
+            
+            const sql = `INSERT INTO \`${table}\` (${keys.map(k => `\`${k}\``).join(', ')}) 
+                         VALUES (${placeholders}) 
+                         ON DUPLICATE KEY UPDATE ${updateClause}`;
+            
+            await db.execute(sql, values);
+        }
+        res.json({ success: true });
+    } catch (e: any) {
+        console.error(`Upsert failed for table ${table}:`, e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Patch for soft deletes or simple updates
+app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const { table } = req.params;
+    const db = getDb();
+    const { id, code, ...updates } = req.body;
+    const pkField = table === 'languages' ? 'code' : 'id';
+    const pkValue = table === 'languages' ? (code || req.query.code) : (id || req.query.id);
+
+    if (!pkValue) return res.status(400).json({ error: "Missing primary key" });
+
+    try {
+        if (Object.keys(updates).length === 0) {
+            // If no updates provided, assume it's a soft delete via query params if present
+            const softDeleteField = table === 'organizations' || table === 'languages' ? 'is_deleted' : null;
+            if (softDeleteField) {
+                await db.execute(`UPDATE \`${table}\` SET \`${softDeleteField}\` = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
+                return res.json({ success: true });
+            }
+        }
+
+        const keys = Object.keys(updates);
+        const values = Object.values(updates).map(v => {
+            if (v !== null && typeof v === 'object') return JSON.stringify(v);
+            return v;
+        });
+        const setClause = keys.map(k => `\`${k}\` = ?`).join(', ');
+        
+        await db.execute(`UPDATE \`${table}\` SET ${setClause} WHERE \`${pkField}\` = ?`, [...values, pkValue]);
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// --- SYNC ENDPOINT ---
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
@@ -366,4 +451,16 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// ... rest of the file ...
+app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
+
+// Serving the React app
+app.use(express.static(path.join(__dirname, '../../dist')));
+app.get('*', (req: any, res: any) => {
+   if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Not Found" });
+   res.sendFile(path.join(__dirname, '../../dist/index.html'));
+});
+
+(async () => { 
+    await initDatabase(); 
+    app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`)); 
+})();

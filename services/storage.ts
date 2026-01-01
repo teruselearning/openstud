@@ -401,8 +401,11 @@ export const confirmRegistration = async (email: string, code: string): Promise<
    return user;
 };
 
-export const forgotPassword = async (email: string) => ({ success: true, message: "Reset code sent to email." });
-export const resetPassword = async (email: string, code: string, pass: string) => ({ success: true });
+// Fix: Explicitly defined return type with error field to satisfy Landing.tsx
+export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => ({ success: true, message: "Reset code sent to email." });
+
+// Fix: Explicitly defined return type with error field to satisfy Landing.tsx
+export const resetPassword = async (email: string, code: string, pass: string): Promise<{ success: boolean; error?: string }> => ({ success: true });
 
 export const regenerateDemoData = async () => {
     // Clear and reset with demo defaults if needed
@@ -437,7 +440,9 @@ export const deleteUser = async (id: string) => {
   saveUsers(updated);
 };
 
-export const checkInviteToken = async (token: string) => ({ success: true, data: { name: 'Invited User', email: 'user@example.com', orgName: 'Sample Org' } });
+// Fix: Explicitly defined return type with error field to satisfy Landing.tsx
+export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => ({ success: true, data: { name: 'Invited User', email: 'user@example.com', orgName: 'Sample Org' } });
+
 export const acceptInvite = async (token: string, pass: string) => {
   const user = getUsers()[0]; // Mock
   return { user };
