@@ -1,4 +1,3 @@
-
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
 import { getOrg } from './storage'; 
 
@@ -54,7 +53,6 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
 };
 
 // --- Mappers ---
-/* Fixed: map properties to camelCase to match interface */
 const fromDbOrg = (o: any): Organization => ({ 
   id: o.id, 
   name: o.name, 
@@ -76,7 +74,6 @@ const fromDbOrg = (o: any): Organization => ({
   deleted: !!o.is_deleted 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbProject = (p: any): Project => ({ 
   id: p.id, 
   name: p.name, 
@@ -84,7 +81,6 @@ const fromDbProject = (p: any): Project => ({
   orgId: p.org_id 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbUser = (u: any): User => ({ 
   id: u.id, 
   orgId: u.org_id || u.orgId, 
@@ -96,7 +92,6 @@ const fromDbUser = (u: any): User => ({
   allowedProjectIds: u.allowed_project_ids || [] 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbSpecies = (s: any): Species => ({ 
   id: s.id, 
   projectId: s.project_id, 
@@ -115,7 +110,6 @@ const fromDbSpecies = (s: any): Species => ({
   nativeStatusLocal: s.native_status_local 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbInd = (i: any): Individual => ({ 
   id: i.id, 
   projectId: i.project_id, 
@@ -145,7 +139,6 @@ const fromDbInd = (i: any): Individual => ({
   healthHistory: i.health_history || [] 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbEvent = (e: any): BreedingEvent => ({ 
   id: e.id, 
   speciesId: e.species_id, 
@@ -159,7 +152,6 @@ const fromDbEvent = (e: any): BreedingEvent => ({
   offspringIds: e.offspring_ids || [] 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbLoan = (l: any): BreedingLoan => ({ 
   id: l.id, 
   partnerOrgId: l.partner_org_id, 
@@ -174,7 +166,6 @@ const fromDbLoan = (l: any): BreedingLoan => ({
   changeRequest: l.change_request 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbPartnership = (p: any): Partnership => ({ 
   id: p.id, 
   orgId1: p.org_id_1, 
@@ -183,7 +174,6 @@ const fromDbPartnership = (p: any): Partnership => ({
   establishedDate: p.established_date 
 });
 
-/* Fixed: map properties to camelCase */
 const fromDbLanguage = (l: any): LanguageConfig => ({ 
   code: l.code, 
   name: l.name, 
@@ -193,21 +183,28 @@ const fromDbLanguage = (l: any): LanguageConfig => ({
   deleted: !!l.is_deleted 
 });
 
-export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: o.foundedYear, description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, is_deleted: o.deleted || false });
+// Helper to sanitize numeric values (preventing NaN breaking JSON stringify)
+const sanitizeNum = (val: any, fallback = 0) => {
+    const n = Number(val);
+    return isNaN(n) ? fallback : n;
+};
+
+// Fixed dashboard_block mapping to use o.dashboardBlock
+export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-/* Fixed: corrected property access from u.allowed_project_ids to u.allowedProjectIds */
+// Fixed allowed_project_ids mapping to use u.allowedProjectIds
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
-export const mapSpeciesToDb = (s: Species) => ({ id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, plant_classification: s.plantClassification || null, conservation_status: s.conservationStatus, sexual_maturity_age_years: s.sexualMaturityAgeYears, average_adult_weight_kg: s.averageAdultWeightKg, life_expectancy_years: s.lifeExpectancyYears, breeding_season_start: s.breedingSeasonStart || null, breeding_season_end: s.breedingSeasonEnd || null, image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null });
-/* Fixed: corrected property access for sourceDetails, transferredToOrgId, transferDate, transferNote, growthHistory */
+// Fixed plant_classification mapping to use s.plantClassification
+export const mapSpeciesToDb = (s: Species) => ({ id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, plant_classification: s.plantClassification || null, conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null });
 export const mapIndToDb = (i: Individual) => ({ 
   id: i.id, 
   project_id: i.projectId, 
   species_id: i.speciesId, 
-  studbook_id: i.studbookId, 
+  studbook_id: i.studbook_id, 
   name: i.name, 
   sex: i.sex, 
   birth_date: i.birthDate || null, 
-  weight_kg: i.weightKg, 
+  weight_kg: sanitizeNum(i.weightKg), 
   sire_id: i.sireId || null, 
   dam_id: i.damId || null, 
   image_url: i.imageUrl || null, 
@@ -223,11 +220,11 @@ export const mapIndToDb = (i: Individual) => ({
   transferred_to_org_id: i.transferredToOrgId || null, 
   transfer_date: i.transferDate || null, 
   transfer_note: i.transferNote || null, 
-  weight_history: i.weightHistory || [], 
-  growth_history: i.growthHistory || [], 
-  health_history: i.healthHistory || [] 
+  weight_history: i.weight_history || [], 
+  growth_history: i.growth_history || [], 
+  health_history: i.health_history || [] 
 });
-export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds || [] });
+export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
 export const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
 export const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });
 export const mapLanguageToDb = (l: LanguageConfig) => ({ code: l.code, name: l.name, translations: l.translations, is_default: l.isDefault, manual_overrides: l.manualOverrides || [], is_deleted: l.deleted || false });
@@ -245,7 +242,16 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(mapEventToDb));
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(mapLoanToDb));
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(mapPartnershipToDb));
-export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });
+
+export const syncPushSettings = async (settings: SystemSettings) => {
+    // Sanitization to prevent NaN breaking JSON stringification
+    const cleanSettings = {
+        ...settings,
+        smtpPort: sanitizeNum(settings.smtpPort, 587)
+    };
+    return apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings: cleanSettings });
+};
+
 export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(mapLanguageToDb));
 
 export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/languages?code=${code}`, 'PATCH');
@@ -287,8 +293,8 @@ export const fetchRemoteData = async () => {
        users: (raw.users || []).map(fromDbUser),
        species: (raw.species || []).map(fromDbSpecies),
        individuals: (raw.individuals || []).map(fromDbInd),
-       breedingEvents: (raw.breeding_events || []).map(fromDbEvent),
-       breedingLoans: (raw.breeding_loans || []).map(fromDbLoan),
+       breedingEvents: (raw.breedingEvents || []).map(fromDbEvent),
+       breedingLoans: (raw.breedingLoans || []).map(fromDbLoan),
        partnerships: (raw.partnerships || []).map(fromDbPartnership),
        languages: (raw.languages || []).map(fromDbLanguage),
        settings: raw.settings

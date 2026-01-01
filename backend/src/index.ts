@@ -92,9 +92,7 @@ const initDatabase = async () => {
         `);
 
         // Migration check for existing databases
-        try {
-            await db.execute('ALTER TABLE organizations ADD COLUMN enable_mfa BOOLEAN DEFAULT FALSE');
-        } catch(e) {}
+        try { await db.execute('ALTER TABLE organizations ADD COLUMN enable_mfa BOOLEAN DEFAULT FALSE'); } catch(e) {}
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -114,10 +112,8 @@ const initDatabase = async () => {
         `);
 
         // Migration check for users table invite columns
-        try {
-            await db.execute('ALTER TABLE users ADD COLUMN invite_token VARCHAR(255)');
-            await db.execute('ALTER TABLE users ADD COLUMN invite_expires BIGINT');
-        } catch(e) {}
+        try { await db.execute('ALTER TABLE users ADD COLUMN invite_token VARCHAR(255)'); } catch(e) {}
+        try { await db.execute('ALTER TABLE users ADD COLUMN invite_expires BIGINT'); } catch(e) {}
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS projects (
@@ -179,7 +175,7 @@ const initDatabase = async () => {
                 growth_history JSON,
                 health_history JSON,
                 CONSTRAINT fk_ind_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                CONSTRAINT fk_ind_species KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
+                CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
 
@@ -299,29 +295,18 @@ const replacePlaceholders = (text: string, data: Record<string, string>) => {
 
 // --- PUBLIC ROUTES ---
 
-/**
- * Public endpoint for landing page settings and branding
- */
 app.get('/api/config', async (req: any, res: any) => {
    const db = getDb();
    try {
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-      
       let settings = config[0]?.settings || {};
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
-      
-      res.json({ 
-         success: true, 
-         data: { 
-            settings,
-            languages: langs 
-         } 
-      });
+      res.json({ success: true, data: { settings, languages: langs } });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- AUTH ROUTES ---
+// --- AUTH & REGISTRATION ---
 
 app.post('/api/register', async (req: any, res: any) => {
     const { orgName, userName, email, focus, password, lang, latitude, longitude, location } = req.body;
@@ -330,34 +315,21 @@ app.post('/api/register', async (req: any, res: any) => {
     try {
         const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
         if (existing.length > 0) return res.status(400).json({ error: "Email already registered" });
-
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         pendingRegistrations.set(cleanEmail, {
             data: { orgName, userName, email: cleanEmail, focus, password, latitude, longitude, location },
             code,
             expires: Date.now() + 1800000
         });
-
         const settings = await getGlobalConfig();
         const transporter = getTransporter(settings);
-        
         if (transporter) {
             try {
                 const template = settings.emailTemplates?.registration;
                 const placeholders = { orgName, code, userName, year: new Date().getFullYear().toString() };
-                const subject = (template?.enabled && template.subject) 
-                  ? replacePlaceholders(template.subject, placeholders)
-                  : "Verify your OpenStudbook account";
-                const bodyHtml = (template?.enabled && template.bodyHtml)
-                  ? replacePlaceholders(template.bodyHtml, placeholders)
-                  : `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`;
-
-                await transporter.sendMail({
-                    from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
-                    to: cleanEmail,
-                    subject,
-                    html: bodyHtml
-                });
+                const subject = (template?.enabled && template.subject) ? replacePlaceholders(template.subject, placeholders) : "Verify your OpenStudbook account";
+                const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`;
+                await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
             } catch (mailErr: any) { console.error("SMTP Failed", mailErr.message); }
         }
         res.json({ success: true, needsVerification: true });
@@ -370,29 +342,15 @@ app.post('/api/register/verify', async (req: any, res: any) => {
     const pending = pendingRegistrations.get(cleanEmail);
     const db = getDb();
     if (!pending || pending.code !== code || pending.expires < Date.now()) return res.status(400).json({ error: "Invalid code" });
-
     const { orgName, userName, focus, password, latitude, longitude, location } = pending.data;
     const orgId = `org-${Date.now()}`;
     const userId = `u-${Date.now()}`;
     const projectId = `p-default-${Date.now()}`;
-
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute(`
-           INSERT INTO organizations (id, name, focus, location, latitude, longitude, founded_year) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [orgId, orgName, focus, location || 'Unknown', latitude || null, longitude || null, new Date().getFullYear()]);
-        
-        await db.execute(`
-           INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) 
-           VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')
-        `, [userId, orgId, userName, cleanEmail, hashedPassword]);
-
-        await db.execute(`
-           INSERT INTO projects (id, org_id, name, description) 
-           VALUES (?, ?, 'Default', 'Primary organization project')
-        `, [projectId, orgId]);
-
+        await db.execute(`INSERT INTO organizations (id, name, focus, location, latitude, longitude, founded_year) VALUES (?, ?, ?, ?, ?, ?, ?)`, [orgId, orgName, focus, location || 'Unknown', latitude || null, longitude || null, new Date().getFullYear()]);
+        await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')`, [userId, orgId, userName, cleanEmail, hashedPassword]);
+        await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'Default', 'Primary organization project')`, [projectId, orgId]);
         pendingRegistrations.delete(cleanEmail);
         const token = jwt.sign({ id: userId, email: cleanEmail, role: 'Admin', orgId }, JWT_SECRET, { expiresIn: '30d' });
         const [u]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [userId]);
@@ -423,57 +381,29 @@ app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
     const adminOrgId = (req as any).user.orgId;
     const cleanEmail = email.toLowerCase().trim();
     const db = getDb();
-
     try {
-        // Check permissions: only Admins of the same org or Super Admins
-        if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') {
-            return res.status(403).json({ error: "Unauthorized to invite users." });
-        }
-
+        if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized to invite users." });
         const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
         if (existing.length > 0) return res.status(400).json({ error: "User with this email already exists." });
-
         const inviteToken = crypto.randomBytes(32).toString('hex');
-        const inviteExpires = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7 days
+        const inviteExpires = Date.now() + (7 * 24 * 60 * 60 * 1000); 
         const userId = `u-${Date.now()}`;
-
-        await db.execute(`
-            INSERT INTO users (id, org_id, name, email, role, status, allowed_project_ids, invite_token, invite_expires)
-            VALUES (?, ?, ?, ?, ?, 'Invited', ?, ?, ?)
-        `, [userId, adminOrgId, name, cleanEmail, role, JSON.stringify(allowedProjectIds || []), inviteToken, inviteExpires]);
-
+        await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, allowed_project_ids, invite_token, invite_expires) VALUES (?, ?, ?, ?, ?, 'Invited', ?, ?, ?)`, [userId, adminOrgId, name, cleanEmail, role, JSON.stringify(allowedProjectIds || []), inviteToken, inviteExpires]);
         const [orgRows]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [adminOrgId]);
         const orgName = orgRows[0]?.name || 'Your Organization';
-
-        // Send Email
         const settings = await getGlobalConfig();
         const transporter = getTransporter(settings);
         if (transporter) {
             const template = settings.emailTemplates?.invite;
             const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
             const inviteUrl = `${appUrl}/#/accept-invite?token=${inviteToken}`;
-            
             const placeholders = { orgName, userName: name, inviteUrl, year: new Date().getFullYear().toString() };
-            const subject = (template?.enabled && template.subject) 
-              ? replacePlaceholders(template.subject, placeholders)
-              : `Invitation to join ${orgName} on OpenStudbook`;
-            
-            const bodyHtml = (template?.enabled && template.bodyHtml)
-              ? replacePlaceholders(template.bodyHtml, placeholders)
-              : `<p>Hello ${name},</p><p>You have been invited to join <strong>${orgName}</strong> on OpenStudbook.</p><p><a href="${inviteUrl}">Click here to accept the invitation and set your password.</a></p>`;
-
-            await transporter.sendMail({
-                from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
-                to: cleanEmail,
-                subject,
-                html: bodyHtml
-            });
+            const subject = (template?.enabled && template.subject) ? replacePlaceholders(template.subject, placeholders) : `Invitation to join ${orgName} on OpenStudbook`;
+            const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : `<p>Hello ${name},</p><p>You have been invited to join <strong>${orgName}</strong> on OpenStudbook.</p><p><a href="${inviteUrl}">Click here to accept the invitation and set your password.</a></p>`;
+            await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
         }
-
         res.json({ success: true, message: "Invitation sent." });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/users/accept-invite', async (req: any, res: any) => {
@@ -483,44 +413,33 @@ app.post('/api/users/accept-invite', async (req: any, res: any) => {
         const [users]: any = await db.execute(`SELECT * FROM users WHERE invite_token = ? AND invite_expires > ?`, [token, Date.now()]);
         const user = users[0];
         if (!user) return res.status(400).json({ error: "Invalid or expired invitation token." });
-
         const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute(`
-            UPDATE users 
-            SET status = 'Active', password = ?, invite_token = NULL, invite_expires = NULL 
-            WHERE id = ?
-        `, [hashedPassword, user.id]);
-
+        await db.execute(`UPDATE users SET status = 'Active', password = ?, invite_token = NULL, invite_expires = NULL WHERE id = ?`, [hashedPassword, user.id]);
         const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
         const authToken = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
-        
         res.json({ success: true, token: authToken, user: { ...user, status: 'Active' }, organization: orgs[0] });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/users/check-invite', async (req: any, res: any) => {
     const { token } = req.body;
     const db = getDb();
     try {
-        const [rows]: any = await db.execute(`
-            SELECT u.name, u.email, o.name as orgName 
-            FROM users u 
-            JOIN organizations o ON u.org_id = o.id 
-            WHERE u.invite_token = ? AND u.invite_expires > ?
-        `, [token, Date.now()]);
-        
+        const [rows]: any = await db.execute(`SELECT u.name, u.email, o.name as orgName FROM users u JOIN organizations o ON u.org_id = o.id WHERE u.invite_token = ? AND u.invite_expires > ?`, [token, Date.now()]);
         if (rows.length === 0) return res.status(400).json({ error: "Invalid token" });
         res.json({ success: true, data: rows[0] });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Generic REST endpoints
+// --- GENERIC REST ENDPOINT ---
+
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const table = req.params.table;
+    // Security check for global configuration tables
+    if (['app_config', 'languages'].includes(table) && req.user.role !== 'Super Admin' && req.user.role !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: "Global configuration restricted to Super Admins." });
+    }
+
     const data = Array.isArray(req.body) ? req.body : [req.body];
     const db = getDb();
     try {
@@ -530,18 +449,28 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             }
             
             const keys = Object.keys(item);
-            const vals = keys.map(k => (typeof item[k] === 'object' && item[k] !== null) ? JSON.stringify(item[k]) : (item[k] ?? null));
+            // Handle valid numbers, objects (JSON), and nulls
+            const vals = keys.map(k => {
+                const v = item[k];
+                if (typeof v === 'number') return v;
+                if (typeof v === 'object' && v !== null) return JSON.stringify(v);
+                return v ?? null;
+            });
+
             const placeholders = keys.map(() => '?').join(', ');
             const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
             const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
             
-            // CRITICAL: Escape column and table names with backticks to prevent conflict with reserved keywords like 'type'
             const escapedTable = `\`${table}\``;
             const escapedKeys = keys.map(k => `\`${k}\``).join(', ');
             
+            /**
+             * ROBUST UPSERT SYNTAX:
+             * Uses aliases (supported in MySQL 8.0.19+) for cleaner syntax 
+             * and avoids VALUES() deprecation issues.
+             */
             let updateClause = "";
             if (nonPkKeys.length > 0) {
-                // Use VALUES() function but ensure column names inside are backticked
                 updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
             } else {
                 updateClause = `ON DUPLICATE KEY UPDATE \`${primaryKeyCol}\` = \`${primaryKeyCol}\``;
@@ -552,15 +481,14 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             try {
                 await db.execute(sql, vals);
             } catch (innerError: any) {
-                // Fallback for drivers/modes where execute might struggle with VALUES() function logic in some SQL versions
-                console.warn(`Prepared statement failed for ${table}, attempting raw query...`);
+                console.warn(`Prepared statement failed for ${table}, attempting raw query fallback. Error: ${innerError.message}`);
                 await db.query(sql, vals);
             }
         }
         res.json({ success: true });
     } catch (e: any) { 
-        console.error(`Generic REST error on ${table}:`, e.message);
-        res.status(500).json({ error: e.message }); 
+        console.error(`CRITICAL Generic REST error on ${table}:`, e.message, e.sqlState, e.code);
+        res.status(500).json({ error: e.message || "Database execution failed." }); 
     }
 });
 
@@ -568,77 +496,21 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
    const orgId = (req as any).user.orgId;
    try {
-      // 1. Get all public organizations for the network map
       const [allOrgs]: any = await db.execute(`SELECT * FROM organizations WHERE is_deleted = 0`);
-      
-      // 2. Get my organization's data specifically
       const [myOrgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? LIMIT 1`, [orgId]);
-      
-      // 3. Get projects belonging to my organization
       const [projects]: any = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
-      
-      // 4. Get users belonging to my organization
       const [users]: any = await db.execute(`SELECT * FROM users WHERE org_id = ?`, [orgId]);
-      
-      // 5. Get species belonging to my organization's projects
-      const [species]: any = await db.execute(`
-        SELECT * FROM species 
-        WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)
-      `, [orgId]);
-      
-      // 6. Get individuals belonging to my organization's projects
-      const [individuals]: any = await db.execute(`
-        SELECT * FROM individuals 
-        WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)
-      `, [orgId]);
-      
-      // 7. Get breeding events linked to my organization's species
-      const [events]: any = await db.execute(`
-        SELECT * FROM breeding_events 
-        WHERE species_id IN (
-            SELECT id FROM species 
-            WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)
-        )
-      `, [orgId]);
-      
-      // 8. Get breeding loans where my organization is proposer or partner
-      const [loans]: any = await db.execute(`
-        SELECT * FROM breeding_loans 
-        WHERE proposer_org_id = ? OR partner_org_id = ?
-      `, [orgId, orgId]);
-      
-      // 9. Get partnerships involving my organization
-      const [partnerships]: any = await db.execute(`
-        SELECT * FROM partnerships 
-        WHERE org_id_1 = ? OR org_id_2 = ?
-      `, [orgId, orgId]);
-      
+      const [species]: any = await db.execute(`SELECT * FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+      const [individuals]: any = await db.execute(`SELECT * FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+      const [events]: any = await db.execute(`SELECT * FROM breeding_events WHERE species_id IN (SELECT id FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?))`, [orgId]);
+      const [loans]: any = await db.execute(`SELECT * FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
+      const [partnerships]: any = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-      
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
-      
-      res.json({ 
-        success: true, 
-        data: { 
-            org: myOrgRows[0] || null,
-            partners: allOrgs, 
-            projects, 
-            users, 
-            species, 
-            individuals, 
-            breeding_events: events, 
-            breeding_loans: loans, 
-            partnerships, 
-            languages: langs, 
-            settings 
-        } 
-      });
-   } catch (e: any) { 
-      console.error("Sync Error:", e.message);
-      res.status(500).json({ error: e.message }); 
-   }
+      res.json({ success: true, data: { org: myOrgRows[0] || null, partners: allOrgs, projects, users, species, individuals, breedingEvents: events, breedingLoans: loans, partnerships, languages: langs, settings } });
+   } catch (e: any) { console.error("Sync Error:", e.message); res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
