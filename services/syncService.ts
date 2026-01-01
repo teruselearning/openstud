@@ -1,3 +1,4 @@
+
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
 import { getOrg } from './storage'; 
 
@@ -184,7 +185,8 @@ const fromDbLanguage = (l: any): LanguageConfig => ({
 });
 
 // Helper to sanitize numeric values (preventing NaN breaking JSON stringify)
-const sanitizeNum = (val: any, fallback = 0) => {
+const sanitizeNum = (val: any, fallback: any = 0) => {
+    if (val === null || val === undefined) return fallback;
     const n = Number(val);
     return isNaN(n) ? fallback : n;
 };

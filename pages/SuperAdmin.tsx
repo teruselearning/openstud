@@ -676,7 +676,13 @@ const SuperAdmin: React.FC = () => {
                </div>
                <div className="flex gap-2">
                   <div className="relative group">
-                     <input placeholder="en-US" title="Language Code (BCP 47 format, e.g., en-GB, fr-FR)" className="border border-slate-300 px-3 py-1.5 rounded-xl text-sm w-20 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} />
+                     <input 
+                        placeholder="en-GB" 
+                        title="Language Code (BCP 47 format, e.g., en-GB, fr-FR, es-ES)" 
+                        className="border border-slate-300 px-3 py-1.5 rounded-xl text-sm w-20 bg-white outline-none focus:ring-2 focus:ring-purple-500" 
+                        value={newLangCode} 
+                        onChange={e => setNewLangCode(e.target.value)} 
+                     />
                   </div>
                   <input placeholder={t('name')} className="border border-slate-300 px-3 py-1.5 rounded-xl text-sm w-32 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangName} onChange={e => setNewLangName(e.target.value)} />
                   <button onClick={async () => {

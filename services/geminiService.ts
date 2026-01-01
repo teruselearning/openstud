@@ -185,7 +185,7 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     2. Preserve all variables in double curly braces (e.g., {{name}}, {{orgName}}, {{code}}, {{year}}).
     3. Use natural, professional phrasing suitable for a conservation management dashboard.
     4. Maintain the exact key ("k") for each item in your response.
-    5. IMPORTANT: Do NOT include literal \n (escaped newline characters) in the output strings unless absolutely necessary for HTML content. Return single-line strings where possible.
+    5. IMPORTANT: Do NOT include literal \n (escaped newline characters) in the output strings. Return clean, usable text or HTML.
     6. Return an array of objects matching the original structure.
 
     Data to Translate:
@@ -205,10 +205,12 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
       try {
         const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
         
-        // Clean up literal \n characters that AI often inserts into JSON values
+        // Comprehensive clean up for literal \n strings or actual newline characters
         return parsed.map(item => ({
           ...item,
-          v: typeof item.v === 'string' ? item.v.replace(/\\n/g, '\n').replace(/\n/g, ' ') : item.v
+          v: typeof item.v === 'string' 
+             ? item.v.replace(/\\n/g, ' ').replace(/\n/g, ' ').trim() 
+             : item.v
         }));
       } catch (parseErr) {
         console.error("Failed to parse AI translation JSON:", sanitized);
