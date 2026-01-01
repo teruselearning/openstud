@@ -137,27 +137,24 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
+       // Provision demo user on server AND locally
        await regenerateDemoData();
-       const result = await fetchRemoteData();
-       if (result.success && result.data) {
-          const { data } = result;
-          const { saveOrg, saveProjects, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveNetworkPartners, saveLanguages, saveSystemSettings } = await import('../services/storage');
-          if(data.org) saveOrg(data.org, true);
-          if(data.projects) saveProjects(data.projects, true);
-          if(data.users) saveUsers(data.users, true);
-          if(data.species) saveSpecies(data.species, true);
-          if(data.individuals) saveIndividuals(data.individuals, true);
-          if(data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
-          if(data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
-          if(data.partnerships) savePartnerships(data.partnerships, true);
-          if(data.partners) saveNetworkPartners(data.partners);
-          if(data.languages) saveLanguages(data.languages, true);
-          if(data.settings) saveSystemSettings(data.settings, true);
+       // Attempt login
+       let user = await login('sarah@wild.org', 'password');
+       if (user) {
+          saveSession(user);
+          // Pre-fetch fresh data after setup
+          await fetchRemoteData();
+          onLogin(user);
+       } else {
+          setError("Could not initialize demo session.");
+          setIsLoading(false);
        }
-    } catch (e) { console.warn("Demo Pre-Sync failed", e); }
-    let user = await login('sarah@wild.org', 'password');
-    if (user) { saveSession(user); onLogin(user); } 
-    else { setError("Could not initialize demo environment."); setIsLoading(false); }
+    } catch (e: any) {
+       console.error("Demo Logic failed", e);
+       setError("Demo environment setup failed. Check backend connection.");
+       setIsLoading(false);
+    }
   };
   
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -174,6 +171,13 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         });
         
         if (!response.ok) {
+            // Check local fallback
+            const user = await login(loginData.email, loginData.password);
+            if (user) {
+                saveSession(user);
+                onLogin(user);
+                return;
+            }
             setError("Invalid email or password.");
             setIsLoading(false);
             return;

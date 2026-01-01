@@ -127,7 +127,7 @@ export const getSystemSettings = (): SystemSettings => {
       mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, 
       invite: { enabled: true, subject: BASE_TRANSLATIONS.emailInviteSubject, bodyHtml: BASE_TRANSLATIONS.emailInviteBody },
       notification: { enabled: true, subject: BASE_TRANSLATIONS.emailNotifySubject, bodyHtml: BASE_TRANSLATIONS.emailNotifyBody },
-      password_reset: { enabled: true, subject: "OpenStudbook Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody } // Default reset template
+      password_reset: { enabled: true, subject: "OpenStudbook Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody } 
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
     aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management.</p>' },
@@ -517,16 +517,26 @@ export const redeemPartnerInvite = (code: string): { success: boolean, message: 
 };
 
 export const regenerateDemoData = async () => {
+    // 1. Setup on server (public endpoint)
+    try {
+        await fetch(`${API_BASE_URL}/api/setup-demo`, { method: 'POST' });
+    } catch (e) {
+        console.warn("Server demo setup failed (offline or network error).");
+    }
+
+    // 2. Prepare local fallback data with hashed passwords
+    const hashedPassword = await hashPassword('password');
     const mockOrg: Organization = { id: 'org-1', name: 'Sanctuary of the Wild', location: 'Sabah, Borneo', latitude: 4.965, longitude: 117.805, isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, hideName: false, foundedYear: 1998, description: 'The global demonstration sanctuary for OpenStudbook.', focus: 'Animals', allowBreedingRequests: true, breedingRequestContactId: 'u-1', showNativeStatus: true, aiUsageLimit: 1000, aiUsageCount: 42, enableMfa: false };
     const mockUsers: User[] = [
-      { id: 'u-1', orgId: 'org-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] },
-      { id: 'u-2', orgId: 'org-1', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: ['p-1'] },
-      { id: 'u-3', orgId: 'org-1', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: 'password', allowedProjectIds: [] }
+      { id: 'u-1', orgId: 'org-1', name: 'Sarah Admin', email: 'sarah@wild.org', role: UserRole.ADMIN, status: UserStatus.ACTIVE, password: hashedPassword, allowedProjectIds: [] },
+      { id: 'u-2', orgId: 'org-1', name: 'Mike Keeper', email: 'mike@wild.org', role: UserRole.KEEPER, status: UserStatus.ACTIVE, password: hashedPassword, allowedProjectIds: ['p-1'] },
+      { id: 'u-3', orgId: 'org-1', name: 'Zoe Super', email: 'zoe@openstudbook.org', role: UserRole.SUPER_ADMIN, status: UserStatus.ACTIVE, password: hashedPassword, allowedProjectIds: [] }
     ];
     const projects: Project[] = [{ id: 'p-1', name: 'Main Collection', description: 'General collection management', orgId: 'org-1' }];
     const s1: Species = { id: 'sp-1', projectId: 'p-1', commonName: 'Sumatran Tiger', scientificName: 'Panthera tigris sumatrae', type: 'Animal', conservationStatus: 'Critically Endangered', sexualMaturityAgeYears: 4, averageAdultWeightKg: 120, lifeExpectancyYears: 20, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: generatePattern('Sumatran Tiger') };
+    
+    // 3. Save locally
     const partners = getNetworkPartners();
     if (!partners.some(p => p.id === 'org-1')) saveNetworkPartners([...partners, mockOrg as any]);
     saveOrg(mockOrg, true); saveUsers(mockUsers, true); saveProjects(projects, true); saveSpecies([s1], true); saveIndividuals([], true); saveBreedingEvents([], true);
-    try { await syncPushOrg(mockOrg); await syncPushUsers(mockUsers); await syncPushProjects(projects); await syncPushSpecies([s1]); } catch(e: any) {}
 };

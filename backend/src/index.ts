@@ -260,7 +260,7 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-// Global default templates (synchronized with frontend seeds)
+// Global default templates
 const DEFAULT_EMAIL_TEMPLATES: Record<string, { subject: string, bodyHtml: string, enabled: boolean }> = {
     registration: { 
         enabled: true, 
@@ -335,7 +335,6 @@ const sendFormattedEmail = async (to: string, templateKey: string, placeholders:
     const template = settings.emailTemplates?.[templateKey] || DEFAULT_EMAIL_TEMPLATES[templateKey];
     const dataWithYear = { ...placeholders, year: new Date().getFullYear().toString() };
     
-    // Use template if enabled, otherwise fallback to global default definition
     let subject = (template?.enabled && template.subject) ? template.subject : (DEFAULT_EMAIL_TEMPLATES[templateKey]?.subject || "");
     let bodyHtml = (template?.enabled && template.bodyHtml) ? template.bodyHtml : (DEFAULT_EMAIL_TEMPLATES[templateKey]?.bodyHtml || "");
 
@@ -361,6 +360,34 @@ app.get('/api/config', async (req: any, res: any) => {
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
       res.json({ success: true, data: { settings, languages: langs } });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/setup-demo', async (req: any, res: any) => {
+    const db = getDb();
+    try {
+        const orgId = 'org-1';
+        const hashedPassword = await bcrypt.hash('password', 10);
+        
+        await db.execute(`INSERT IGNORE INTO organizations (id, name, location, latitude, longitude, is_org_public, is_species_public, obscure_location, hide_name, founded_year, description, focus, allow_breeding_requests, show_native_status, ai_usage_limit) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+            [orgId, 'Sanctuary of the Wild', 'Sabah, Borneo', 4.965, 117.805, true, true, false, false, 1998, 'The global demonstration sanctuary for OpenStudbook.', 'Animals', true, true, 1000]);
+            
+        const users = [
+            ['u-1', orgId, 'Sarah Admin', 'sarah@wild.org', 'Admin', 'Active', hashedPassword],
+            ['u-2', orgId, 'Mike Keeper', 'mike@wild.org', 'Keeper', 'Active', hashedPassword],
+            ['u-3', orgId, 'Zoe Super', 'zoe@openstudbook.org', 'Super Admin', 'Active', hashedPassword]
+        ];
+        
+        for (const u of users) {
+            await db.execute(`INSERT IGNORE INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) VALUES (?, ?, ?, ?, ?, ?, ?, '[]')`, u);
+        }
+
+        await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES (?, ?, ?, ?)`, ['p-1', orgId, 'Main Collection', 'General collection management']);
+
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // --- AUTH & REGISTRATION ---
@@ -425,16 +452,42 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- EMAIL ROUTE (Used by MFA and System Notifications) ---
+// --- SUPER ADMIN ROUTES ---
+
+app.post('/api/super-admin/organizations', authenticate, async (req: any, res: any) => {
+    if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
+    const { orgName, adminName, adminEmail, focus, location } = req.body;
+    const db = getDb();
+    try {
+        const orgId = `org-${Date.now()}`;
+        const userId = `u-${Date.now()}`;
+        const tempPassword = Math.random().toString(36).substring(2, 10);
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+        
+        await db.execute(`INSERT INTO organizations (id, name, location, focus, founded_year) VALUES (?, ?, ?, ?, ?)`, [orgId, orgName, location, focus, new Date().getFullYear()]);
+        await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password, allowed_project_ids) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?, '[]')`, [userId, orgId, adminName, adminEmail.toLowerCase().trim(), hashedPassword]);
+        
+        res.json({ success: true, orgId, tempPassword });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/super-admin/organizations/:id', authenticate, async (req: any, res: any) => {
+    if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
+    const db = getDb();
+    try {
+        await db.execute(`DELETE FROM organizations WHERE id = ?`, [req.params.id]);
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// --- EMAIL ROUTE ---
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     const { to, subject, html, templateKey, placeholders } = req.body;
     try {
         if (templateKey) {
-            // Use unified template engine
             await sendFormattedEmail(to, templateKey, placeholders || {});
         } else {
-            // Raw send (Direct fallback)
             const settings = await getGlobalConfig();
             const transporter = getTransporter(settings);
             if (!transporter) return res.status(500).json({ error: "SMTP not configured" });
@@ -583,7 +636,7 @@ app.post('/api/users/check-invite', async (req: any, res: any) => {
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const table = req.params.table;
-    if (['app_config', 'languages'].includes(table) && req.user.role !== 'Super Admin' && req.user.role !== 'SUPER_ADMIN') {
+    if (['app_config', 'languages'].includes(table) && req.user.role !== 'Super Admin') {
         return res.status(403).json({ error: "Forbidden." });
     }
 
