@@ -53,6 +53,18 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
   }
 };
 
+// Helper to safely parse JSON columns which might be strings or objects depending on driver/env
+const safeParse = (data: any, fallback: any = {}) => {
+  if (!data) return fallback;
+  // Fix: Removed reference to 'Buffer' which is not available in the browser environment
+  if (typeof data === 'object' && data !== null) return data;
+  try {
+    return JSON.parse(data.toString());
+  } catch (e) {
+    return fallback;
+  }
+};
+
 // --- Mappers ---
 const fromDbOrg = (o: any): Organization => ({ 
   id: o.id, 
@@ -70,7 +82,7 @@ const fromDbOrg = (o: any): Organization => ({
   allowBreedingRequests: !!o.allow_breeding_requests, 
   breedingRequestContactId: o.breeding_request_contact_id, 
   showNativeStatus: !!o.show_native_status, 
-  dashboardBlock: o.dashboard_block, 
+  dashboardBlock: safeParse(o.dashboard_block, null), 
   enableMfa: !!o.enable_mfa, 
   deleted: !!o.is_deleted 
 });
@@ -90,7 +102,7 @@ const fromDbUser = (u: any): User => ({
   role: u.role, 
   status: u.status, 
   avatarUrl: u.avatar_url, 
-  allowedProjectIds: u.allowed_project_ids || [] 
+  allowedProjectIds: safeParse(u.allowed_project_ids, []) 
 });
 
 const fromDbSpecies = (s: any): Species => ({ 
@@ -118,7 +130,6 @@ const fromDbInd = (i: any): Individual => ({
   studbookId: i.studbook_id, 
   name: i.name, 
   sex: i.sex, 
-  // Fix: Property 'birth_date' does not exist in type 'Individual'. Use 'birthDate'.
   birthDate: i.birth_date, 
   weightKg: i.weight_kg, 
   sireId: i.sire_id, 
@@ -134,11 +145,11 @@ const fromDbInd = (i: any): Individual => ({
   deathDate: i.death_date, 
   loanStatus: i.loan_status, 
   transferredToOrgId: i.transferred_to_org_id, 
-  transferDate: i.transfer_date, 
+  transfer_date: i.transfer_date, 
   transferNote: i.transfer_note, 
-  weightHistory: i.weight_history || [], 
-  growthHistory: i.growth_history || [], 
-  healthHistory: i.health_history || [] 
+  weightHistory: safeParse(i.weight_history, []), 
+  growthHistory: safeParse(i.growth_history, []), 
+  healthHistory: safeParse(i.health_history, []) 
 });
 
 const fromDbEvent = (e: any): BreedingEvent => ({ 
@@ -151,7 +162,7 @@ const fromDbEvent = (e: any): BreedingEvent => ({
   successfulBirths: e.successful_births, 
   losses: e.losses, 
   notes: e.notes, 
-  offspringIds: e.offspring_ids || [] 
+  offspringIds: safeParse(e.offspring_ids, []) 
 });
 
 const fromDbLoan = (l: any): BreedingLoan => ({ 
@@ -162,10 +173,10 @@ const fromDbLoan = (l: any): BreedingLoan => ({
   startDate: l.start_date, 
   endDate: l.end_date, 
   status: l.status, 
-  individualIds: l.individual_ids || [], 
+  individualIds: safeParse(l.individual_ids, []), 
   terms: l.terms, 
   notificationRecipientId: l.notification_recipient_id, 
-  changeRequest: l.change_request 
+  changeRequest: safeParse(l.change_request, null) 
 });
 
 const fromDbPartnership = (p: any): Partnership => ({ 
@@ -173,16 +184,15 @@ const fromDbPartnership = (p: any): Partnership => ({
   orgId1: p.org_id_1, 
   orgId2: p.org_id_2, 
   status: p.status, 
-  // Fix: Property 'established_date' does not exist in type 'Partnership'. Use 'establishedDate'.
   establishedDate: p.established_date 
 });
 
 const fromDbLanguage = (l: any): LanguageConfig => ({ 
   code: l.code, 
   name: l.name, 
-  translations: l.translations || {}, 
+  translations: safeParse(l.translations, {}), 
   isDefault: !!l.is_default, 
-  manualOverrides: l.manual_overrides || [], 
+  manualOverrides: safeParse(l.manual_overrides, []), 
   deleted: !!l.is_deleted 
 });
 
@@ -193,15 +203,29 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
     return isNaN(n) ? fallback : n;
 };
 
-// Fixed dashboard_block mapping to use o.dashboardBlock
 export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-// Fixed allowed_project_ids mapping to use u.allowedProjectIds
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
-// Fixed plant_classification mapping to use s.plantClassification
-export const mapSpeciesToDb = (s: Species) => ({ id: s.id, project_id: s.projectId, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, plant_classification: s.plantClassification || null, conservation_status: s.conservation_status, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null });
 
-// Fixed mapIndToDb to use correct frontend camelCase property names when accessing Individual 'i'
+// Fix: mapSpeciesToDb corrected property scientificName from scientific_name
+export const mapSpeciesToDb = (s: Species) => ({ 
+  id: s.id, 
+  project_id: s.projectId, 
+  common_name: s.commonName, 
+  scientific_name: s.scientificName, 
+  type: s.type, 
+  plant_classification: s.plantClassification || null, 
+  conservation_status: s.conservationStatus, 
+  sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), 
+  average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), 
+  life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), 
+  breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), 
+  breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), 
+  image_url: s.imageUrl || null, 
+  native_status_country: s.nativeStatusCountry || null, 
+  native_status_local: s.nativeStatusLocal || null 
+});
+
 export const mapIndToDb = (i: Individual) => ({ 
   id: i.id, 
   project_id: i.projectId, 
@@ -230,6 +254,7 @@ export const mapIndToDb = (i: Individual) => ({
   growth_history: i.growthHistory || [], 
   health_history: i.healthHistory || [] 
 });
+
 export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
 export const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
 export const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });

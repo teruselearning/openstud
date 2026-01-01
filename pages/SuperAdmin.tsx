@@ -177,7 +177,7 @@ const SuperAdmin: React.FC = () => {
           
           alert(`Organisation Created!\nTemporary Password for ${newOrgData.adminName}: ${data.tempPassword}`);
           setShowCreateOrg(false);
-          setNewOrgData({ orgName: '', adminName: '', adminEmail: '', focus: 'Animals', location: '' });
+          setNewOrgData({ orgName: '', adminName: '', adminEmail: '', focus: 'Animals' as OrganizationFocus, location: '' });
           
           // Refresh list
           const result = await fetch('/api/sync', { headers: { 'Authorization': `Bearer ${token}` } });

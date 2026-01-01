@@ -92,8 +92,19 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migration check for organizations
-        try { await db.execute('ALTER TABLE organizations ADD COLUMN enable_mfa BOOLEAN DEFAULT FALSE'); } catch(e) {}
+        // Migrations helper for columns
+        const ensureColumn = async (table: string, column: string, definition: string) => {
+           try {
+              const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+              if (rows.length === 0) {
+                 console.log(`Migrating: Adding column ${column} to ${table}`);
+                 await db.execute(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+              }
+           } catch (e) { console.warn(`Migration check failed for ${table}.${column}`); }
+        };
+
+        await ensureColumn('organizations', 'enable_mfa', 'BOOLEAN DEFAULT FALSE');
+        await ensureColumn('organizations', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS users (
@@ -112,9 +123,8 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migration check for users table invite columns
-        try { await db.execute('ALTER TABLE users ADD COLUMN invite_token VARCHAR(255)'); } catch(e) {}
-        try { await db.execute('ALTER TABLE users ADD COLUMN invite_expires BIGINT'); } catch(e) {}
+        await ensureColumn('users', 'invite_token', 'VARCHAR(255)');
+        await ensureColumn('users', 'invite_expires', 'BIGINT');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS projects (
@@ -240,13 +250,13 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migration check for languages
-        try { await db.execute('ALTER TABLE languages ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE'); } catch(e) {}
+        await ensureColumn('languages', 'manual_overrides', 'JSON');
+        await ensureColumn('languages', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
-        console.log("Database tables ready.");
+        console.log("Database schema synchronized.");
     } catch (e: any) {
-        console.error("Critical: Database Schema Init Failed!", e.message);
+        console.error("CRITICAL: Database Initialization Failed!", e.message);
         process.exit(1);
     }
 };
