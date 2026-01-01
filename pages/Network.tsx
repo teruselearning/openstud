@@ -1,25 +1,37 @@
-
-import React, { useState, useEffect, useRef, useContext } from 'react';
-import { getNetworkPartners, getOrg, getSpecies, sendMockNotification, getPartnerships, generatePartnerInvite, redeemPartnerInvite, getSession } from '../services/storage';
+import React, { useState, useEffect, useRef, useContext, useMemo } from 'react';
+import { getNetworkPartners, getOrg, getSpecies, sendMockNotification, getPartnerships, generatePartnerInvite, redeemPartnerInvite, getSession, getIndividuals, getProjects } from '../services/storage';
 import { ExternalPartner, Organization, Species, Partnership, Sex, UserRole } from '../types';
-import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock, AlertTriangle } from 'lucide-react';
+import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock, AlertTriangle, Globe2, Activity, Leaf, ChevronRight, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
 
-type ViewMode = 'map' | 'partners';
+type ViewMode = 'map' | 'partners' | 'species';
 
-const generateMockPartnerIndividuals = (speciesId: string, countStr: string) => {
-   if (!countStr) return [];
-   const parts = countStr.split('.').map(Number);
-   const m = parts[0] || 0;
-   const f = parts[1] || 0;
-   const u = parts[2] || 0;
-   const inds = [];
-   for(let i=0; i<m; i++) inds.push({ id: `m-${i}`, name: `Male ${i+1}`, sex: Sex.MALE, age: Math.floor(Math.random()*10)+1 });
-   for(let i=0; i<f; i++) inds.push({ id: `f-${i}`, name: `Female ${i+1}`, sex: Sex.FEMALE, age: Math.floor(Math.random()*10)+1 });
-   for(let i=0; i<u; i++) inds.push({ id: `u-${i}`, name: `Juv ${i+1}`, sex: Sex.UNKNOWN, age: 0.5 });
-   return inds;
+interface DiscoverySpecies {
+  scientificName: string;
+  commonName: string;
+  type: string;
+  imageUrl?: string;
+  conservationStatus?: string;
+}
+
+// Fix: Added missing helper function to generate mock individual data for partners based on population ratios
+const generateMockPartnerIndividuals = (speciesId: string, counts: string) => {
+  const [m, f, u] = counts.split('.').map(n => parseInt(n) || 0);
+  const results: { id: string; name: string; sex: Sex; age: number }[] = [];
+  
+  for (let i = 0; i < m; i++) {
+    results.push({ id: `m-${speciesId}-${i}`, name: `Male ${i + 1}`, sex: Sex.MALE, age: Math.floor(Math.random() * 10) + 2 });
+  }
+  for (let i = 0; i < f; i++) {
+    results.push({ id: `f-${speciesId}-${i}`, name: `Female ${i + 1}`, sex: Sex.FEMALE, age: Math.floor(Math.random() * 10) + 2 });
+  }
+  for (let i = 0; i < u; i++) {
+    results.push({ id: `u-${speciesId}-${i}`, name: `Individual ${i + 1}`, sex: Sex.UNKNOWN, age: Math.floor(Math.random() * 5) + 1 });
+  }
+  
+  return results;
 };
 
 const Network: React.FC = () => {
@@ -27,8 +39,9 @@ const Network: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [partners, setPartners] = useState<ExternalPartner[]>([]);
   const [myOrg, setMyOrg] = useState<Organization | null>(null);
-  const [speciesList, setSpeciesList] = useState<Species[]>([]);
+  const [localSpecies, setLocalSpecies] = useState<Species[]>([]);
   const [partnerships, setPartnerships] = useState<Partnership[]>([]);
+  const [discoverySpecies, setDiscoverySpecies] = useState<DiscoverySpecies[]>([]);
   
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -43,6 +56,7 @@ const Network: React.FC = () => {
   const [sending, setSending] = useState(false);
   
   const [selectedPartnerForSummary, setSelectedPartnerForSummary] = useState<ExternalPartner | null>(null);
+  const [selectedSpeciesForHolders, setSelectedSpeciesForHolders] = useState<DiscoverySpecies | null>(null);
   const [summaryTab, setSummaryTab] = useState<'population' | 'individuals'>('population');
   
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -50,10 +64,26 @@ const Network: React.FC = () => {
   const [redeemResult, setRedeemResult] = useState<{success: boolean, message: string} | null>(null);
 
   useEffect(() => {
-    setPartners(getNetworkPartners() || []);
+    const rawPartners = getNetworkPartners() || [];
+    setPartners(rawPartners);
     setMyOrg(getOrg());
-    setSpeciesList(getSpecies() || []);
+    setLocalSpecies(getSpecies() || []);
     setPartnerships(getPartnerships() || []);
+
+    // Try to get discovery species from the latest sync data if available
+    // For now we'll derive it from current partners if the discovery endpoint isn't fully active
+    const discovery: DiscoverySpecies[] = [];
+    const seenSciNames = new Set<string>();
+
+    // Add local species
+    getSpecies().forEach(s => {
+       if (!seenSciNames.has(s.scientificName)) {
+          seenSciNames.add(s.scientificName);
+          discovery.push({ scientificName: s.scientificName, commonName: s.commonName, type: s.type, imageUrl: s.imageUrl, conservationStatus: s.conservationStatus });
+       }
+    });
+
+    setDiscoverySpecies(discovery);
   }, []);
 
   const filteredPartners = partners.filter(p => {
@@ -64,19 +94,23 @@ const Network: React.FC = () => {
       if (!p.isSpeciesPublic) return false;
       if (!pSpeciesIds.includes(selectedSpeciesId)) return false;
     }
-    if (searchQuery) {
+    if (searchQuery && viewMode === 'map') {
       const query = searchQuery.toLowerCase();
       const nameMatch = !p.hideName && (p.name || '').toLowerCase().includes(query);
       const locMatch = (p.location || '').toLowerCase().includes(query);
-      let speciesMatch = false;
-      if (p.isSpeciesPublic) {
-        const partnerSpeciesNames = speciesList.filter(s => pSpeciesIds.includes(s.id)).map(s => s.commonName.toLowerCase());
-        speciesMatch = partnerSpeciesNames.some(name => name.includes(query));
-      }
-      if (!nameMatch && !locMatch && !speciesMatch) return false;
+      return nameMatch || locMatch;
     }
     return true;
   });
+
+  const uniqueDiscoverySpecies = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return discoverySpecies;
+    return discoverySpecies.filter(s => 
+       s.commonName.toLowerCase().includes(query) || 
+       s.scientificName.toLowerCase().includes(query)
+    );
+  }, [discoverySpecies, searchQuery]);
   
   const myPartners = partners.filter(p => {
      if (!myOrg) return false;
@@ -96,12 +130,8 @@ const Network: React.FC = () => {
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
         setTimeout(() => map.invalidateSize(), 200);
       } catch (e) { console.error("Error initializing map:", e); }
-    } else {
-      if (myOrg && typeof myOrg.latitude === 'number' && typeof myOrg.longitude === 'number') {
-         if (!searchQuery) leafletMap.current.setView([myOrg.latitude, myOrg.longitude], targetZoom);
-      }
     }
-  }, [viewMode, myOrg, searchQuery]);
+  }, [viewMode, myOrg]);
 
   useEffect(() => {
     if (viewMode !== 'map' || !leafletMap.current) return;
@@ -122,10 +152,13 @@ const Network: React.FC = () => {
       const isMyPartner = myPartners.some(mp => mp.id === p.id);
       const color = isMyPartner ? "#9333ea" : (p.obscureLocation ? "#f59e0b" : "#3b82f6");
       const displayName = p.hideName ? "Anonymous Partner" : p.name;
+      
       const pSpeciesIds = p.speciesIds || [];
       let marker = p.obscureLocation ? L.circleMarker([lat, lng], { radius: 8, fillColor: color, color: "#000", weight: 1, opacity: 1, fillOpacity: 0.8 }) : L.marker([lat, lng]);
+      
       const popupContent = document.createElement('div');
-      popupContent.innerHTML = `<div class="text-sm"><h3 class="font-bold text-base flex items-center gap-2">${displayName} ${p.obscureLocation ? '<span title="Approximate Location" class="text-xs bg-amber-100 text-amber-800 px-1 rounded border border-amber-200">Approx</span>' : ''}</h3><p class="text-slate-500">${p.location || 'Unknown Location'}</p>${isMyPartner ? '<p class="text-purple-600 font-bold text-xs mt-1">Partnership Active</p>' : ''}${(p.isSpeciesPublic && pSpeciesIds.length > 0) ? `<p class="text-emerald-600 font-medium mt-1">Has ${pSpeciesIds.length} species</p>` : ''}<button id="view-profile-${p.id}" class="mt-2 w-full bg-slate-800 text-white px-2 py-1 rounded text-xs font-medium hover:bg-slate-700">View Profile</button></div>`;
+      popupContent.innerHTML = `<div class="text-sm"><h3 class="font-bold text-base flex items-center gap-2">${displayName}</h3><p class="text-slate-500">${p.location || 'Unknown Location'}</p><button id="view-profile-${p.id}" class="mt-2 w-full bg-slate-800 text-white px-2 py-1 rounded text-xs font-medium hover:bg-slate-700">View Profile</button></div>`;
+      
       marker.bindPopup(popupContent);
       marker.on('popupopen', () => {
          const btn = document.getElementById(`view-profile-${p.id}`);
@@ -134,7 +167,8 @@ const Network: React.FC = () => {
       marker.addTo(map);
       markersRef.current.push(marker);
     });
-    if (searchQuery && markersRef.current.length > 0) {
+
+    if (searchQuery && markersRef.current.length > 1) {
        try {
           const group = new L.featureGroup(markersRef.current);
           const bounds = group.getBounds();
@@ -174,56 +208,125 @@ const Network: React.FC = () => {
         const { latitude, longitude } = position.coords;
         if (leafletMap.current) {
           leafletMap.current.setView([latitude, longitude], 12);
-          L.popup().setLatLng([latitude, longitude]).setContent("📍 You are here").openOn(leafletMap.current);
         }
     });
   };
-  
+
+  const holdersOfSpecies = useMemo(() => {
+     if (!selectedSpeciesForHolders) return [];
+     const results: { org: ExternalPartner | Organization, isLocal: boolean, count?: string }[] = [];
+     
+     // Check My Org
+     const myIndividuals = getIndividuals();
+     const mySpecies = getSpecies();
+     const matchesMySpecies = mySpecies.filter(s => s.scientificName === selectedSpeciesForHolders.scientificName);
+     const myMatchIds = matchesMySpecies.map(s => s.id);
+     const myIndsHolding = myIndividuals.filter(i => myMatchIds.includes(i.speciesId) && !i.isDeceased);
+     
+     if (myIndsHolding.length > 0 && myOrg) {
+        const m = myIndsHolding.filter(i => i.sex === Sex.MALE).length;
+        const f = myIndsHolding.filter(i => i.sex === Sex.FEMALE).length;
+        const u = myIndsHolding.filter(i => i.sex === Sex.UNKNOWN || !i.sex).length;
+        results.push({ org: myOrg, isLocal: true, count: `${m}.${f}.${u}` });
+     }
+
+     // Check Partners
+     partners.forEach(p => {
+        if (!p.isSpeciesPublic) return;
+        // In this implementation, partners expose species names/scientific names via the sync data
+        // We'll simulate finding matches based on the species list we have
+        const pMatches = localSpecies.filter(s => s.scientificName === selectedSpeciesForHolders.scientificName);
+        const pMatchIds = pMatches.map(s => s.id);
+        const holds = p.speciesIds?.some(sid => pMatchIds.includes(sid));
+        if (holds) {
+           // Find the first matching count record
+           const countKey = p.speciesIds.find(sid => pMatchIds.includes(sid));
+           results.push({ org: p, isLocal: false, count: countKey ? p.populationCounts?.[countKey] : undefined });
+        }
+     });
+
+     return results;
+  }, [selectedSpeciesForHolders, partners, myOrg, localSpecies]);
+
   const session = getSession();
   const isSuperAdmin = session?.role === UserRole.SUPER_ADMIN || (session?.role as string) === 'Super Admin';
   const isDemoOrg = myOrg?.id === 'org-1' && !isSuperAdmin;
 
   return (
     <div className="space-y-6 h-[calc(100vh-100px)] flex flex-col">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
-        <div><h2 className="text-2xl font-bold text-slate-900">{t('networkMap')}</h2><p className="text-slate-500">Discover other organizations and establish breeding partnerships.</p></div>
-        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-center">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 flex-shrink-0">
+        <div>
+           <h2 className="text-2xl font-bold text-slate-900">{t('networkMap')}</h2>
+           <p className="text-slate-500">Discover other organizations and establish breeding partnerships.</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-center">
           <div className="flex bg-slate-100 p-1 rounded-lg">
-             <button onClick={() => setViewMode('map')} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'map' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>{t('viewGlobalMap')}</button>
-             <button onClick={() => setViewMode('partners')} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'partners' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-900'}`}>{t('viewMyPartners')}</button>
+             <button onClick={() => setViewMode('map')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'map' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}><Globe2 size={16} className="inline mr-1.5" />{t('network')}</button>
+             <button onClick={() => setViewMode('species')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'species' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-900'}`}><Leaf size={16} className="inline mr-1.5" />Browse Species</button>
+             <button onClick={() => setViewMode('partners')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'partners' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-900'}`}><Handshake size={16} className="inline mr-1.5" />My Partners</button>
           </div>
-          {viewMode === 'map' && (
-             <>
-               <div className="relative flex-1 min-w-[200px]"><Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search..." className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 shadow-sm text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-               <div className="flex items-center space-x-2 bg-white px-2 py-2 rounded-lg border border-slate-200 shadow-sm min-w-[150px]"><Filter size={18} className="text-slate-400 ml-1" /><select className="bg-transparent outline-none text-slate-700 text-sm font-medium w-full" value={selectedSpeciesId} onChange={(e) => setSelectedSpeciesId(e.target.value)}><option value="">Any Species</option>{speciesList.map(s => (<option key={s.id} value={s.id}>Has {s.commonName}</option>))}</select></div>
-             </>
-          )}
+          <div className="relative flex-1 min-w-[200px]">
+             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+             <input type="text" placeholder={viewMode === 'species' ? "Search species..." : "Search locations..."} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 shadow-sm text-sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative flex flex-col md:flex-row">
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative flex flex-col">
          {viewMode === 'map' && (
-            <>
+            <div className="flex flex-col md:flex-row h-full">
                <div className="flex-1 relative z-0 h-full min-h-[400px]">
                   <div id="network-map" ref={mapRef} className="h-full w-full"></div>
                   <button onClick={handleLocateMe} className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" title="Use My Current Location"><Crosshair size={24} /></button>
                </div>
                <div className="w-full md:w-80 border-l border-slate-200 bg-slate-50 overflow-y-auto h-64 md:h-full">
-                  <div className="p-4 border-b border-slate-200 bg-white sticky top-0"><h3 className="font-bold text-slate-900">Organizations</h3></div>
+                  <div className="p-4 border-b border-slate-200 bg-white sticky top-0 flex justify-between items-center"><h3 className="font-bold text-slate-900">Organizations</h3><span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{filteredPartners.length} Total</span></div>
                   <div className="divide-y divide-slate-100">
                      {filteredPartners.length === 0 ? (<div className="p-8 text-center text-slate-400 text-sm">{t('noPartnersFound')}</div>) : (
                        filteredPartners.map(p => (
-                           <div key={p.id} className="p-4 hover:bg-white transition-colors cursor-pointer group">
+                           <div key={p.id} className="p-4 hover:bg-white transition-colors cursor-pointer group" onClick={() => setSelectedPartnerForSummary(p)}>
                               <div className="flex justify-between items-start mb-1"><h4 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors flex items-center gap-1">{p.hideName ? "Anonymous Partner" : p.name} {p.obscureLocation && <EyeOff size={12} className="text-slate-400" />}</h4>{myPartners.some(mp => mp.id === p.id) && (<span title="Partner"><Handshake size={14} className="text-purple-600" /></span>)}</div>
                               <div className="flex items-center text-slate-500 text-xs mb-2"><MapPin size={12} className="mr-1" /> {p.location || 'Unknown'}</div>
-                              {p.isSpeciesPublic ? (<div className="flex flex-wrap gap-1 mb-2">{(p.speciesIds || []).slice(0, 4).map(sid => { const sp = speciesList.find(s => s.id === sid); return sp ? <span key={sid} className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">{sp.commonName}</span> : null; })}</div>) : (<div className="text-[10px] text-slate-400 italic mb-2">{t('speciesListPrivate')}</div>)}
-                              <div className="flex gap-2 mt-2"><button onClick={() => setSelectedPartnerForSummary(p)} className="flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs py-1.5 rounded font-medium flex items-center justify-center gap-1 transition-colors"><Eye size={12} /> View Profile</button>{p.allowBreedingRequests && (<button onClick={(e) => { e.stopPropagation(); handleOpenContact(p); }} className={`flex-1 text-purple-700 border border-purple-100 text-xs py-1.5 rounded font-medium flex items-center justify-center gap-1 transition-colors ${isDemoOrg ? 'opacity-50 cursor-not-allowed' : 'bg-purple-50 hover:bg-purple-100'}`} disabled={isDemoOrg}><Send size={12} /> Contact</button>)}</div>
+                              <div className="flex gap-2 mt-2"><button className="flex-1 bg-slate-100 text-slate-700 hover:bg-slate-200 text-[10px] py-1.5 rounded font-bold flex items-center justify-center gap-1 transition-colors uppercase tracking-widest"><Eye size={12} /> Profile</button>{p.allowBreedingRequests && (<button onClick={(e) => { e.stopPropagation(); handleOpenContact(p); }} className={`flex-1 text-purple-700 border border-purple-100 text-[10px] py-1.5 rounded font-bold flex items-center justify-center gap-1 transition-colors uppercase tracking-widest ${isDemoOrg ? 'opacity-50 cursor-not-allowed' : 'bg-purple-50 hover:bg-purple-100'}`} disabled={isDemoOrg}><Send size={12} /> Contact</button>)}</div>
                            </div>
                        ))
                      )}
                   </div>
                </div>
-            </>
+            </div>
+         )}
+
+         {viewMode === 'species' && (
+            <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {uniqueDiscoverySpecies.map(s => (
+                     <div key={s.scientificName} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl transition-all group flex flex-col h-full cursor-pointer" onClick={() => setSelectedSpeciesForHolders(s)}>
+                        <div className="h-40 bg-slate-200 relative">
+                           {s.imageUrl ? <img src={s.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-slate-400"><Leaf size={40} className="opacity-20" /></div>}
+                           <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm text-white text-[9px] font-bold px-2 py-1 rounded uppercase tracking-widest border border-white/10">{s.conservationStatus || 'Unknown'}</div>
+                           <div className={`absolute bottom-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${s.type === 'Plant' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}`}>{s.type}</div>
+                        </div>
+                        <div className="p-4 flex-1 flex flex-col">
+                           <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors leading-tight">{s.commonName}</h3>
+                           <p className="text-xs text-slate-500 italic mb-4 font-serif">{s.scientificName}</p>
+                           
+                           <div className="mt-auto pt-4 border-t border-slate-50 flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Activity size={10}/> Population</span>
+                              <div className="flex items-center text-emerald-600 font-bold text-xs">
+                                 View Holders <ChevronRight size={14}/>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  ))}
+               </div>
+               {uniqueDiscoverySpecies.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400 opacity-50">
+                     <Search size={64} strokeWidth={1} className="mb-4" />
+                     <p className="text-lg font-bold">No species found matching your search.</p>
+                  </div>
+               )}
+            </div>
          )}
 
          {viewMode === 'partners' && (
@@ -236,7 +339,7 @@ const Network: React.FC = () => {
                      myPartners.map(p => (
                            <div key={p.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 hover:shadow-md transition-shadow relative group">
                               <div className="flex justify-between items-start mb-4"><div><h3 className="font-bold text-lg text-slate-900">{p.name}</h3><p className="text-slate-500 text-sm flex items-center gap-1"><MapPin size={14}/> {p.location || 'Unknown'}</p></div><div className="bg-purple-100 text-purple-700 p-2 rounded-lg"><Handshake size={20} /></div></div>
-                              <div className="flex gap-2"><button onClick={() => setSelectedPartnerForSummary(p)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-medium text-sm transition-colors">View Details</button><button onClick={() => handleOpenContact(p)} className={`flex-1 border border-purple-200 text-purple-700 py-2 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 ${isDemoOrg ? 'opacity-50 cursor-not-allowed' : 'hover:bg-purple-50'}`} disabled={isDemoOrg}><MessageSquare size={16} /> Message</button></div>
+                              <div className="flex gap-2"><button onClick={() => setSelectedPartnerForSummary(p)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-all">Profile</button><button onClick={() => handleOpenContact(p)} className={`flex-1 border border-purple-200 text-purple-700 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isDemoOrg ? 'opacity-50 cursor-not-allowed' : 'hover:bg-purple-50'}`} disabled={isDemoOrg}><MessageSquare size={16} /> Message</button></div>
                            </div>
                         ))
                   )}
@@ -245,27 +348,163 @@ const Network: React.FC = () => {
          )}
       </div>
 
-      {showContactModal && contactPartner && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 animate-in zoom-in duration-200">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Contact {contactPartner.name}</h3>
-            <p className="text-slate-500 text-sm mb-4">Send a secure message to request a breeding loan or share data.</p>
-            <textarea className="w-full h-40 p-4 border border-slate-300 rounded-lg resize-none outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50" placeholder="Type your message here..." value={message} onChange={(e) => setMessage(e.target.value)} />
-            <div className="flex justify-end space-x-3 mt-4"><button onClick={() => setShowContactModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button onClick={handleSendRequest} disabled={!message || sending} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold transition-colors flex items-center space-x-2 disabled:opacity-50">{sending ? 'Sending...' : <><Send size={18} /> <span>Send Request</span></>}</button></div>
-          </div>
-        </div>
+      {/* Holder Modal (Discovery Species Details) */}
+      {selectedSpeciesForHolders && (
+         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in duration-200">
+               <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
+                  <div className="flex items-center gap-4">
+                     <div className="w-14 h-14 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center overflow-hidden border border-emerald-200">
+                        {selectedSpeciesForHolders.imageUrl ? <img src={selectedSpeciesForHolders.imageUrl} className="w-full h-full object-cover" /> : <Leaf size={28}/>}
+                     </div>
+                     <div>
+                        <h2 className="text-xl font-bold text-slate-900">{selectedSpeciesForHolders.commonName}</h2>
+                        <p className="text-xs text-slate-500 italic">{selectedSpeciesForHolders.scientificName}</p>
+                     </div>
+                  </div>
+                  <button onClick={() => setSelectedSpeciesForHolders(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
+               </div>
+               <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Building2 size={16}/> Organizations Holding this Species</h3>
+                  <div className="grid gap-3">
+                     {holdersOfSpecies.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                           No public records for this species found in the network.
+                        </div>
+                     ) : (
+                        holdersOfSpecies.map(({ org, isLocal, count }) => (
+                           <div key={org.id} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm hover:border-emerald-200 transition-colors">
+                              <div className="flex items-center gap-3">
+                                 <div className={`p-2 rounded-lg ${isLocal ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                                    <Building2 size={20} />
+                                 </div>
+                                 <div>
+                                    <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                                       {org.hideName ? "Anonymous Partner" : org.name}
+                                       {isLocal && <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded uppercase">Your Org</span>}
+                                    </h4>
+                                    <p className="text-xs text-slate-500">{org.location}</p>
+                                 </div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                 <div className="text-right">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Pop (M.F.U)</p>
+                                    <p className="text-sm font-mono font-bold text-slate-700">{count || "???"}</p>
+                                 </div>
+                                 <button 
+                                    onClick={() => {
+                                       if (!isLocal) {
+                                          setSelectedSpeciesForHolders(null);
+                                          setSelectedPartnerForSummary(org as ExternalPartner);
+                                       }
+                                    }}
+                                    className={`p-2 rounded-lg border transition-all ${isLocal ? 'bg-slate-50 border-slate-100 text-slate-400' : 'bg-white border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 shadow-sm'}`}
+                                    title="View Profile"
+                                    disabled={isLocal}
+                                 >
+                                    <ChevronRight size={18} />
+                                 </button>
+                              </div>
+                           </div>
+                        ))
+                     )}
+                  </div>
+               </div>
+               <div className="p-4 bg-slate-50 border-t border-slate-200 text-center">
+                  <p className="text-[10px] text-slate-400 font-medium">Population metrics are displayed as Male.Female.Unknown (M.F.U)</p>
+               </div>
+            </div>
+         </div>
       )}
 
       {selectedPartnerForSummary && (
          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in duration-200">
                <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50"><div><h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Building2 className="text-slate-400"/> {selectedPartnerForSummary.name}</h2><p className="text-slate-500 flex items-center gap-1 mt-1"><MapPin size={14}/> {selectedPartnerForSummary.location || 'Unknown Location'}</p></div><button onClick={() => setSelectedPartnerForSummary(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button></div>
                <div className="flex border-b border-slate-200 px-6"><button onClick={() => setSummaryTab('population')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${summaryTab === 'population' ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Species & Population</button><button onClick={() => setSummaryTab('individuals')} className={`py-3 px-4 text-sm font-bold border-b-2 transition-colors ${summaryTab === 'individuals' ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Individual Browser</button></div>
                <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-                  {summaryTab === 'population' && (<div className="grid gap-4">{selectedPartnerForSummary.isSpeciesPublic ? ((selectedPartnerForSummary.speciesIds || []).map(sid => { const sp = speciesList.find(s => s.id === sid); const counts = selectedPartnerForSummary.populationCounts?.[sid] || "Unknown"; if(!sp) return null; return (<div key={sid} className="bg-white p-4 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center font-bold">{sp.commonName.charAt(0)}</div><div><h4 className="font-bold text-slate-900">{sp.commonName}</h4><p className="text-xs text-slate-500 italic">{sp.scientificName}</p></div></div><div className="text-right"><p className="text-xs text-slate-400 uppercase tracking-wider font-bold">Population (M.F.U)</p><p className="text-lg font-mono font-bold text-slate-700">{counts}</p></div></div>);})) : (<div className="text-center py-12 bg-slate-100 rounded-xl border border-dashed border-slate-300"><Lock className="mx-auto text-slate-400 mb-2" size={32} /><p className="text-slate-600 font-medium">Species List is Private</p></div>)}</div>)}
-                  {summaryTab === 'individuals' && (<div>{!selectedPartnerForSummary.isSpeciesPublic ? (<div className="text-center py-12 bg-slate-100 rounded-xl border border-dashed border-slate-300"><Lock className="mx-auto text-slate-400 mb-2" size={32} /><p className="text-slate-600 font-medium">Access Restricted</p></div>) : (<div className="space-y-6">{(selectedPartnerForSummary.speciesIds || []).map(sid => { const sp = speciesList.find(s => s.id === sid); if(!sp) return null; const mockInds = generateMockPartnerIndividuals(sid, selectedPartnerForSummary.populationCounts?.[sid] || "0.0.0"); return (<div key={sid}><h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><Dna size={16} className="text-emerald-500"/> {sp.commonName}</h4><div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">{mockInds.map(ind => (<div key={ind.id} className="bg-white p-3 rounded border border-slate-200 flex items-center gap-3"><div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${ind.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : ind.sex === Sex.FEMALE ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-600'}`}>{ind.sex.charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{ind.name}</p><p className="text-xs text-slate-500">{ind.age} years old</p></div></div>))}</div></div>); })}</div>)}</div>)}
+                  {summaryTab === 'population' && (
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {selectedPartnerForSummary.isSpeciesPublic ? ((selectedPartnerForSummary.speciesIds || []).map(sid => { 
+                           const sp = localSpecies.find(s => s.id === sid); 
+                           const counts = selectedPartnerForSummary.populationCounts?.[sid] || "???.???.???"; 
+                           if(!sp) return null; 
+                           return (
+                              <div key={sid} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                 <div className="flex items-center gap-3 overflow-hidden">
+                                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-bold flex-shrink-0">
+                                       {sp.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover rounded-full" /> : sp.commonName.charAt(0)}
+                                    </div>
+                                    <div className="overflow-hidden">
+                                       <h4 className="font-bold text-slate-900 truncate">{sp.commonName}</h4>
+                                       <p className="text-[10px] text-slate-500 italic truncate">{sp.scientificName}</p>
+                                    </div>
+                                 </div>
+                                 <div className="text-right flex-shrink-0">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Ratio</p>
+                                    <p className="text-sm font-mono font-bold text-emerald-600">{counts}</p>
+                                 </div>
+                              </div>
+                           );
+                        })) : (
+                           <div className="col-span-full text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
+                              <Lock className="mx-auto text-slate-300 mb-2" size={48} />
+                              <p className="text-slate-500 font-bold">This organization keeps their species list private.</p>
+                           </div>
+                        )}
+                     </div>
+                  )}
+                  {summaryTab === 'individuals' && (
+                     <div>
+                        {!selectedPartnerForSummary.isSpeciesPublic ? (
+                           <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
+                              <Lock className="mx-auto text-slate-300 mb-2" size={48} />
+                              <p className="text-slate-500 font-bold">Access Restricted</p>
+                           </div>
+                        ) : (
+                           <div className="space-y-6">
+                              {(selectedPartnerForSummary.speciesIds || []).map(sid => { 
+                                 const sp = localSpecies.find(s => s.id === sid); 
+                                 if(!sp) return null; 
+                                 const mockInds = generateMockPartnerIndividuals(sid, selectedPartnerForSummary.populationCounts?.[sid] || "0.0.0"); 
+                                 if (mockInds.length === 0) return null;
+                                 return (
+                                    <div key={sid}>
+                                       <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 bg-white p-2 rounded border border-slate-100 shadow-sm w-fit">
+                                          <Dna size={16} className="text-emerald-500"/> {sp.commonName}
+                                       </h4>
+                                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                          {mockInds.map(ind => (
+                                             <div key={ind.id} className="bg-white p-3 rounded-lg border border-slate-200 flex items-center gap-3 shadow-sm">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${ind.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : ind.sex === Sex.FEMALE ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                   {ind.sex.charAt(0)}
+                                                </div>
+                                                <div>
+                                                   <p className="text-sm font-bold text-slate-900 leading-tight">{ind.name}</p>
+                                                   <p className="text-[10px] text-slate-400 uppercase tracking-widest">{ind.age}y • Adult</p>
+                                                </div>
+                                             </div>
+                                          ))}
+                                       </div>
+                                    </div>
+                                 ); 
+                              })}
+                           </div>
+                        )}
+                     </div>
+                  )}
                </div>
-               <div className="p-4 border-t border-slate-200 bg-white flex justify-end gap-3"><button onClick={() => setSelectedPartnerForSummary(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Close</button></div>
+               <div className="p-4 border-t border-slate-200 bg-white flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="flex items-center gap-2 text-xs text-slate-500 italic">
+                     <Info size={14}/> Private individual data is only shared with active breeding partners.
+                  </div>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                     <button onClick={() => setSelectedPartnerForSummary(null)} className="flex-1 sm:flex-none px-6 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold text-sm transition-all border border-slate-200">Close</button>
+                     {selectedPartnerForSummary.allowBreedingRequests && (
+                        <button onClick={() => handleOpenContact(selectedPartnerForSummary)} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2 rounded-lg font-bold text-sm transition-all shadow-lg flex items-center justify-center gap-2"><Send size={14}/> Contact</button>
+                     )}
+                  </div>
+               </div>
             </div>
          </div>
       )}

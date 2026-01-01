@@ -727,10 +727,30 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
       
+      // Discovery Species: Unique public species metadata for network browsing
+      const [discoverySpecies]: any = await db.execute(`
+         SELECT DISTINCT scientific_name, common_name, type, image_url, conservation_status 
+         FROM species 
+         WHERE project_id IN (SELECT id FROM projects WHERE org_id IN (SELECT id FROM organizations WHERE is_species_public = 1))
+      `);
+
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
       
-      res.json({ success: true, data: { org: myOrgRows[0] || null, partners: allOrgs, projects, users, species, individuals, breedingEvents: events, breedingLoans: loans, partnerships, languages: langs, settings } });
+      res.json({ success: true, data: { 
+         org: myOrgRows[0] || null, 
+         partners: allOrgs, 
+         projects, 
+         users, 
+         species, 
+         individuals, 
+         breedingEvents: events, 
+         breedingLoans: loans, 
+         partnerships, 
+         languages: langs, 
+         settings,
+         discoverySpecies
+      } });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
