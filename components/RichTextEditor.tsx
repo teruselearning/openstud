@@ -41,29 +41,35 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
       quill.clipboard.dangerouslyPasteHTML(value);
     }
 
-    quill.on('text-change', () => {
-      const html = quill.root.innerHTML;
-      // Only trigger onChange if the content actually changed to avoid cycles
-      // We also normalize empty values which Quill sometimes represents as <p><br></p>
-      const normalizedHtml = html === '<p><br></p>' ? '' : html;
-      onChange(normalizedHtml);
+    // Crucial: Only trigger onChange if the source of the change is the 'user'
+    // This prevents recursive state loops when props update the editor content.
+    quill.on('text-change', (delta: any, oldDelta: any, source: string) => {
+      if (source === 'user') {
+        const html = quill.root.innerHTML;
+        const normalizedHtml = html === '<p><br></p>' ? '' : html;
+        onChange(normalizedHtml);
+      }
     });
 
     quillRef.current = quill;
   }, []);
 
-  // Sync value from props when it changes externally (e.g., switching templates or AI fill)
+  // Sync value from props when it changes externally
   useEffect(() => {
     if (quillRef.current) {
       const currentHtml = quillRef.current.root.innerHTML;
       
-      // Strict equivalence check to avoid feedback loops and unnecessary resets
-      // Normalize both strings slightly for comparison
-      const normalize = (h: string) => h.replace(/\s/g, '').replace(/&nbsp;/g, ' ');
+      // Basic normalization to prevent unnecessary updates from minor HTML variations
+      const normalize = (h: string) => h.replace(/\s/g, '').replace(/&nbsp;/g, ' ').replace(/<p><br><\/p>/g, '');
+      const incomingValue = value || '';
       
-      if (normalize(value || '') !== normalize(currentHtml)) {
+      if (normalize(incomingValue) !== normalize(currentHtml)) {
+        // Save selection to prevent cursor jumping
         const selection = quillRef.current.getSelection();
-        quillRef.current.clipboard.dangerouslyPasteHTML(value || '');
+        
+        // Use 'silent' or check the source in the listener above to avoid loops
+        quillRef.current.clipboard.dangerouslyPasteHTML(incomingValue);
+        
         if (selection) {
           quillRef.current.setSelection(selection);
         }

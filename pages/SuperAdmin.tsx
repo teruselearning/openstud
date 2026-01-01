@@ -217,10 +217,12 @@ const SuperAdmin: React.FC = () => {
   };
 
   const handleUpdateTranslation = (key: string, value: string) => {
-    if (!editingLang) return;
-    setEditingLang({
-      ...editingLang,
-      translations: { ...editingLang.translations, [key]: value }
+    setEditingLang(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        translations: { ...prev.translations, [key]: value }
+      };
     });
   };
 
@@ -231,8 +233,6 @@ const SuperAdmin: React.FC = () => {
     try {
       const translated = await translateDictionary(BASE_TRANSLATIONS, editingLang.name);
       if (translated && typeof translated === 'object') {
-        // Flat merge: Ensure we only take keys that exist in the BASE dictionary
-        // to avoid corruption from malformed model responses
         const newTranslations = { ...editingLang.translations };
         Object.keys(BASE_TRANSLATIONS).forEach(key => {
            if (translated[key]) {
@@ -240,9 +240,12 @@ const SuperAdmin: React.FC = () => {
            }
         });
 
-        setEditingLang({
-          ...editingLang,
-          translations: newTranslations
+        setEditingLang(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            translations: newTranslations
+          };
         });
         setAiFillSuccess(true);
         setTimeout(() => setAiFillSuccess(false), 5000);
