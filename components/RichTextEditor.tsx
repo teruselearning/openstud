@@ -14,6 +14,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   const quillRef = useRef<any>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
+  // Initialize Quill
   useEffect(() => {
     if (!containerRef.current || quillRef.current) return;
 
@@ -41,11 +42,25 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     }
 
     quill.on('text-change', () => {
-      onChange(quill.root.innerHTML);
+      const html = quill.root.innerHTML;
+      // Only trigger onChange if the content actually changed to avoid cycles
+      onChange(html);
     });
 
     quillRef.current = quill;
-  }, []); // Mount only
+  }, []);
+
+  // Sync value from props when it changes externally (e.g., switching templates)
+  useEffect(() => {
+    if (quillRef.current && value !== quillRef.current.root.innerHTML) {
+      // We wrap this to avoid triggering unnecessary text-change loops
+      const selection = quillRef.current.getSelection();
+      quillRef.current.clipboard.dangerouslyPasteHTML(value);
+      if (selection) {
+        quillRef.current.setSelection(selection);
+      }
+    }
+  }, [value]);
 
   return (
     <>
@@ -56,11 +71,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
         />
       )}
       <div className={`bg-white border-slate-300 rounded-lg transition-all duration-200 flex flex-col ${isExpanded ? 'fixed inset-10 z-[50] shadow-2xl border' : 'relative border'}`}>
-         {/* Wrapper for Toolbar + Editor. Quill injects toolbar as a sibling before the containerRef node, so we need a parent wrapper to hold them together for the expand button to work relative to the whole block. */}
-         {/* Actually, with React refs, Quill modifies the DOM structure. We'll use a CSS hack to make sure the toolbar stays within our styling boundary if possible, or just wrap broadly. */}
-         
          <div className="flex-1 relative flex flex-col overflow-hidden rounded-lg">
-            {/* The containerRef will become .ql-container. The toolbar will be inserted before it. */}
             <div 
               ref={containerRef} 
               className="bg-white text-slate-900" 
@@ -78,7 +89,6 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
          </div>
 
          <style>{`
-           /* Scoped overrides for this component instance */
            .ql-toolbar { border-top: none !important; border-left: none !important; border-right: none !important; border-bottom: 1px solid #e2e8f0 !important; background: #f8fafc; }
            .ql-container { border: none !important; font-family: 'Inter', sans-serif; font-size: 0.875rem; }
            .ql-editor { overflow-y: auto; }

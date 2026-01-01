@@ -40,15 +40,11 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             handleCheckInvite(token);
          }
       } else {
-         // Only set to initialView if we aren't currently in an invite flow
          setViewMode(prev => prev === 'accept_invite' ? prev : initialView);
       }
     };
 
-    // Run on mount
     handleHashChange();
-
-    // Listen for changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [initialView]);
@@ -450,7 +446,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Reset Password</h2>
               <p className="text-slate-500 mb-6 text-sm">Enter your email and we'll send you a recovery code.</p>
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
-              {success && <div className="mb-4 p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2"><CheckCircle2 size={16} /> {success}</div>}
+              {success && <div className="mb-4 p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2 font-bold"><CheckCircle2 size={16} /> {success}</div>}
               <form onSubmit={handleForgotSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required /></div></div>
                 <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Send Code</button></div>
