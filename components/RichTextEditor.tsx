@@ -11,16 +11,21 @@ interface RichTextEditorProps {
 
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeholder, height = '200px' }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const quillRef = useRef<any>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Initialize Quill
   useEffect(() => {
-    if (!containerRef.current || quillRef.current) return;
+    if (!containerRef.current || !wrapperRef.current || quillRef.current) return;
 
     // @ts-ignore
     const Quill = (window as any).Quill;
     if (!Quill) return;
+
+    // Prevent duplicate toolbars caused by remounting (common in Strict Mode or toggling)
+    const existingToolbars = wrapperRef.current.querySelectorAll('.ql-toolbar');
+    existingToolbars.forEach(tb => tb.remove());
 
     const quill = new Quill(containerRef.current, {
       theme: 'snow',
@@ -42,7 +47,6 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     }
 
     // Crucial: Only trigger onChange if the source of the change is the 'user'
-    // This prevents recursive state loops when props update the editor content.
     quill.on('text-change', (delta: any, oldDelta: any, source: string) => {
       if (source === 'user') {
         const html = quill.root.innerHTML;
@@ -53,11 +57,9 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
 
     quillRef.current = quill;
 
-    // Proper Cleanup for Quill instance
+    // Proper Cleanup
     return () => {
        if (quillRef.current) {
-          // Quill doesn't have a built-in destroy() in 1.3.6, but we can clear the internal refs
-          // to prevent MutationObserver issues. 
           quillRef.current = null;
        }
     };
@@ -67,18 +69,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   useEffect(() => {
     if (quillRef.current) {
       const currentHtml = quillRef.current.root.innerHTML;
-      
-      // Basic normalization to prevent unnecessary updates from minor HTML variations
       const normalize = (h: string) => h.replace(/\s/g, '').replace(/&nbsp;/g, ' ').replace(/<p><br><\/p>/g, '');
       const incomingValue = value || '';
       
       if (normalize(incomingValue) !== normalize(currentHtml)) {
-        // Save selection to prevent cursor jumping
         const selection = quillRef.current.getSelection();
-        
-        // Use 'silent' or check the source in the listener above to avoid loops
         quillRef.current.clipboard.dangerouslyPasteHTML(incomingValue);
-        
         if (selection) {
           quillRef.current.setSelection(selection);
         }
@@ -95,7 +91,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
         />
       )}
       <div className={`bg-white border-slate-300 rounded-lg transition-all duration-200 flex flex-col ${isExpanded ? 'fixed inset-10 z-[50] shadow-2xl border' : 'relative border'}`}>
-         <div className="flex-1 relative flex flex-col overflow-hidden rounded-lg">
+         <div className="flex-1 relative flex flex-col overflow-hidden rounded-lg" ref={wrapperRef}>
             <div 
               ref={containerRef} 
               className="bg-white text-slate-900" 

@@ -253,7 +253,11 @@ export const getOrg = (): Organization => {
 
 export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
-  if (!skipSync) syncPushOrg(o).catch(() => {});
+  if (!skipSync) {
+    syncPushOrg(o)
+      .then(() => console.log("Org settings pushed to server successfully."))
+      .catch((err) => console.error("Failed to push org settings to server:", err));
+  }
 };
 
 export const checkAndIncrementAiUsage = (): boolean => {
@@ -327,11 +331,9 @@ export const savePartnerships = (p: Partnership[], skipSync = false) => {
 export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]>(KEYS.PARTNERS, []).filter(p => p && !p.deleted);
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
-// Fix: Added getNotifications and saveNotifications
 export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []);
 export const saveNotifications = (n: Notification[]) => set(KEYS.NOTIFICATIONS, n);
 
-// Fix: Added sendMockNotification
 export const sendMockNotification = (recipientId: string, senderOrgName: string, message: string, type: 'BreedingRequest' | 'System' | 'Partnership' | 'LoanUpdate' = 'System') => {
   const notifications = getNotifications();
   const newNotif: Notification = {
@@ -347,7 +349,6 @@ export const sendMockNotification = (recipientId: string, senderOrgName: string,
   saveNotifications([newNotif, ...notifications]);
 };
 
-// Fix: Auth and MFA functions
 export const isMfaTrustedDevice = (userId: string): boolean => {
   const devices = get(KEYS.TRUSTED_DEVICES, [] as string[]);
   return devices.includes(userId);
@@ -364,15 +365,12 @@ export const sendMfaCode = async (email: string, code: string) => {
   const settings = getSystemSettings();
   const template = settings.emailTemplates?.mfa;
   if (!template || !template.enabled) return;
-  
   await sendSystemEmail(email, 'mfa', { code }, template.subject, template.bodyHtml);
 };
 
-// Fix: Added missing register, login, reset functions
 export const login = async (email: string, pass: string): Promise<User | null> => {
   const users = getUsers();
   const match = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  // In a real app, verify hash. For mock:
   if (match) return match;
   return null;
 };
@@ -389,10 +387,9 @@ export const registerOrganization = async (orgName: string, userName: string, em
     id: `u-${Date.now()}`, orgId: id, name: userName, email, role: UserRole.ADMIN, status: UserStatus.ACTIVE,
     preferredLanguage: lang
   };
-  // Save locally and pretend to send verification
   saveOrg(newOrg);
   saveUsers([...getUsers(), newUser]);
-  return { needsVerification: false }; // Simplified for mock
+  return { needsVerification: false };
 };
 
 export const confirmRegistration = async (email: string, code: string): Promise<User> => {
@@ -401,17 +398,11 @@ export const confirmRegistration = async (email: string, code: string): Promise<
    return user;
 };
 
-// Fix: Explicitly defined return type with error field to satisfy Landing.tsx
 export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => ({ success: true, message: "Reset code sent to email." });
-
-// Fix: Explicitly defined return type with error field to satisfy Landing.tsx
 export const resetPassword = async (email: string, code: string, pass: string): Promise<{ success: boolean; error?: string }> => ({ success: true });
 
-export const regenerateDemoData = async () => {
-    // Clear and reset with demo defaults if needed
-};
+export const regenerateDemoData = async () => {};
 
-// Fix: Partnership invite logic
 export const generatePartnerInvite = (): string => {
   const code = Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
   const invites = get(KEYS.INVITE_CODES, [] as string[]);
@@ -423,7 +414,6 @@ export const redeemPartnerInvite = (code: string): {success: boolean, message: s
   return { success: true, message: "Partnership established!" };
 };
 
-// Fix: Invite and member management
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[]) => {
   const newUser: User = {
     id: `u-${Date.now()}`,
@@ -440,11 +430,10 @@ export const deleteUser = async (id: string) => {
   saveUsers(updated);
 };
 
-// Fix: Explicitly defined return type with error field to satisfy Landing.tsx
 export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => ({ success: true, data: { name: 'Invited User', email: 'user@example.com', orgName: 'Sample Org' } });
 
 export const acceptInvite = async (token: string, pass: string) => {
-  const user = getUsers()[0]; // Mock
+  const user = getUsers()[0];
   return { user };
 };
 

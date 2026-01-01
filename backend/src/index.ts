@@ -58,7 +58,6 @@ app.use(morgan('dev'));
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
-    // Initial attempt to create the database if it doesn't exist
     try {
         const connection = await mysql.createConnection({
             host: dbConfig.host,
@@ -69,14 +68,13 @@ const initDatabase = async () => {
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
         await connection.end();
     } catch (e) {
-        console.warn("Could not ensure database existence, proceeding assuming it exists or connection fails later.");
+        console.warn("Could not ensure database existence, proceeding assuming it exists.");
     }
 
     const db = getDb();
     try {
         await db.query('SELECT 1');
         
-        // Define all tables with updated enclosure fields
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -87,42 +85,39 @@ const initDatabase = async () => {
                 founded_year INT,
                 description LONGTEXT,
                 focus VARCHAR(255),
-                is_org_public BOOLEAN DEFAULT FALSE,
-                is_species_public BOOLEAN DEFAULT FALSE,
-                obscure_location BOOLEAN DEFAULT FALSE,
-                hide_name BOOLEAN DEFAULT FALSE,
-                allow_breeding_requests BOOLEAN DEFAULT FALSE,
+                is_org_public TINYINT(1) DEFAULT 0,
+                is_species_public TINYINT(1) DEFAULT 0,
+                obscure_location TINYINT(1) DEFAULT 0,
+                hide_name TINYINT(1) DEFAULT 0,
+                allow_breeding_requests TINYINT(1) DEFAULT 0,
                 breeding_request_contact_id VARCHAR(255),
-                show_native_status BOOLEAN DEFAULT TRUE,
+                show_native_status TINYINT(1) DEFAULT 1,
                 dashboard_block JSON,
                 ai_usage_limit INT DEFAULT 100,
                 ai_usage_count INT DEFAULT 0,
                 ai_usage_last_reset VARCHAR(255),
-                enable_mfa BOOLEAN DEFAULT FALSE,
-                enable_enclosures BOOLEAN DEFAULT FALSE,
-                is_deleted BOOLEAN DEFAULT FALSE
+                enable_mfa TINYINT(1) DEFAULT 0,
+                enable_enclosures TINYINT(1) DEFAULT 0,
+                is_deleted TINYINT(1) DEFAULT 0
             )
         `);
 
-        // Migration helper for columns
         const ensureColumn = async (table: string, column: string, definition: string) => {
            try {
               const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
               if (rows.length === 0) {
-                 console.log(`Migrating: Adding column ${column} to ${table}`);
+                 console.log(`Migration: Adding column ${column} to ${table}`);
                  await db.execute(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
               }
            } catch (e) { console.warn(`Migration check failed for ${table}.${column}`); }
         };
 
-        // Ensure critical columns exist for organizations
-        await ensureColumn('organizations', 'enable_mfa', 'BOOLEAN DEFAULT FALSE');
-        await ensureColumn('organizations', 'enable_enclosures', 'BOOLEAN DEFAULT FALSE');
-        await ensureColumn('organizations', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
+        await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
+        await ensureColumn('organizations', 'enable_enclosures', 'TINYINT(1) DEFAULT 0');
+        await ensureColumn('organizations', 'is_deleted', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'dashboard_block', 'JSON');
         await ensureColumn('organizations', 'ai_usage_limit', 'INT DEFAULT 100');
         await ensureColumn('organizations', 'ai_usage_count', 'INT DEFAULT 0');
-        await ensureColumn('organizations', 'ai_usage_last_reset', 'VARCHAR(255)');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS enclosures (
@@ -148,8 +143,6 @@ const initDatabase = async () => {
                 password VARCHAR(255),
                 avatar_url LONGTEXT,
                 allowed_project_ids JSON,
-                invite_token VARCHAR(255),
-                invite_expires BIGINT,
                 CONSTRAINT fk_user_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
@@ -205,7 +198,7 @@ const initDatabase = async () => {
                 source_details VARCHAR(255),
                 latitude DOUBLE,
                 longitude DOUBLE,
-                is_deceased BOOLEAN DEFAULT FALSE,
+                is_deceased TINYINT(1) DEFAULT 0,
                 death_date VARCHAR(50),
                 loan_status VARCHAR(50),
                 transferred_to_org_id VARCHAR(255),
@@ -218,9 +211,6 @@ const initDatabase = async () => {
                 CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE
             )
         `);
-
-        // Migration check for enclosure_id in individuals
-        await ensureColumn('individuals', 'enclosure_id', 'VARCHAR(255)');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
@@ -276,9 +266,9 @@ const initDatabase = async () => {
                 code VARCHAR(10) PRIMARY KEY,
                 name VARCHAR(255),
                 translations JSON,
-                is_default BOOLEAN DEFAULT FALSE,
+                is_default TINYINT(1) DEFAULT 0,
                 manual_overrides JSON,
-                is_deleted BOOLEAN DEFAULT FALSE
+                is_deleted TINYINT(1) DEFAULT 0
             )
         `);
 
@@ -302,32 +292,6 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-// --- PUBLIC CONFIG ROUTE (Fixes 404) ---
-
-app.get('/api/config', async (req: any, res: any) => {
-   const db = getDb();
-   try {
-      const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-      const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-      
-      let settings = config[0]?.settings;
-      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
-
-      res.json({ 
-         success: true, 
-         data: { 
-            settings: settings || {}, 
-            languages: langs || [] 
-         } 
-      });
-   } catch (e: any) {
-      console.error("Config fetch error:", e);
-      res.status(500).json({ error: e.message });
-   }
-});
-
-// --- AUTH ROUTES ---
-
 app.post('/api/login', async (req: any, res: any) => {
     const { email, password } = req.body;
     const db = getDb();
@@ -346,41 +310,46 @@ app.post('/api/login', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- GENERIC UPSERT REST ROUTES ---
+app.get('/api/config', async (req: any, res: any) => {
+   const db = getDb();
+   try {
+      const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+      const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+      let settings = config[0]?.settings;
+      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
+      res.json({ success: true, data: { settings: settings || {}, languages: langs || [] } });
+   } catch (e: any) {
+      res.status(500).json({ error: e.message });
+   }
+});
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const db = getDb();
     const data = Array.isArray(req.body) ? req.body : [req.body];
-    
     if (data.length === 0) return res.json({ success: true });
-
     try {
         for (const item of data) {
             const keys = Object.keys(item);
             if (keys.length === 0) continue;
-
             const values = keys.map(k => {
                 const v = item[k];
-                if (v === undefined) return null;
-                if (v !== null && typeof v === 'object') return JSON.stringify(v);
-                if (typeof v === 'boolean') return v ? 1 : 0; // Explicit boolean conversion for MySQL
+                if (v === undefined || v === null) return null;
+                if (typeof v === 'object') return JSON.stringify(v);
+                if (typeof v === 'boolean') return v ? 1 : 0;
                 return v;
             });
-            
             const placeholders = keys.map(() => '?').join(', ');
             const updateClause = keys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
-            
             const sql = `INSERT INTO \`${table}\` (${keys.map(k => `\`${k}\``).join(', ')}) 
                          VALUES (${placeholders}) 
                          ON DUPLICATE KEY UPDATE ${updateClause}`;
-            
             await db.execute(sql, values);
         }
         res.json({ success: true });
     } catch (e: any) {
         console.error(`Upsert failed for table ${table}:`, e.message);
-        res.status(500).json({ error: `SQL Error in ${table}: ${e.message}` });
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -390,40 +359,25 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { id, code, ...updates } = req.body;
     const pkField = table === 'languages' ? 'code' : 'id';
     const pkValue = table === 'languages' ? (code || req.query.code) : (id || req.query.id);
-
     if (!pkValue) return res.status(400).json({ error: "Missing primary key" });
-
     try {
         if (Object.keys(updates).length === 0) {
-            const softDeleteField = 'is_deleted';
-            // Verify if is_deleted exists
-            const [cols]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE 'is_deleted'`);
-            if (cols.length > 0) {
-                await db.execute(`UPDATE \`${table}\` SET \`${softDeleteField}\` = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
-                return res.json({ success: true });
-            }
-            return res.status(400).json({ error: "No updates provided and table lacks is_deleted column" });
+            await db.execute(`UPDATE \`${table}\` SET is_deleted = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
+            return res.json({ success: true });
         }
-
         const keys = Object.keys(updates);
         const values = keys.map(k => {
             const v = updates[k];
-            if (v === undefined) return null;
-            if (v !== null && typeof v === 'object') return JSON.stringify(v);
+            if (v === undefined || v === null) return null;
+            if (typeof v === 'object') return JSON.stringify(v);
             if (typeof v === 'boolean') return v ? 1 : 0;
             return v;
         });
         const setClause = keys.map(k => `\`${k}\` = ?`).join(', ');
-        
         await db.execute(`UPDATE \`${table}\` SET ${setClause} WHERE \`${pkField}\` = ?`, [...values, pkValue]);
         res.json({ success: true });
-    } catch (e: any) { 
-        console.error(`Patch failed for table ${table}:`, e.message);
-        res.status(500).json({ error: e.message }); 
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
-
-// --- SUPER ADMIN ROUTES ---
 
 app.post('/api/super-admin/organizations', authenticate, async (req: any, res: any) => {
     if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
@@ -434,15 +388,8 @@ app.post('/api/super-admin/organizations', authenticate, async (req: any, res: a
         const userId = `u-${Date.now()}`;
         const tempPassword = Math.random().toString(36).substring(2, 10);
         const hashedPass = await bcrypt.hash(tempPassword, 10);
-
-        await db.execute(
-            'INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [orgId, orgName, focus, location, new Date().getFullYear(), true, true]
-        );
-        await db.execute(
-            'INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [userId, orgId, adminName, adminEmail, 'Admin', 'Active', hashedPass]
-        );
+        await db.execute('INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public) VALUES (?, ?, ?, ?, ?, 1, 1)', [orgId, orgName, focus, location, new Date().getFullYear()]);
+        await db.execute('INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, orgId, adminName, adminEmail, 'Admin', 'Active', hashedPass]);
         res.json({ success: true, tempPassword });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -456,80 +403,33 @@ app.delete('/api/super-admin/organizations/:id', authenticate, async (req: any, 
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- SYNC ENDPOINT ---
-
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
    const orgId = (req as any).user.orgId;
    const isSuper = req.user.role === 'Super Admin';
-   
    try {
       const [allOrgs]: any = await db.execute(`SELECT * FROM organizations WHERE is_deleted = 0`);
       const [myOrgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? LIMIT 1`, [orgId]);
-      
-      const [enclosures]: any = isSuper 
-         ? await db.execute(`SELECT * FROM enclosures`) 
-         : await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
-
-      const [projects]: any = isSuper 
-         ? await db.execute(`SELECT * FROM projects`) 
-         : await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
-         
-      const [users]: any = isSuper 
-         ? await db.execute(`SELECT * FROM users`) 
-         : await db.execute(`SELECT * FROM users WHERE org_id = ?`, [orgId]);
-         
-      const [species]: any = isSuper 
-         ? await db.execute(`SELECT * FROM species`) 
-         : await db.execute(`SELECT * FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
-         
-      const [individuals]: any = isSuper 
-         ? await db.execute(`SELECT * FROM individuals`) 
-         : await db.execute(`SELECT * FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
-         
-      const [events]: any = isSuper 
-         ? await db.execute(`SELECT * FROM breeding_events`) 
-         : await db.execute(`SELECT * FROM breeding_events WHERE species_id IN (SELECT id FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?))`, [orgId]);
-         
-      const [loans]: any = isSuper 
-         ? await db.execute(`SELECT * FROM breeding_loans`) 
-         : await db.execute(`SELECT * FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
-         
-      const [partnerships]: any = isSuper 
-         ? await db.execute(`SELECT * FROM partnerships`) 
-         : await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
-         
+      const [enclosures]: any = isSuper ? await db.execute(`SELECT * FROM enclosures`) : await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
+      const [projects]: any = isSuper ? await db.execute(`SELECT * FROM projects`) : await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
+      const [users]: any = isSuper ? await db.execute(`SELECT * FROM users`) : await db.execute(`SELECT * FROM users WHERE org_id = ?`, [orgId]);
+      const [species]: any = isSuper ? await db.execute(`SELECT * FROM species`) : await db.execute(`SELECT * FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+      const [individuals]: any = isSuper ? await db.execute(`SELECT * FROM individuals`) : await db.execute(`SELECT * FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+      const [events]: any = isSuper ? await db.execute(`SELECT * FROM breeding_events`) : await db.execute(`SELECT * FROM breeding_events WHERE species_id IN (SELECT id FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?))`, [orgId]);
+      const [loans]: any = isSuper ? await db.execute(`SELECT * FROM breeding_loans`) : await db.execute(`SELECT * FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
+      const [partnerships]: any = isSuper ? await db.execute(`SELECT * FROM partnerships`) : await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-      
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
-      
-      res.json({ success: true, data: { 
-         org: myOrgRows[0] || null, 
-         partners: allOrgs, 
-         projects, 
-         users, 
-         species, 
-         individuals, 
-         enclosures,
-         breedingEvents: events, 
-         breedingLoans: loans, 
-         partnerships, 
-         languages: langs, 
-         settings
-      } });
-   } catch (e: any) { 
-       console.error("Sync fetch error:", e);
-       res.status(500).json({ error: e.message }); 
-   }
+      res.json({ success: true, data: { org: myOrgRows[0] || null, partners: allOrgs, projects, users, species, individuals, enclosures, breedingEvents: events, breedingLoans: loans, partnerships, languages: langs, settings } });
+   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
 
-// Final Error Handler
 app.use((err: any, req: any, res: any, next: any) => {
-    console.error("Unhandled Middleware Error:", err);
+    console.error("Unhandled Error:", err);
     res.status(500).json({ error: err.message || "Internal Server Error" });
 });
 
