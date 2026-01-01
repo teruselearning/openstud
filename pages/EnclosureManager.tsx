@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals } from '../services/storage';
-import { Enclosure, Species, Individual, EnclosurePoint } from '../types';
-// Added Users and CheckCircle to lucide-react imports
-import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle } from 'lucide-react';
+import { Enclosure, Species, Individual, EnclosurePoint, Sex } from '../types';
+import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -23,6 +22,7 @@ const EnclosureManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedEnclosure, setSelectedEnclosure] = useState<Enclosure | null>(null);
   
   // Selection step
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
@@ -55,40 +55,69 @@ const EnclosureManager: React.FC = () => {
       const initialLat = org.latitude || 0;
       const initialLng = org.longitude || 0;
       
-      const map = L.map(mapContainerRef.current, { maxZoom: 22 }).setView([initialLat, initialLng], 15);
+      const map = L.map(mapContainerRef.current, { 
+        maxZoom: 22,
+        zoomControl: false 
+      }).setView([initialLat, initialLng], 15);
+      
+      L.control.zoom({ position: 'topright' }).addTo(map);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22 }).addTo(map);
       
       const layer = L.layerGroup().addTo(map);
       markersLayerRef.current = layer;
       mapInstanceRef.current = map;
       
+      // Close side panel on map click
+      map.on('click', () => {
+         // Only deselect if not clicking a polygon (polygons have their own handlers)
+         // but Leaflet doesn't always propagate this easily. 
+         // For now, click deselect is handled by the close button in the side panel mostly.
+      });
+
       setTimeout(() => map.invalidateSize(), 200);
     }
+
+    return () => {
+       if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+       }
+    };
   }, [viewMode]);
 
   useEffect(() => {
     if (viewMode === 'map' && mapInstanceRef.current && markersLayerRef.current) {
       const layer = markersLayerRef.current;
+      const map = mapInstanceRef.current;
       layer.clearLayers();
       
       enclosures.forEach(enc => {
         if (enc.boundary && enc.boundary.length > 0) {
+          const isSelected = selectedEnclosure?.id === enc.id;
           const poly = L.polygon(enc.boundary.map(p => [p.lat, p.lng]), {
-            color: '#9333ea',
-            fillColor: '#9333ea',
-            fillOpacity: 0.2
+            color: isSelected ? '#3b82f6' : '#9333ea',
+            fillColor: isSelected ? '#3b82f6' : '#9333ea',
+            fillOpacity: isSelected ? 0.4 : 0.2,
+            weight: isSelected ? 3 : 2
           }).addTo(layer);
           
-          poly.bindPopup(`
-            <div class="p-1">
-              <h4 class="font-bold text-slate-900">${enc.name}</h4>
-              <p class="text-xs text-slate-500">${enc.individualIds.length} individuals</p>
-            </div>
-          `);
+          poly.on('click', (e: any) => {
+             L.DomEvent.stopPropagation(e);
+             setSelectedEnclosure(enc);
+             map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
+          });
+
+          if (!isSelected) {
+            poly.bindTooltip(enc.name, {
+              permanent: true,
+              direction: 'center',
+              className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer'
+            });
+          }
         }
       });
     }
-  }, [viewMode, enclosures]);
+  }, [viewMode, enclosures, selectedEnclosure]);
 
   // Picker Map Effect (Polygon Drawing)
   useEffect(() => {
@@ -130,14 +159,6 @@ const EnclosureManager: React.FC = () => {
 
        setTimeout(() => map.invalidateSize(), 200);
     }
-    return () => {
-       if (!showMapPicker && pickerInstance.current) {
-          pickerInstance.current.remove();
-          pickerInstance.current = null;
-          pickerPolygon.current = null;
-          pickerMarkers.current = [];
-       }
-    };
   }, [showMapPicker]);
 
   const handleSave = (e: React.FormEvent) => {
@@ -149,7 +170,6 @@ const EnclosureManager: React.FC = () => {
       individualIds: formData.individualIds || []
     };
     
-    // Update local state
     const updatedEnclosures = editingId 
       ? enclosures.map(enc => enc.id === editingId ? newEnc : enc)
       : [...enclosures, newEnc];
@@ -157,13 +177,10 @@ const EnclosureManager: React.FC = () => {
     setEnclosures(updatedEnclosures);
     saveEnclosures(updatedEnclosures);
 
-    // Sync individual records - update their enclosureId
     const updatedInds = allIndividuals.map(ind => {
-       // If this individual was added to the enclosure
        if (newEnc.individualIds.includes(ind.id)) {
           return { ...ind, enclosureId: newEnc.id };
        }
-       // If this individual was previously in this enclosure but now removed
        if (ind.enclosureId === newEnc.id && !newEnc.individualIds.includes(ind.id)) {
           return { ...ind, enclosureId: undefined };
        }
@@ -175,6 +192,7 @@ const EnclosureManager: React.FC = () => {
 
     setShowForm(false);
     setEditingId(null);
+    setSelectedEnclosure(null); // Close panel if editing from map
     setFormData({ name: '', description: '', individualIds: [], boundary: [] });
   };
 
@@ -190,10 +208,10 @@ const EnclosureManager: React.FC = () => {
       setEnclosures(updated);
       saveEnclosures(updated);
       
-      // Also clear enclosureId from individuals
       const updatedInds = allIndividuals.map(ind => ind.enclosureId === id ? { ...ind, enclosureId: undefined } : ind);
       setAllIndividuals(updatedInds);
       saveIndividuals(updatedInds);
+      setSelectedEnclosure(null);
     }
   };
 
@@ -207,9 +225,28 @@ const EnclosureManager: React.FC = () => {
   const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
   const speciesIndividuals = allIndividuals.filter(i => i.speciesId === selectedSpeciesId && i.projectId === currentProjectId);
 
+  // Group individuals by species for the breakdown panel
+  const getGroupedOccupants = (enclosure: Enclosure) => {
+     const occupantIds = enclosure.individualIds || [];
+     const grouped: Record<string, { species: Species, inds: Individual[] }> = {};
+
+     occupantIds.forEach(id => {
+        const ind = allIndividuals.find(i => i.id === id);
+        if (ind) {
+           const sp = allSpecies.find(s => s.id === ind.speciesId);
+           if (sp) {
+              if (!grouped[sp.id]) grouped[sp.id] = { species: sp, inds: [] };
+              grouped[sp.id].inds.push(ind);
+           }
+        }
+     });
+
+     return Object.values(grouped);
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-6 h-full flex flex-col">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{labelsPlural}</h2>
           <p className="text-slate-500">Define physical {labelsPlural.toLowerCase()} and manage the individuals within them.</p>
@@ -227,17 +264,17 @@ const EnclosureManager: React.FC = () => {
       </div>
 
       {viewMode === 'list' && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-in fade-in duration-300 overflow-y-auto pb-8">
            <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
              <Search className="text-slate-400 ml-2" size={20} />
              <input className="flex-1 outline-none text-slate-900 placeholder:text-slate-400 bg-white" placeholder={`Search ${labelsPlural.toLowerCase()}...`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredEnclosures.map(enc => (
-              <div key={enc.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
+              <div key={enc.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col group">
                 <div className="p-5 flex-1">
                   <div className="flex justify-between items-start mb-4">
-                    <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
                       <Box size={24} />
                     </div>
                     <div className="flex gap-2">
@@ -249,8 +286,8 @@ const EnclosureManager: React.FC = () => {
                   <p className="text-sm text-slate-500 mb-4 line-clamp-2">{enc.description || 'No description provided.'}</p>
                   
                   <div className="space-y-3 pt-4 border-t border-slate-50">
-                    <div className="flex items-center justify-between text-xs font-medium">
-                      <span className="text-slate-400 uppercase tracking-wider">Individuals Inside</span>
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span className="text-slate-400 uppercase tracking-widest">Occupants</span>
                       <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{enc.individualIds.length}</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -266,9 +303,9 @@ const EnclosureManager: React.FC = () => {
                 {enc.boundary && enc.boundary.length > 0 && (
                    <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                       <MapIcon size={12} className="text-purple-500"/> Polygon Boundary
+                       <MapIcon size={12} className="text-purple-500"/> Boundary Plotted
                      </div>
-                     <span className="text-[10px] font-mono text-slate-400">{enc.boundary.length} Points</span>
+                     <button onClick={() => { setViewMode('map'); setSelectedEnclosure(enc); }} className="text-[10px] font-bold text-emerald-600 hover:underline">View on Map</button>
                    </div>
                 )}
               </div>
@@ -285,8 +322,76 @@ const EnclosureManager: React.FC = () => {
       )}
 
       {viewMode === 'map' && (
-        <div className="h-[calc(100vh-250px)] relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="flex-1 relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
           <div ref={mapContainerRef} className="w-full h-full z-0" />
+          
+          {selectedEnclosure && (
+             <div className="absolute right-4 top-4 bottom-4 w-96 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50">
+                   <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                         <div className="p-1.5 bg-purple-100 text-purple-600 rounded-lg"><Box size={20}/></div>
+                         <h3 className="text-xl font-bold text-slate-900">{selectedEnclosure.name}</h3>
+                      </div>
+                      <p className="text-sm text-slate-500 line-clamp-2">{selectedEnclosure.description || 'No description provided.'}</p>
+                   </div>
+                   <button onClick={() => setSelectedEnclosure(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                   <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Individuals</p>
+                         <p className="text-2xl font-black text-slate-800">{selectedEnclosure.individualIds.length}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Species</p>
+                         <p className="text-2xl font-black text-slate-800">{getGroupedOccupants(selectedEnclosure).length}</p>
+                      </div>
+                   </div>
+
+                   <div className="space-y-4">
+                      <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Users size={14}/> Occupant Breakdown</h4>
+                      {getGroupedOccupants(selectedEnclosure).map(({ species, inds }) => (
+                         <div key={species.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                            <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                               <div className="flex items-center gap-2">
+                                  {species.imageUrl ? <img src={species.imageUrl} className="w-6 h-6 rounded-full object-cover" /> : <Dna size={16} className="text-emerald-500" />}
+                                  <span className="text-sm font-bold text-slate-800">{species.commonName}</span>
+                               </div>
+                               <span className="text-xs font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">{inds.length}</span>
+                            </div>
+                            <div className="divide-y divide-slate-50">
+                               {inds.map(ind => (
+                                  <div key={ind.id} className="p-3 flex justify-between items-center hover:bg-slate-50 transition-colors group/row">
+                                     <div className="flex items-center gap-3">
+                                        <div className={`w-2 h-2 rounded-full ${ind.sex === Sex.MALE ? 'bg-blue-400' : ind.sex === Sex.FEMALE ? 'bg-pink-400' : 'bg-slate-300'}`}></div>
+                                        <div>
+                                           <p className="text-sm font-bold text-slate-700">{ind.name}</p>
+                                           <p className="text-[10px] font-mono text-slate-400">{ind.studbookId}</p>
+                                        </div>
+                                     </div>
+                                     <a href={`#/individuals/${ind.id}`} target="_blank" className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg opacity-0 group-hover/row:opacity-100 transition-all"><ExternalLink size={14}/></a>
+                                  </div>
+                               ))}
+                            </div>
+                         </div>
+                      ))}
+                      {selectedEnclosure.individualIds.length === 0 && (
+                         <div className="text-center py-10 opacity-30">
+                            <Activity size={48} className="mx-auto text-slate-300 mb-2"/>
+                            <p className="text-sm font-medium">Currently Unoccupied</p>
+                         </div>
+                      )}
+                   </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-100 bg-slate-50 grid grid-cols-2 gap-3">
+                   <button onClick={() => handleDelete(selectedEnclosure.id)} className="flex items-center justify-center gap-2 px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl font-bold text-sm transition-all"><Trash size={18}/> Delete</button>
+                   <button onClick={() => handleEdit(selectedEnclosure)} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 rounded-xl font-bold text-sm shadow-lg transition-all"><Pencil size={18}/> Edit {label}</button>
+                </div>
+             </div>
+          )}
         </div>
       )}
 
@@ -294,7 +399,10 @@ const EnclosureManager: React.FC = () => {
         <div className="fixed inset-0 z-[2000] overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl animate-in zoom-in duration-200 overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-               <h3 className="text-xl font-bold text-slate-900">{editingId ? `Edit ${label}` : `Add New ${label}`}</h3>
+               <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Pencil size={20}/></div>
+                  <h3 className="text-xl font-bold text-slate-900">{editingId ? `Edit ${label}` : `Add New ${label}`}</h3>
+               </div>
                <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
             </div>
             
@@ -345,7 +453,7 @@ const EnclosureManager: React.FC = () => {
                       <div className="space-y-4">
                          {/* Step 1: Select Species */}
                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Select Species</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Filter Occupants by Species</label>
                             <select 
                                className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
                                value={selectedSpeciesId}
@@ -361,7 +469,7 @@ const EnclosureManager: React.FC = () => {
                          {/* Step 2: Select Individuals */}
                          <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Select Individuals</label>
+                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Assign Individuals</label>
                                {selectedSpeciesId && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{speciesIndividuals.length} available</span>}
                             </div>
                             <div className="border border-slate-200 rounded-xl bg-slate-50 min-h-[200px] max-h-[300px] overflow-y-auto">
@@ -396,7 +504,7 @@ const EnclosureManager: React.FC = () => {
                                                     <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 rounded">{ind.studbookId}</span>
                                                  </div>
                                                  <div className="flex items-center gap-2 mt-0.5">
-                                                    <span className={`text-[10px] font-bold ${ind.sex === 'Male' ? 'text-blue-500' : ind.sex === 'Female' ? 'text-pink-500' : 'text-slate-400'}`}>{ind.sex}</span>
+                                                    <span className={`text-[10px] font-bold ${ind.sex === Sex.MALE ? 'text-blue-500' : ind.sex === Sex.FEMALE ? 'text-pink-500' : 'text-slate-400'}`}>{ind.sex}</span>
                                                     {inOtherEnclosure && (
                                                        <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">Moving from {otherEncName}</span>
                                                     )}
@@ -418,7 +526,7 @@ const EnclosureManager: React.FC = () => {
                                   (formData.individualIds || []).map(id => {
                                      const ind = allIndividuals.find(i => i.id === id);
                                      return (
-                                        <div key={id} className="bg-white border border-blue-200 text-blue-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 pr-1">
+                                        <div key={id} className="bg-white border border-blue-200 text-blue-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 pr-1 animate-in zoom-in duration-150">
                                            {ind?.name || 'Unknown'}
                                            <button type="button" onClick={() => toggleIndividual(id)} className="p-0.5 hover:bg-red-50 hover:text-red-500 rounded transition-colors"><X size={10}/></button>
                                         </div>
