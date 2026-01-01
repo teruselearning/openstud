@@ -78,7 +78,6 @@ const get = <T>(key: string, defaultVal: T): T => {
 
 const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') {
-    // Avoid storing giant collections in localStorage
     if (key === KEYS.INDIVIDUALS || key === KEYS.SPECIES) {
        console.warn(`Attempted to save giant collection ${key} to localStorage. Redirecting to IndexedDB.`);
        return;
@@ -307,18 +306,45 @@ export const getNetworkPartners = (): ExternalPartner[] => get<ExternalPartner[]
 export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PARTNERS, partners);
 
 export const exportFullData = () => ({ org: getOrg(), projects: getProjects(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(), breedingEvents: getBreedingEvents(), breedingLoans: getBreedingLoans(), partnerships: getPartnerships(), settings: getSystemSettings(), languages: getLanguages() });
-export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };
 
+// Fix: Implemented and exported the missing exportDataAsCSV function to fix the module export error referenced in OrgSettings.tsx.
+/**
+ * Exports essential collection data as CSV
+ */
 export const exportDataAsCSV = (): string => {
   const species = getSpecies();
   const individuals = getIndividuals();
-  let csv = "Type,Common Name,Scientific Name,Studbook ID,Name,Sex,Birth Date,Weight (kg),Conservation Status\n";
-  individuals.forEach(ind => {
+  
+  const headers = [
+    'Studbook ID', 'Name', 'Common Name', 'Scientific Name', 'Sex', 
+    'Birth Date', 'Weight (kg)', 'Status', 'Notes', 'Source', 'Latitude', 'Longitude'
+  ];
+  
+  const rows = individuals.map(ind => {
     const sp = species.find(s => s.id === ind.speciesId);
-    csv += [sp?.type || 'Unknown', sp?.commonName || 'Unknown', sp?.scientificName || 'Unknown', ind.studbookId, ind.name, ind.sex, ind.birthDate || '', ind.weightKg, sp?.conservationStatus || ''].map(val => `"${String(val).replace(/"/g, '""')}"`).join(",") + "\n";
+    return [
+      ind.studbookId || '',
+      `"${(ind.name || '').replace(/"/g, '""')}"`,
+      `"${(sp?.commonName || '').replace(/"/g, '""')}"`,
+      `"${(sp?.scientificName || '').replace(/"/g, '""')}"`,
+      ind.sex || '',
+      ind.birthDate || '',
+      ind.weightKg || '0',
+      ind.isDeceased ? 'Deceased' : 'Active',
+      `"${(ind.notes || '').replace(/"/g, '""')}"`,
+      ind.source || '',
+      ind.latitude || '',
+      ind.longitude || ''
+    ];
   });
-  return csv;
+  
+  return [
+    headers.join(','),
+    ...rows.map(row => row.join(','))
+  ].join('\n');
 };
+
+export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };
 
 export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string = 'en-GB', latitude?: number, longitude?: number, location?: string): Promise<any> => {
   const response = await fetch(`${API_BASE_URL}/api/register`, {
@@ -386,6 +412,20 @@ export const inviteUser = async (name: string, email: string, role: UserRole, al
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Invitation failed");
+    return data;
+};
+
+export const deleteUser = async (userId: string): Promise<any> => {
+    const token = localStorage.getItem(KEYS.TOKEN);
+    const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "User removal failed");
     return data;
 };
 

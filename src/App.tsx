@@ -32,7 +32,8 @@ import {
   Save, 
   Loader2,
   Check,
-  Server
+  Server,
+  Users as UsersIcon
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -119,7 +120,10 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   const location = useLocation();
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
+  
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
+  const isAdmin = user.role === UserRole.ADMIN || isSuper;
+
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} />}
@@ -131,14 +135,23 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           </div>
           <div className="relative">
              <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> Current Project</div>
-             <select value={currentProjectId} onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
+             <select 
+               value={currentProjectId} 
+               onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} 
+               className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium disabled:opacity-50"
+               disabled={!isAdmin && projects.length <= 1}
+             >
                {projects.length > 0 ? (
                  projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
                ) : (
                  <option value="">No Projects Found</option>
                )}
-               <option disabled>──────────</option>
-               <option value="NEW">+ Create New Project</option>
+               {isAdmin && (
+                 <>
+                   <option disabled>──────────</option>
+                   <option value="NEW">+ Create New Project</option>
+                 </>
+               )}
              </select>
           </div>
         </div>
@@ -148,9 +161,18 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           <NavItem to="/individuals" icon={PawPrint} label={t('individuals')} active={path.startsWith('/individuals')} />
           {showPlantMap && <NavItem to="/plant-map" icon={Map} label={t('plantMap')} active={path === '/plant-map'} />}
           {showBreeding && <NavItem to="/breeding" icon={HeartHandshake} label={t('breeding')} active={path.startsWith('/breeding')} />}
-          <div className="pt-4 mt-4 border-t border-slate-100">
+          
+          <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
              <NavItem to="/network" icon={Globe2} label={t('networkMap')} active={path === '/network'} />
-             <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />
+             
+             {/* Admin Restricted Items */}
+             {isAdmin && (
+               <>
+                 <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />
+               </>
+             )}
+             
+             {/* Super Admin Restricted Items */}
              {isSuper && <NavItem to="/super-admin" icon={Shield} label={t('superAdmin')} active={path === '/super-admin'} />}
           </div>
         </nav>
@@ -393,6 +415,9 @@ const App: React.FC = () => {
   if (isLoading) return null;
   if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
 
+  const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
+  const isAdmin = user.role === UserRole.ADMIN || isSuper;
+
   return (
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
       <HashRouter>
@@ -410,13 +435,31 @@ const App: React.FC = () => {
               </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} />
+                  <Route path="/network" element={<Network />} />
+                  <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} />
+                  <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} />
+                  <Route path="/individuals/:id" element={<IndividualDetail />} />
+                  {showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}
+                  {showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}
+                  <Route path="/notifications" element={<Notifications />} />
+                  
+                  {/* Admin Restricted Routes */}
+                  <Route path="/settings" element={isAdmin ? <OrgSettings /> : <Navigate to="/" replace />} />
+                  <Route path="/super-admin" element={isSuper ? <SuperAdminPage /> : <Navigate to="/" replace />} />
+                  
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </ErrorBoundary>
             </div>
           </main>
         </div>
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-        {showAddProjectModal && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
+        {showAddProjectModal && isAdmin && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
         {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UserIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly /></div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3"><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} /><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} /></div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
+        {showBackendSetup && <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col"><div className="p-6 border-b border-red-100 bg-red-50 flex justify-between items-center rounded-t-xl"><div className="flex items-center gap-3 text-red-800"><Server size={24} /><h3 className="text-xl font-bold">Backend Service Unavailable</h3></div><button onClick={() => setShowBackendSetup(false)} className="text-red-600 hover:text-red-800 bg-white/50 p-1 rounded-full"><X size={24}/></button></div><div className="p-6 space-y-4"><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4"><p className="text-sm text-yellow-800 font-bold">Sync Error: {syncError || "The backend service is not responding."}</p></div><h4 className="font-bold text-slate-900">How to Fix:</h4><ol className="list-decimal list-inside text-sm text-slate-700 space-y-2"><li>Ensure your Node.js backend is running (typically on port 3001).</li><li>Check the backend console for any database connection errors.</li><li>If you just started the app, wait a few moments and click retry.</li></ol></div><div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-xl"><button onClick={() => { setShowBackendSetup(false); performSync(); }} className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Retry Sync</button></div></div></div>}
       </HashRouter>
     </LanguageContext.Provider>
   );

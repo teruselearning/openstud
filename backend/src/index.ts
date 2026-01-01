@@ -374,7 +374,7 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- USER INVITE WORKFLOW ---
+// --- USER INVITE & MANAGEMENT WORKFLOW ---
 
 app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
     const { name, email, role, allowedProjectIds } = req.body;
@@ -400,19 +400,14 @@ app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
         
         if (transporter) {
             const template = settings.emailTemplates?.invite;
-            // Build absolute URL for the invitation
             const host = req.get('host');
             const protocol = req.protocol;
-            // If running on 3001 (backend) but client likely on 3000 in dev
             const appHost = (host.includes(':3001')) ? host.replace(':3001', ':3000') : host;
             const appUrl = process.env.APP_URL || `${protocol}://${appHost}`;
             const inviteUrl = `${appUrl}/#/accept-invite?token=${inviteToken}`;
-            
             const placeholders = { orgName, userName: name, inviteUrl, year: new Date().getFullYear().toString() };
-            
             const subject = (template?.enabled && template.subject) ? replacePlaceholders(template.subject, placeholders) : `Invitation to join ${orgName} on OpenStudbook`;
             
-            // Professional Fallback Styled Template if no custom one exists
             const fallbackBody = `
               <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
                 <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
@@ -425,19 +420,65 @@ app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
                   <div style="margin: 32px 0; text-align: center;">
                     <a href="${inviteUrl}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">Accept Invitation</a>
                   </div>
-                  <p style="font-size: 14px; color: #64748b;">If the button doesn't work, copy and paste this link: <br> <span style="color: #059669; text-decoration: underline;">${inviteUrl}</span></p>
-                </div>
-                <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
-                  <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
                 </div>
               </div>
             `;
-
             const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : fallbackBody;
-            
             await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
         }
         res.json({ success: true, message: "Invitation sent." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Granular Deletion Route with Role Checking & Emails
+app.delete('/api/users/:targetUserId', authenticate, async (req: any, res: any) => {
+    const { targetUserId } = req.params;
+    const requester = (req as any).user;
+    const db = getDb();
+    
+    try {
+        if (requester.role !== 'Admin' && requester.role !== 'Super Admin') {
+            return res.status(403).json({ error: "Unauthorized. Admin privileges required to delete users." });
+        }
+
+        const [userRows]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [targetUserId]);
+        const userToDelete = userRows[0];
+
+        if (!userToDelete) return res.status(404).json({ error: "User not found." });
+
+        // Ensure Admin only deletes users in their own org
+        if (requester.role !== 'Super Admin' && userToDelete.org_id !== requester.orgId) {
+            return res.status(403).json({ error: "Unauthorized to delete users in other organisations." });
+        }
+
+        const settings = await getGlobalConfig();
+        const transporter = getTransporter(settings);
+
+        if (transporter) {
+            const [orgRows]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [userToDelete.org_id]);
+            const orgName = orgRows[0]?.name || 'Your Organization';
+            
+            const isPending = userToDelete.status === 'Invited';
+            const subject = isPending ? "Invitation Revoked - OpenStudbook" : "Account Disabled - OpenStudbook";
+            
+            const messageBody = isPending 
+                ? `Your invitation to join <strong>${orgName}</strong> has been revoked by the organisation administrator.`
+                : `Your account at <strong>${orgName}</strong> has been disabled by the organisation administrator. You no longer have access to this system.`;
+
+            const bodyHtml = `
+              <div style="font-family: sans-serif; padding: 40px; color: #1e293b;">
+                <h2 style="color: #0f172a;">${subject}</h2>
+                <p>Hello ${userToDelete.name},</p>
+                <p>${messageBody}</p>
+                <p>If you believe this is an error, please contact your organisation lead.</p>
+              </div>
+            `;
+            
+            await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: userToDelete.email, subject, html: bodyHtml });
+        }
+
+        await db.execute(`DELETE FROM users WHERE id = ?`, [targetUserId]);
+        res.json({ success: true, message: "User removed and notified." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -470,7 +511,6 @@ app.post('/api/users/check-invite', async (req: any, res: any) => {
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const table = req.params.table;
-    // Security check for global configuration tables
     if (['app_config', 'languages'].includes(table) && req.user.role !== 'Super Admin' && req.user.role !== 'SUPER_ADMIN') {
         return res.status(403).json({ error: "Global configuration restricted to Super Admins." });
     }
@@ -484,7 +524,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             }
             
             const keys = Object.keys(item);
-            // Handle valid numbers, objects (JSON), and nulls
             const vals = keys.map(k => {
                 const v = item[k];
                 if (typeof v === 'number') return v;
@@ -499,11 +538,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             const escapedTable = `\`${table}\``;
             const escapedKeys = keys.map(k => `\`${k}\``).join(', ');
             
-            /**
-             * ROBUST UPSERT SYNTAX:
-             * Uses aliases (supported in MySQL 8.0.19+) for cleaner syntax 
-             * and avoids VALUES() deprecation issues.
-             */
             let updateClause = "";
             if (nonPkKeys.length > 0) {
                 updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
@@ -512,17 +546,10 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             }
             
             const sql = `INSERT INTO ${escapedTable} (${escapedKeys}) VALUES (${placeholders}) ${updateClause}`;
-            
-            try {
-                await db.execute(sql, vals);
-            } catch (innerError: any) {
-                console.warn(`Prepared statement failed for ${table}, attempting raw query fallback. Error: ${innerError.message}`);
-                await db.query(sql, vals);
-            }
+            try { await db.execute(sql, vals); } catch (innerError: any) { await db.query(sql, vals); }
         }
         res.json({ success: true });
     } catch (e: any) { 
-        console.error(`CRITICAL Generic REST error on ${table}:`, e.message, e.sqlState, e.code);
         res.status(500).json({ error: e.message || "Database execution failed." }); 
     }
 });
@@ -545,7 +572,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
       res.json({ success: true, data: { org: myOrgRows[0] || null, partners: allOrgs, projects, users, species, individuals, breedingEvents: events, breedingLoans: loans, partnerships, languages: langs, settings } });
-   } catch (e: any) { console.error("Sync Error:", e.message); res.status(500).json({ error: e.message }); }
+   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
