@@ -228,23 +228,43 @@ const SuperAdmin: React.FC = () => {
 
   const handleAutoFillTranslations = async () => {
     if (!editingLang) return;
+
+    // Identify keys that are missing or empty to only translate those
+    const missingKeysDict: Record<string, string> = {};
+    Object.keys(BASE_TRANSLATIONS).forEach(key => {
+      const currentVal = editingLang.translations[key];
+      if (!currentVal || currentVal.trim() === '') {
+        missingKeysDict[key] = (BASE_TRANSLATIONS as any)[key];
+      }
+    });
+
+    const keysToTranslateCount = Object.keys(missingKeysDict).length;
+
+    if (keysToTranslateCount === 0) {
+      alert("All translations are already present.");
+      return;
+    }
+
     setIsAutoFilling(true);
     setAiFillSuccess(false);
     try {
-      const translated = await translateDictionary(BASE_TRANSLATIONS, editingLang.name);
+      const translated = await translateDictionary(missingKeysDict, editingLang.name);
       if (translated && typeof translated === 'object') {
-        const newTranslations = { ...editingLang.translations };
-        Object.keys(BASE_TRANSLATIONS).forEach(key => {
-           if (translated[key]) {
-              newTranslations[key] = translated[key];
-           }
-        });
-
+        // Merge AI results back into existing translations, preserving what's already there
         setEditingLang(prev => {
           if (!prev) return null;
+          
+          const mergedTranslations = { ...prev.translations };
+          Object.keys(translated).forEach(key => {
+            // Extra safety: only update if we originally identified it as missing
+            if (missingKeysDict[key]) {
+               mergedTranslations[key] = translated[key];
+            }
+          });
+
           return {
             ...prev,
-            translations: newTranslations
+            translations: mergedTranslations
           };
         });
         setAiFillSuccess(true);

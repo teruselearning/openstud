@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info } from 'lucide-react';
+/* Fix: Import X as XIcon from lucide-react for consistency */
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -556,7 +558,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Individual Records</h2>
+          <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
           <p className="text-slate-500">Track {org?.focus === 'Plants' ? 'botanical collection' : 'animal populations'} and lineage.</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -582,13 +584,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           </div>
           <div className="flex gap-4">
             <select className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" value={filterSpeciesId} onChange={(e) => setFilterSpeciesId(e.target.value)}>
-              <option value="">All Species</option>
+              <option value="">{t('allSpeciesFilter')}</option>
               {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
             </select>
             <select className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as StatusFilter)}>
-              <option value="current">Current</option>
-              <option value="deceased">Deceased/Removed</option>
-              <option value="all">All</option>
+              <option value="current">{t('statusCurrent')}</option>
+              <option value="deceased">{t('statusDeceased')}</option>
+              <option value="all">{t('statusAll')}</option>
             </select>
           </div>
         </div>
@@ -600,14 +602,17 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl animate-in fade-in zoom-in duration-200 my-8">
              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
                <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : t('registerIndividual')}</h3>
-               <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={24} /></button>
+               <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors">
+                  {/* Fix: Using XIcon instead of X for consistency */}
+                  <XIcon size={24} />
+               </button>
              </div>
              
              <form onSubmit={handleSubmit} className="p-8 space-y-8">
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-emerald-700 border-b border-emerald-50 pb-2">
                      <Dna size={20}/>
-                     <h4 className="font-bold uppercase tracking-wider text-sm">Classification</h4>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">{t('classificationTitle')}</h4>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="col-span-1 md:col-span-2 space-y-2">
@@ -687,7 +692,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-blue-700 border-b border-blue-50 pb-2">
                      <Briefcase size={20}/>
-                     <h4 className="font-bold uppercase tracking-wider text-sm">Identity & Status</h4>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">{t('identityStatusTitle')}</h4>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
@@ -728,7 +733,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-green-700 border-b border-green-50 pb-2">
                      <MapPin size={20}/>
-                     <h4 className="font-bold uppercase tracking-wider text-sm">Geo-Location</h4>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">{t('geoLocationTitle')}</h4>
                   </div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
@@ -741,7 +746,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
                           >
                              {isLocatingForm ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
-                             Use GPS
+                             {t('useCurrentLocation')}
                           </button>
                           <button 
                              type="button" 
@@ -749,13 +754,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                              className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-2 whitespace-nowrap"
                           >
                              <MapIcon2 size={14} />
-                             Pick on Map
+                             {t('clickMapLocation')}
                           </button>
                         </div>
                      </div>
                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                           <label className="text-[10px] font-bold text-slate-400 uppercase">Latitude</label>
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">{t('latitude')}</label>
                            <input 
                               type="number" 
                               step="any" 
@@ -766,7 +771,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                            />
                         </div>
                         <div className="space-y-1">
-                           <label className="text-[10px] font-bold text-slate-400 uppercase">Longitude</label>
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">{t('longitude')}</label>
                            <input 
                               type="number" 
                               step="any" 
@@ -784,7 +789,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                  <div className="space-y-4">
                     <div className="flex items-center gap-2 text-purple-700 border-b border-purple-50 pb-2">
                        <Users size={20}/>
-                       <h4 className="font-bold uppercase tracking-wider text-sm">Parentage / Lineage</h4>
+                       <h4 className="font-bold uppercase tracking-wider text-sm">{t('parentageTitle')}</h4>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        <div className="space-y-2">
@@ -826,7 +831,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-indigo-700 border-b border-indigo-50 pb-2">
                      <Fingerprint size={20}/>
-                     <h4 className="font-bold uppercase tracking-wider text-sm">Genetic Data</h4>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">{t('geneticDataTitle')}</h4>
                   </div>
                   <div className="space-y-4">
                      <label className="text-sm font-bold text-slate-700 block">DNA Data File (FASTA, FASTQ, VCF, BAM, GBK, etc.)</label>
@@ -852,7 +857,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                                  </div>
                               </div>
                               <button type="button" onClick={() => setFormData(prev => ({...prev, dnaSequence: '', dnaFileName: '', dnaFileType: ''}))} className="text-slate-400 hover:text-red-500 p-1">
-                                 <X size={16} />
+                                 {/* Fix: Using XIcon instead of X for consistency */}
+                                 <XIcon size={16} />
                               </button>
                            </div>
                         )}
@@ -864,7 +870,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="space-y-4">
                   <div className="flex items-center gap-2 text-slate-700 border-b border-slate-50 pb-2">
                      <FileText size={20}/>
-                     <h4 className="font-bold uppercase tracking-wider text-sm">Notes & Media</h4>
+                     <h4 className="font-bold uppercase tracking-wider text-sm">{t('notesMediaTitle')}</h4>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2 md:col-span-2">
@@ -890,7 +896,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                                    onClick={() => setFormData({...formData, imageUrl: ''})}
                                    className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-full transition-colors backdrop-blur-sm"
                                 >
-                                   <X size={16}/>
+                                   {/* Fix: Using XIcon instead of X for consistency */}
+                                   <XIcon size={16}/>
                                 </button>
                                 <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
                                    <span className="text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-1"><CheckCircle size={10}/> Image Loaded</span>
@@ -922,20 +929,23 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       )}
 
-      {/* Map Picker Modal - Corrected z-index to stay on top of the edit form */}
+      {/* Map Picker Modal */}
       {showMapPicker && (
          <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden">
                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><MapIcon2 size={18} className="text-emerald-600"/> Fine-tune Location</h3>
-                  <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><MapIcon2 size={18} className="text-emerald-600"/> {t('geoLocationTitle')}</h3>
+                  <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600">
+                     {/* Fix: Using XIcon instead of X for consistency */}
+                     <XIcon size={20}/>
+                  </button>
                </div>
                <div className="h-[400px] w-full" ref={mapPickerRef}></div>
                <div className="p-4 bg-white border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
                   <p className="text-xs text-slate-500 italic text-center sm:text-left">Drag the marker or click on the map to set the exact coordinates.</p>
                   <div className="flex gap-2 w-full sm:w-auto">
-                     <button onClick={() => setShowMapPicker(false)} className="flex-1 sm:flex-none px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">Cancel</button>
-                     <button onClick={handleConfirmPicker} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md">Confirm Location</button>
+                     <button onClick={() => setShowMapPicker(false)} className="flex-1 sm:flex-none px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-bold">{t('cancel')}</button>
+                     <button onClick={handleConfirmPicker} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-md">{t('save')}</button>
                   </div>
                </div>
             </div>
@@ -979,7 +989,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     </div>
                   );
                 })()}
-                <button onClick={() => setSelectedMapInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10"><X size={16} /></button>
+                <button onClick={() => setSelectedMapInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10">
+                   {/* Fix: Using XIcon instead of X for consistency */}
+                   <XIcon size={16} />
+                </button>
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
                   <h3 className="font-bold text-white text-lg drop-shadow-sm">{selectedMapInd.name}</h3>
                   <p className="text-[10px] text-white/80 font-mono tracking-widest">{selectedMapInd.studbookId}</p>
@@ -1182,12 +1195,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       {(sortedIndividuals.length === 0 && viewMode !== 'map') && (
          <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
             <UserIcon size={48} className="text-slate-300 mb-4 opacity-50"/>
-            <p className="text-slate-500 font-medium">No individual records found.</p>
-            <button onClick={handleOpenNewForm} className="mt-4 text-emerald-600 font-bold hover:underline">Register your first individual</button>
+            <p className="text-slate-500 font-medium">{t('noIndividualsFound')}</p>
+            <button onClick={handleOpenNewForm} className="mt-4 text-emerald-600 font-bold hover:underline">{t('registerFirstInd')}</button>
          </div>
       )}
 
-      {/* Delete Confirmation Modal - Corrected z-index to stay on top of everything */}
+      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
          <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl max-sm w-full p-8 text-center">
@@ -1197,7 +1210,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <h3 className="text-2xl font-bold text-slate-900 mb-2">Delete Record?</h3>
                <p className="text-slate-500 mb-8 leading-relaxed">This will permanently remove this individual and all their historical logs. This action cannot be undone.</p>
                <div className="flex gap-3">
-                  <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Cancel</button>
+                  <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">{t('cancel')}</button>
                   <button onClick={handleDelete} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200">Yes, Delete</button>
                </div>
             </div>

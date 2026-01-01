@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
@@ -108,8 +109,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
      } catch (e: any) {
         alert("Image generation failed: " + e.message);
      } finally {
-        setLoadingImage(false);
         setImageStatus('');
+        setLoadingImage(false);
      }
   };
 
@@ -279,9 +280,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                <div className="md:col-span-8 space-y-6">
                   <div className="space-y-4">
                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Core Taxonomy</h4>
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> {t('coreTaxonomy')}</h4>
                         <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">
-                           {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} Autofill Complete Profile
+                           {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Complete Profile
                         </button>
                      </div>
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -308,7 +309,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                   </div>
 
                   <div className="space-y-4 pt-4 border-t border-slate-100">
-                     <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> Biological Metrics</h4>
+                     <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> {t('biologicalMetrics')}</h4>
                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-1">
                            <label className="text-xs font-bold text-slate-500 uppercase">{formData.type === 'Plant' ? t('maturityFlowering') : t('sexualMaturity')}</label>
@@ -356,10 +357,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      </div>
                   </div>
 
-                  {/* Range Status moved to bottom of content column for logical flow, especially on mobile */}
                   <div className="space-y-4 pt-4 border-t border-slate-100">
                     <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-3">
-                      <h4 className="text-sm font-bold text-blue-900 flex items-center gap-2"><Info size={16}/> Range Status</h4>
+                      <h4 className="text-sm font-bold text-blue-900 flex items-center gap-2"><Info size={16}/> {t('nativeStatusRange')}</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">In {org?.location || 'Country'}</label>
@@ -450,8 +450,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       {sortedSpecies.length === 0 && (
          <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
             <PawPrint size={48} className="text-slate-300 mb-4 opacity-50"/>
-            <p className="text-slate-500 font-medium">Your species list is currently empty.</p>
-            <button onClick={() => setShowForm(true)} className="mt-4 text-emerald-600 font-bold hover:underline">Add your first species record</button>
+            <p className="text-slate-500 font-medium">{t('noSpeciesFound')}</p>
+            <button onClick={() => setShowForm(true)} className="mt-4 text-emerald-600 font-bold hover:underline">{t('addFirstSpecies')}</button>
          </div>
       )}
 
@@ -464,7 +464,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                <h3 className="text-2xl font-bold text-slate-900 mb-2">Delete Species?</h3>
                <p className="text-slate-500 mb-8 leading-relaxed">This will permanently remove the species and all associated breeding history. This action cannot be undone.</p>
                <div className="flex gap-3">
-                  <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">Cancel</button>
+                  <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">{t('cancel')}</button>
                   <button onClick={handleDelete} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200">Yes, Delete</button>
                </div>
             </div>

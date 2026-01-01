@@ -173,6 +173,37 @@ export const BASE_TRANSLATIONS = {
     introduced: "Introduced",
     invasive: "Invasive",
     
+    // Filters & Status
+    allSpeciesFilter: "All Species",
+    statusCurrent: "Current",
+    statusDeceased: "Deceased/Removed",
+    statusAll: "All",
+    filterTitle: "Filter",
+    viewTitle: "View",
+    sortTitle: "Sort",
+
+    // Empty States
+    noIndividualsFound: "No individual records found.",
+    noSpeciesFound: "Your species list is currently empty.",
+    noBreedingEvents: "No breeding events found.",
+    noLoansFound: "No active breeding loans.",
+    noPartnersFound: "No public partners found.",
+    noNotifications: "No notifications yet.",
+    registerFirstInd: "Register your first individual",
+    addFirstSpecies: "Add your first species record",
+    createFirstEvent: "Record your first breeding event",
+    startFirstLoan: "Propose a breeding loan",
+
+    // Section Titles
+    classificationTitle: "Classification",
+    identityStatusTitle: "Identity & Status",
+    geoLocationTitle: "Geo-Location",
+    parentageTitle: "Parentage / Lineage",
+    geneticDataTitle: "Genetic Data",
+    notesMediaTitle: "Notes & Media",
+    biologicalMetrics: "Biological Metrics",
+    coreTaxonomy: "Core Taxonomy",
+
     // Super Admin & Settings
     saDashboard: "Super Admin Dashboard",
     saSubtitle: "Global system management and oversight.",
@@ -266,6 +297,10 @@ export const BASE_TRANSLATIONS = {
     logWeight: "Log Weight",
     addRecord: "Add Record",
     batchOffspring: "Quick Register Offspring",
+    offspring: "Offspring",
+    successfulBirths: "Successful Births",
+    losses: "Losses",
+    totalOffspring: "Total Offspring",
 
     // Network Map
     globalMap: "Global Map",
@@ -360,7 +395,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       allOrganizations: "All Organisations",
       organizationList: "Organisation List",
       totalOrgs: "Total Organisations",
-      primaryColor: "Primary Colour"
+      primaryColor: "Primary Colour",
+      manageOrgs: "Manage Organisations",
+      createOrgBtn: "Create Organisation"
     }
   },
   {
