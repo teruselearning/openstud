@@ -1,6 +1,6 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { registerOrganization, confirmRegistration, login, forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, regenerateDemoData, checkInviteToken, acceptInvite } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
@@ -21,11 +21,24 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'detecting' | 'ready'>('idle');
+  const [isLangOpen, setIsLangOpen] = useState(false);
+  const langRef = useRef<HTMLDivElement>(null);
   
   // Accept Invite State
   const [inviteToken, setInviteToken] = useState('');
   const [inviteData, setInviteData] = useState<{name: string, email: string, orgName: string} | null>(null);
   const [invitePassword, setInvitePassword] = useState({ password: '', confirm: '' });
+
+  // Handle click outside for language dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (langRef.current && !langRef.current.contains(event.target as Node)) {
+        setIsLangOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Token Detection & Hash Management
   useEffect(() => {
@@ -321,13 +334,34 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       <header className="border-b border-slate-100 py-4 px-6 md:px-12 flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex items-center space-x-2 text-emerald-700 font-bold text-xl cursor-pointer" onClick={() => setViewMode('landing')}>{settings.appLogoUrl ? <img src={settings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={28} />}<span>OpenStudbook</span></div>
         <div className="flex items-center space-x-4">
-          <div className="relative group">
-             <button className="flex items-center gap-1 text-sm text-slate-500 hover:text-emerald-700"><Globe size={16} /> {availableLanguages.find(l => l.code === language)?.name || 'Language'}</button>
-             <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 shadow-lg rounded-lg overflow-hidden hidden group-hover:block z-50 w-40">
-                {availableLanguages.map(l => (
-                   <button key={l.code} onClick={() => setLanguage(l.code)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${language === l.code ? 'font-bold text-emerald-700' : 'text-slate-600'}`}>{l.name}</button>
-                ))}
-             </div>
+          <div className="relative" ref={langRef}>
+             <button 
+                onClick={() => setIsLangOpen(!isLangOpen)}
+                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors"
+             >
+                <Globe size={16} /> 
+                {availableLanguages.find(l => l.code === language)?.name || 'Language'}
+                <ChevronDown size={14} className={`transition-transform duration-200 ${isLangOpen ? 'rotate-180' : ''}`} />
+             </button>
+             {isLangOpen && (
+                <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 shadow-xl rounded-xl overflow-hidden z-50 w-48 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="py-2">
+                        {availableLanguages.map(l => (
+                           <button 
+                             key={l.code} 
+                             onClick={() => {
+                                setLanguage(l.code);
+                                setIsLangOpen(false);
+                             }} 
+                             className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${language === l.code ? 'font-bold text-emerald-700 bg-emerald-50/50' : 'text-slate-600'}`}
+                           >
+                              <span>{l.name}</span>
+                              {language === l.code && <CheckCircle2 size={14} />}
+                           </button>
+                        ))}
+                    </div>
+                </div>
+             )}
           </div>
           <button onClick={handleDemoLogin} className="text-slate-600 hover:text-emerald-700 font-medium text-sm disabled:opacity-50" disabled={isLoading}>{t('demoLogin')}</button>
           {viewMode === 'landing' && <button onClick={() => setViewMode('login')} className="text-slate-600 hover:text-emerald-700 font-bold text-sm disabled:opacity-50" disabled={isLoading}>Sign In</button>}
