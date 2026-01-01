@@ -58,6 +58,7 @@ app.use(morgan('dev'));
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
+    console.log("Starting Database Initialization...");
     try {
         const connection = await mysql.createConnection({
             host: dbConfig.host,
@@ -67,15 +68,16 @@ const initDatabase = async () => {
         });
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
         await connection.end();
-    } catch (e) {
-        console.warn("Could not ensure database existence, proceeding assuming it exists.");
+        console.log(`Ensured database '${dbConfig.database}' exists.`);
+    } catch (e: any) {
+        console.warn("Database creation check skipped or failed:", e.message);
     }
 
     const db = getDb();
     try {
         await db.query('SELECT 1');
         
-        // Ensure organizations table
+        // Define Organizations table first
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -103,27 +105,37 @@ const initDatabase = async () => {
             )
         `);
 
+        // Migration helper: Explicitly check for column existence and add if missing
         const ensureColumn = async (table: string, column: string, definition: string) => {
            try {
-              const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+              // Using information_schema for more reliable checks across different MySQL versions
+              const [rows]: any = await db.execute(
+                `SELECT COLUMN_NAME FROM information_schema.COLUMNS 
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+                [dbConfig.database, table, column]
+              );
+
               if (rows.length === 0) {
-                 console.log(`Migration: Adding missing column '${column}' to '${table}'...`);
+                 console.log(`[MIGRATION] Adding missing column '${column}' to '${table}'...`);
                  await db.execute(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
-                 console.log(`Migration: Column '${column}' added successfully.`);
+                 console.log(`[MIGRATION] Column '${column}' added successfully.`);
               }
            } catch (e: any) { 
-              console.error(`Migration FAILED for ${table}.${column}:`, e.message); 
+              console.error(`[MIGRATION ERROR] Failed to ensure column ${table}.${column}:`, e.message); 
            }
         };
 
-        // Explicit migration for enclosure and dashboard functionality
+        // Run migrations for the organizations table
         await ensureColumn('organizations', 'enable_enclosures', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'dashboard_block', 'JSON');
         await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'is_deleted', 'TINYINT(1) DEFAULT 0');
         await ensureColumn('organizations', 'ai_usage_limit', 'INT DEFAULT 100');
         await ensureColumn('organizations', 'ai_usage_count', 'INT DEFAULT 0');
+        await ensureColumn('organizations', 'ai_usage_last_reset', 'VARCHAR(255)');
+        await ensureColumn('organizations', 'show_native_status', 'TINYINT(1) DEFAULT 1');
 
+        // Create other tables
         await db.execute(`
             CREATE TABLE IF NOT EXISTS enclosures (
                 id VARCHAR(255) PRIMARY KEY,
@@ -217,7 +229,6 @@ const initDatabase = async () => {
             )
         `);
 
-        // Ensure individuals has enclosure_id
         await ensureColumn('individuals', 'enclosure_id', 'VARCHAR(255)');
 
         await db.execute(`
@@ -300,6 +311,8 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
+// --- API ROUTES ---
+
 app.post('/api/login', async (req: any, res: any) => {
     const { email, password } = req.body;
     const db = getDb();
@@ -331,6 +344,7 @@ app.get('/api/config', async (req: any, res: any) => {
    }
 });
 
+// Generic Rest Route with Column Filtering to prevent "Unknown Column" errors
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const db = getDb();
@@ -338,11 +352,16 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     if (data.length === 0) return res.json({ success: true });
     
     try {
-        // Fetch valid columns for this table to prevent "Unknown column" errors
-        const [columns]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\``);
-        const validColumns = new Set(columns.map((c: any) => c.Field));
+        // Fetch current columns for the table from information_schema
+        const [columns]: any = await db.execute(
+            `SELECT COLUMN_NAME FROM information_schema.COLUMNS 
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+            [dbConfig.database, table]
+        );
+        const validColumns = new Set(columns.map((c: any) => c.COLUMN_NAME));
 
         for (const item of data) {
+            // FILTER keys: only include those that actually exist in the DB
             const keys = Object.keys(item).filter(k => validColumns.has(k));
             if (keys.length === 0) continue;
             
@@ -376,15 +395,19 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     if (!pkValue) return res.status(400).json({ error: "Missing primary key" });
     
     try {
-        const [columns]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\``);
-        const validColumns = new Set(columns.map((c: any) => c.Field));
+        const [columns]: any = await db.execute(
+            `SELECT COLUMN_NAME FROM information_schema.COLUMNS 
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+            [dbConfig.database, table]
+        );
+        const validColumns = new Set(columns.map((c: any) => c.COLUMN_NAME));
 
         if (Object.keys(updates).length === 0) {
             if (validColumns.has('is_deleted')) {
                 await db.execute(`UPDATE \`${table}\` SET is_deleted = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
                 return res.json({ success: true });
             }
-            return res.status(400).json({ error: "No updates provided and deletion not supported on this table" });
+            return res.status(400).json({ error: "No updates provided and deletion not supported" });
         }
         
         const keys = Object.keys(updates).filter(k => validColumns.has(k));
@@ -395,34 +418,15 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             if (typeof v === 'boolean') return v ? 1 : 0;
             return v;
         });
+        if (keys.length === 0) return res.json({ success: true, message: "No valid columns to update" });
+        
         const setClause = keys.map(k => `\`${k}\` = ?`).join(', ');
         await db.execute(`UPDATE \`${table}\` SET ${setClause} WHERE \`${pkField}\` = ?`, [...values, pkValue]);
         res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/super-admin/organizations', authenticate, async (req: any, res: any) => {
-    if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
-    const { orgName, adminName, adminEmail, focus, location } = req.body;
-    const db = getDb();
-    try {
-        const orgId = `org-${Date.now()}`;
-        const userId = `u-${Date.now()}`;
-        const tempPassword = Math.random().toString(36).substring(2, 10);
-        const hashedPass = await bcrypt.hash(tempPassword, 10);
-        await db.execute('INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public) VALUES (?, ?, ?, ?, ?, 1, 1)', [orgId, orgName, focus, location, new Date().getFullYear()]);
-        await db.execute('INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, orgId, adminName, adminEmail, 'Admin', 'Active', hashedPass]);
-        res.json({ success: true, tempPassword });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/super-admin/organizations/:id', authenticate, async (req: any, res: any) => {
-    if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
-    const db = getDb();
-    try {
-        await db.execute('DELETE FROM organizations WHERE id = ?', [req.params.id]);
-        res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error(`Patch failed for ${table}:`, e.message);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {

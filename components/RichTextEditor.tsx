@@ -24,9 +24,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     const Quill = (window as any).Quill;
     if (!Quill) return;
 
-    // Clear any artifacts from previous mounts (crucial for React dev mode)
+    // Explicitly clear ANY existing toolbars in the wrapper to fix double icon issue
     const existingToolbars = wrapperRef.current.querySelectorAll('.ql-toolbar');
     existingToolbars.forEach(tb => tb.remove());
+
+    // Clear content container as well
+    containerRef.current.innerHTML = '';
 
     const quill = new Quill(containerRef.current, {
       theme: 'snow',
@@ -51,6 +54,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     quill.on('text-change', (delta: any, oldDelta: any, source: string) => {
       if (source === 'user') {
         const html = quill.root.innerHTML;
+        // Normalize empty paragraphs
         const normalizedHtml = html === '<p><br></p>' ? '' : html;
         onChange(normalizedHtml);
       }
@@ -61,13 +65,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     // Proper Cleanup
     return () => {
        if (quillRef.current) {
-          // No official destroy() in Quill 1.x, so we clear the ref and manually clean DOM
+          // No official destroy() in Quill 1.x, we clear the ref
           quillRef.current = null;
        }
     };
   }, []);
 
-  // Sync value from props when it changes externally
+  // Sync value from props when it changes externally (e.g. on reset or remote load)
   useEffect(() => {
     if (quillRef.current) {
       const currentHtml = quillRef.current.root.innerHTML;
@@ -75,7 +79,6 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
       const incomingValue = value || '';
       
       if (normalize(incomingValue) !== normalize(currentHtml)) {
-        // Only update if significantly different to avoid cursor jumping
         const selection = quillRef.current.getSelection();
         quillRef.current.clipboard.dangerouslyPasteHTML(incomingValue);
         if (selection) {
