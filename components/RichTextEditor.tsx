@@ -44,20 +44,29 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     quill.on('text-change', () => {
       const html = quill.root.innerHTML;
       // Only trigger onChange if the content actually changed to avoid cycles
-      onChange(html);
+      // We also normalize empty values which Quill sometimes represents as <p><br></p>
+      const normalizedHtml = html === '<p><br></p>' ? '' : html;
+      onChange(normalizedHtml);
     });
 
     quillRef.current = quill;
   }, []);
 
-  // Sync value from props when it changes externally (e.g., switching templates)
+  // Sync value from props when it changes externally (e.g., switching templates or AI fill)
   useEffect(() => {
-    if (quillRef.current && value !== quillRef.current.root.innerHTML) {
-      // We wrap this to avoid triggering unnecessary text-change loops
-      const selection = quillRef.current.getSelection();
-      quillRef.current.clipboard.dangerouslyPasteHTML(value);
-      if (selection) {
-        quillRef.current.setSelection(selection);
+    if (quillRef.current) {
+      const currentHtml = quillRef.current.root.innerHTML;
+      
+      // Strict equivalence check to avoid feedback loops and unnecessary resets
+      // Normalize both strings slightly for comparison
+      const normalize = (h: string) => h.replace(/\s/g, '').replace(/&nbsp;/g, ' ');
+      
+      if (normalize(value || '') !== normalize(currentHtml)) {
+        const selection = quillRef.current.getSelection();
+        quillRef.current.clipboard.dangerouslyPasteHTML(value || '');
+        if (selection) {
+          quillRef.current.setSelection(selection);
+        }
       }
     }
   }, [value]);
