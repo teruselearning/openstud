@@ -166,7 +166,6 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
 
 /**
  * Translates a dictionary of strings into a target language.
- * Now uses a structured array format and explicit schema for maximum reliability.
  */
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<{k: string, v: string}[]> => {
   try {
@@ -186,7 +185,8 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     2. Preserve all variables in double curly braces (e.g., {{name}}, {{orgName}}, {{code}}, {{year}}).
     3. Use natural, professional phrasing suitable for a conservation management dashboard.
     4. Maintain the exact key ("k") for each item in your response.
-    5. Return an array of objects matching the original structure.
+    5. IMPORTANT: Do NOT include literal \n (escaped newline characters) in the output strings unless absolutely necessary for HTML content. Return single-line strings where possible.
+    6. Return an array of objects matching the original structure.
 
     Data to Translate:
     ${JSON.stringify(payload)}`;
@@ -203,8 +203,13 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
       try {
-        const parsed = JSON.parse(sanitized);
-        return Array.isArray(parsed) ? parsed : [];
+        const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
+        
+        // Clean up literal \n characters that AI often inserts into JSON values
+        return parsed.map(item => ({
+          ...item,
+          v: typeof item.v === 'string' ? item.v.replace(/\\n/g, '\n').replace(/\n/g, ' ') : item.v
+        }));
       } catch (parseErr) {
         console.error("Failed to parse AI translation JSON:", sanitized);
         throw new Error("Invalid response format from translation service.");

@@ -1,5 +1,5 @@
 
-import { useContext, useState, useEffect } from 'react';
+import { useContext, useState, useEffect, useMemo } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
 import { translateDictionary } from '../services/geminiService';
@@ -7,7 +7,7 @@ import {
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
   Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
-  Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check
+  Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check, Search
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature } from '../types';
@@ -47,6 +47,7 @@ const SuperAdmin: React.FC = () => {
   const [isSavingLang, setIsSavingLang] = useState(false);
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [aiFillSuccess, setAiFillSuccess] = useState(false);
+  const [translationSearch, setTranslationSearch] = useState('');
 
   // New Org Creation State
   const [showCreateOrg, setShowCreateOrg] = useState(false);
@@ -73,6 +74,16 @@ const SuperAdmin: React.FC = () => {
   }, [selectedTemplate]);
 
   const allOrganizations = [myOrg, ...(partners || [])].filter(p => p && !p.deleted) as Organization[];
+
+  const filteredTranslationKeys = useMemo(() => {
+    const query = translationSearch.toLowerCase().trim();
+    if (!query) return Object.keys(BASE_TRANSLATIONS);
+    return Object.keys(BASE_TRANSLATIONS).filter(key => {
+        const sourceVal = (BASE_TRANSLATIONS as any)[key]?.toLowerCase() || '';
+        const currentVal = (editingLang?.translations[key] || '').toLowerCase();
+        return key.toLowerCase().includes(query) || sourceVal.includes(query) || currentVal.includes(query);
+    });
+  }, [translationSearch, editingLang]);
 
   const handleSaveAllSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -233,8 +244,6 @@ const SuperAdmin: React.FC = () => {
     const missingKeysDict: Record<string, string> = {};
     Object.keys(BASE_TRANSLATIONS).forEach(key => {
       const currentVal = editingLang.translations[key];
-      // Defensive check: Only attempt trim() if the value is actually a string
-      // This prevents the "trim is not a function" TypeError if values are null or objects
       const isMissing = !currentVal || (typeof currentVal !== 'string') || currentVal.trim() === '';
       if (isMissing) {
         missingKeysDict[key] = (BASE_TRANSLATIONS as any)[key];
@@ -251,17 +260,14 @@ const SuperAdmin: React.FC = () => {
     setIsAutoFilling(true);
     setAiFillSuccess(false);
     try {
-      // The service returns an array of { k: string, v: string } objects
       const translatedItems = await translateDictionary(missingKeysDict, editingLang.name);
       
       if (translatedItems && Array.isArray(translatedItems)) {
-        // Merge AI results back into existing translations, preserving what's already there
         setEditingLang(prev => {
           if (!prev) return null;
           
           const mergedTranslations = { ...prev.translations };
           translatedItems.forEach(item => {
-            // Only update if we originally identified it as missing to prevent data loss
             if (missingKeysDict[item.k]) {
                mergedTranslations[item.k] = item.v;
             }
@@ -401,7 +407,7 @@ const SuperAdmin: React.FC = () => {
                         <p className="text-xs text-slate-500 leading-relaxed">{t('enableMfaDesc')}</p>
                      </div>
                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" checked={settings.enableMfa} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
+                        <input type="checkbox" className="sr-only peer" checked={settings.enableMfa ?? false} onChange={e => setSettings({...settings, enableMfa: e.target.checked})} />
                         <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
                      </label>
                   </div>
@@ -412,11 +418,11 @@ const SuperAdmin: React.FC = () => {
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1">
                            <label className="text-[10px] font-bold text-slate-400 uppercase">{t('siteKey')}</label>
-                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={settings.recaptchaSiteKey || ''} onChange={e => setSettings({...settings, recaptchaSiteKey: e.target.value})} />
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={settings.recaptchaSiteKey ?? ''} onChange={e => setSettings({...settings, recaptchaSiteKey: e.target.value})} />
                         </div>
                         <div className="space-y-1">
                            <label className="text-[10px] font-bold text-slate-400 uppercase">{t('secretKey')}</label>
-                           <input type="password" name="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={settings.recaptchaSecretKey || ''} onChange={e => setSettings({...settings, recaptchaSecretKey: e.target.value})} />
+                           <input type="password" name="password" className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500" value={settings.recaptchaSecretKey ?? ''} onChange={e => setSettings({...settings, recaptchaSecretKey: e.target.value})} />
                         </div>
                      </div>
                   </div>
@@ -444,25 +450,25 @@ const SuperAdmin: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('smtpHost')}</label>
-                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm" value={settings.smtpHost || ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.example.com" />
+                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm" value={settings.smtpHost ?? ''} onChange={e => setSettings({...settings, smtpHost: e.target.value})} placeholder="e.g. smtp.example.com" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('port')}</label>
-                      <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpPort || 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} />
+                      <input type="number" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpPort ?? 587} onChange={e => setSettings({...settings, smtpPort: parseInt(e.target.value)})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('username')}</label>
-                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpUser || ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} />
+                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpUser ?? ''} onChange={e => setSettings({...settings, smtpUser: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('password')}</label>
-                      <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpPass || ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} />
+                      <input type="password" name="password" autoComplete="new-password" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 outline-none text-sm" value={settings.smtpPass ?? ''} onChange={e => setSettings({...settings, smtpPass: e.target.value})} />
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4 py-1">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={settings.smtpSecure || false} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} className="rounded text-blue-600" /> 
+                      <input type="checkbox" checked={settings.smtpSecure ?? false} onChange={e => setSettings({...settings, smtpSecure: e.target.checked})} className="rounded text-blue-600" /> 
                       <span className="text-[11px] font-bold text-slate-600">{t('secureConnection')}</span>
                     </label>
                   </div>
@@ -528,10 +534,10 @@ const SuperAdmin: React.FC = () => {
                   </div>
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Subject Line</label>
-                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Email Subject" value={editingTemplate.subject} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
+                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Email Subject" value={editingTemplate.subject ?? ''} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
                   </div>
                   <div className="flex-1 min-h-[250px] rounded-xl overflow-hidden border border-slate-200 shadow-inner">
-                     <RichTextEditor value={editingTemplate.bodyHtml} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
+                     <RichTextEditor value={editingTemplate.bodyHtml ?? ''} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-50 p-2 rounded">
                      <span>Available Variables: {'{{orgName}}, {{userName}}, {{code}}, {{message}}, {{year}}'}</span>
@@ -560,15 +566,15 @@ const SuperAdmin: React.FC = () => {
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('primaryColor')}</label>
                      <div className="flex gap-2">
-                        <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themePrimaryColor} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                        <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themePrimaryColor ?? '#059669'} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themePrimaryColor ?? ''} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
                      </div>
                   </div>
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('secondaryColor')}</label>
                      <div className="flex gap-2">
-                        <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themeSecondaryColor} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
-                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themeSecondaryColor} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
+                        <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themeSecondaryColor ?? '#10b981'} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
+                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themeSecondaryColor ?? ''} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
                      </div>
                   </div>
                </div>
@@ -579,13 +585,13 @@ const SuperAdmin: React.FC = () => {
                      <div className="h-10 w-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center overflow-hidden">
                         {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="max-h-full max-w-full object-contain" /> : <ImageIcon size={16} className="text-slate-400"/>}
                      </div>
-                     <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://..." value={settings.appLogoUrl || ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
+                     <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://..." value={settings.appLogoUrl ?? ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
                   </div>
                </div>
 
                <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('customCss')}</label>
-                  <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="/* Custom CSS */" value={settings.customCss || ''} onChange={e => setSettings({...settings, customCss: e.target.value})} />
+                  <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="/* Custom CSS */" value={settings.customCss ?? ''} onChange={e => setSettings({...settings, customCss: e.target.value})} />
                </div>
             </div>
 
@@ -611,11 +617,11 @@ const SuperAdmin: React.FC = () => {
 
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('heroTitle')}</label>
-                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={settings.landingPageConfig?.heroTitle || ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroTitle: e.target.value}})} />
+                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={settings.landingPageConfig?.heroTitle ?? ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroTitle: e.target.value}})} />
                   </div>
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('heroSubtitle')}</label>
-                     <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows={2} value={settings.landingPageConfig?.heroSubtitle || ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroSubtitle: e.target.value}})} />
+                     <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows={2} value={settings.landingPageConfig?.heroSubtitle ?? ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroSubtitle: e.target.value}})} />
                   </div>
                   
                   {/* DYNAMIC FEATURE CARDS */}
@@ -635,22 +641,19 @@ const SuperAdmin: React.FC = () => {
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="space-y-1">
                                    <label className="text-[9px] font-bold text-slate-400 uppercase">Title</label>
-                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" value={feature.title} onChange={e => handleUpdateFeature(feature.id, 'title', e.target.value)} />
+                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" value={feature.title ?? ''} onChange={e => handleUpdateFeature(feature.id, 'title', e.target.value)} />
                                 </div>
                                 <div className="space-y-1">
                                    <label className="text-[9px] font-bold text-slate-400 uppercase">Icon (Lucide name)</label>
-                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={feature.icon} onChange={e => handleUpdateFeature(feature.id, 'icon', e.target.value)} placeholder="Shield, Sprout, Heart..." />
+                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={feature.icon ?? ''} onChange={e => handleUpdateFeature(feature.id, 'icon', e.target.value)} placeholder="Shield, Sprout, Heart..." />
                                 </div>
                              </div>
                              <div className="space-y-1">
                                 <label className="text-[9px] font-bold text-slate-400 uppercase">Description</label>
-                                <textarea className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" rows={2} value={feature.description} onChange={e => handleUpdateFeature(feature.id, 'description', e.target.value)} />
+                                <textarea className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" rows={2} value={feature.description ?? ''} onChange={e => handleUpdateFeature(feature.id, 'description', e.target.value)} />
                              </div>
                           </div>
                        ))}
-                       {(!settings.landingPageConfig?.features || settings.landingPageConfig.features.length === 0) && (
-                          <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs italic">No feature cards defined. Landing page will use defaults.</div>
-                       )}
                     </div>
                   </div>
                </div>
@@ -667,12 +670,14 @@ const SuperAdmin: React.FC = () => {
 
       {activeTab === 'languages' && (
          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[700px] animate-in fade-in overflow-hidden">
-            <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+            <div className="p-6 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
                <div>
                   <h3 className="font-extrabold text-lg text-slate-900 tracking-tight">{t('manageLanguages')}</h3>
                </div>
                <div className="flex gap-2">
-                  <input placeholder={t('langCode')} className="border border-slate-300 px-3 py-1.5 rounded-xl text-sm w-20 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} />
+                  <div className="relative group">
+                     <input placeholder="en-US" title="Language Code (BCP 47 format, e.g., en-GB, fr-FR)" className="border border-slate-300 px-3 py-1.5 rounded-xl text-sm w-20 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} />
+                  </div>
                   <input placeholder={t('name')} className="border border-slate-300 px-3 py-1.5 rounded-xl text-sm w-32 bg-white outline-none focus:ring-2 focus:ring-purple-500" value={newLangName} onChange={e => setNewLangName(e.target.value)} />
                   <button onClick={async () => {
                      if(!newLangCode || !newLangName) return;
@@ -694,15 +699,31 @@ const SuperAdmin: React.FC = () => {
                      </button>
                   ))}
                </div>
-               <div className="flex-1 overflow-y-auto p-8 bg-white">
+               <div className="flex-1 overflow-y-auto p-0 bg-white flex flex-col">
                   {editingLang ? (
-                     <div className="max-w-3xl space-y-6 animate-in fade-in duration-200">
-                        <div className="border-b border-slate-100 pb-4 flex justify-between items-center">
-                           <h4 className="font-extrabold text-xl text-slate-800 tracking-tight">{t('editLanguage')} {editingLang.name}</h4>
+                     <div className="flex flex-col h-full animate-in fade-in duration-200">
+                        <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white sticky top-0 z-10 shadow-sm">
+                           <div className="flex-1 flex items-center gap-4 w-full">
+                              <h4 className="font-extrabold text-xl text-slate-800 tracking-tight whitespace-nowrap">{editingLang.name}</h4>
+                              <div className="relative flex-1 max-w-sm">
+                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                 <input 
+                                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                                    placeholder="Filter translation keys..."
+                                    value={translationSearch}
+                                    onChange={e => setTranslationSearch(e.target.value)}
+                                 />
+                                 {translationSearch && (
+                                    <button onClick={() => setTranslationSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                       <X size={14}/>
+                                    </button>
+                                 )}
+                              </div>
+                           </div>
                            <div className="flex items-center gap-3">
                              {aiFillSuccess && (
                                 <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs animate-in slide-in-from-right-2">
-                                   <Check size={14} /> {t('localisation')} {t('autofill')}
+                                   <Check size={14} /> {t('autofill')} Success
                                 </div>
                              )}
                              <button 
@@ -715,25 +736,35 @@ const SuperAdmin: React.FC = () => {
                              </button>
                            </div>
                         </div>
-                        <div className="grid gap-6">
-                           {Object.keys(BASE_TRANSLATIONS).map(key => (
-                              <div key={key} className="space-y-1">
-                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">{key}</label>
-                                 {key.toLowerCase().includes('body') || key.toLowerCase().includes('html') ? (
-                                    <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                                       <RichTextEditor value={editingLang.translations[key] || ''} onChange={v => handleUpdateTranslation(key, v)} height="200px" />
-                                    </div>
-                                 ) : (
-                                    <input className="w-full border border-slate-200 px-4 py-2 rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all" value={editingLang.translations[key] || ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
-                                 )}
+                        <div className="p-8 space-y-6">
+                           {filteredTranslationKeys.length === 0 ? (
+                              <div className="text-center py-20 text-slate-400">
+                                 <Search size={48} className="mx-auto mb-3 opacity-20"/>
+                                 <p>No translation keys match your filter.</p>
                               </div>
-                           ))}
+                           ) : (
+                              filteredTranslationKeys.map(key => (
+                                 <div key={key} className="space-y-1 group">
+                                    <div className="flex items-center justify-between">
+                                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">{key}</label>
+                                       <span className="text-[9px] font-bold text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">SOURCE: {(BASE_TRANSLATIONS as any)[key]}</span>
+                                    </div>
+                                    {key.toLowerCase().includes('body') || key.toLowerCase().includes('html') ? (
+                                       <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                          <RichTextEditor value={editingLang.translations[key] ?? ''} onChange={v => handleUpdateTranslation(key, v)} height="200px" />
+                                       </div>
+                                    ) : (
+                                       <input className="w-full border border-slate-200 px-4 py-2 rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all" value={editingLang.translations[key] ?? ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
+                                    )}
+                                 </div>
+                              ))
+                           )}
                         </div>
                      </div>
                   ) : (
                      <div className="flex flex-col items-center justify-center h-full text-slate-300 space-y-4 opacity-50">
                         <Globe size={80} strokeWidth={1} />
-                        <p className="font-extrabold text-lg">Select a language</p>
+                        <p className="font-extrabold text-lg">Select a language to translate</p>
                      </div>
                   )}
                </div>
@@ -742,14 +773,14 @@ const SuperAdmin: React.FC = () => {
                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                   <button onClick={() => setEditingLang(null)} className="px-6 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all text-sm">{t('cancel')}</button>
                   <button onClick={handleSaveTranslations} className="bg-purple-600 hover:bg-purple-700 text-white px-10 py-2 rounded-xl font-bold shadow-lg shadow-purple-100 flex items-center gap-2 active:scale-95 transition-all text-sm">
-                     {isSavingLang ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} {t('save')}
+                     {isSavingLang ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>} {t('save')}
                   </button>
                </div>
             )}
          </div>
       )}
 
-      {/* Form: Create Organization Modal */}
+      {/* Modal: Create Organization */}
       {showCreateOrg && (
          <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col overflow-hidden animate-in zoom-in duration-200">
@@ -772,7 +803,7 @@ const SuperAdmin: React.FC = () => {
                            <input 
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm font-bold"
                               placeholder="e.g. Island Sanctuary"
-                              value={newOrgData.orgName}
+                              value={newOrgData.orgName ?? ''}
                               onChange={e => setNewOrgData({...newOrgData, orgName: e.target.value})}
                               required
                            />
@@ -781,7 +812,7 @@ const SuperAdmin: React.FC = () => {
                            <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Org Focus</label>
                            <select 
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm font-bold"
-                              value={newOrgData.focus}
+                              value={newOrgData.focus ?? 'Animals'}
                               onChange={e => setNewOrgData({...newOrgData, focus: e.target.value as OrganizationFocus})}
                            >
                               <option value="Animals">{t('animal')}</option>
@@ -795,7 +826,7 @@ const SuperAdmin: React.FC = () => {
                               <input 
                                  className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
                                  placeholder="e.g. Victoria, Seychelles"
-                                 value={newOrgData.location}
+                                 value={newOrgData.location ?? ''}
                                  onChange={e => setNewOrgData({...newOrgData, location: e.target.value})}
                                  required
                               />
@@ -812,7 +843,7 @@ const SuperAdmin: React.FC = () => {
                            <input 
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
                               placeholder="John Smith"
-                              value={newOrgData.adminName}
+                              value={newOrgData.adminName ?? ''}
                               onChange={e => setNewOrgData({...newOrgData, adminName: e.target.value})}
                               required
                            />
@@ -823,7 +854,7 @@ const SuperAdmin: React.FC = () => {
                               type="email"
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
                               placeholder="john@island-sanctuary.org"
-                              value={newOrgData.adminEmail}
+                              value={newOrgData.adminEmail ?? ''}
                               onChange={e => setNewOrgData({...newOrgData, adminEmail: e.target.value})}
                               required
                            />
@@ -843,7 +874,7 @@ const SuperAdmin: React.FC = () => {
          </div>
       )}
 
-      {/* Org Deletion Confirmation Modal */}
+      {/* Modal: Org Deletion */}
       {orgToDelete && (
           <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
              <div className="bg-white rounded-xl shadow-2xl max-md w-full p-8 text-center animate-in zoom-in duration-200">
