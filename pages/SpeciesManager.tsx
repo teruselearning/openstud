@@ -217,8 +217,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Species Database</h2>
-          <p className="text-slate-500">Biological profiles and population management.</p>
+          <h2 className="text-2xl font-bold text-slate-900">{t('speciesDatabase')}</h2>
+          <p className="text-slate-500">{t('speciesSubtitle')}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:flex-none">
@@ -243,14 +243,14 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
                <div className="md:col-span-4 space-y-6">
                   <div className="space-y-2">
-                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Representative Image</label>
+                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('representativeImage')}</label>
                      <div className="aspect-square w-full rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 overflow-hidden relative group">
                         {formData.imageUrl ? (
                            <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Species" />
                         ) : (
                            <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center">
                               <ImageIcon size={48} className="mb-2 opacity-20"/>
-                              <p className="text-xs">No image provided.</p>
+                              <p className="text-xs">{t('noImageProvided')}</p>
                            </div>
                         )}
                         {loadingImage && (
@@ -262,7 +262,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      </div>
                      <div className="grid grid-cols-2 gap-2 mt-2">
                         <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-medium shadow-sm">
-                           <Camera size={14} /> Upload
+                           <Camera size={14} /> {t('upload')}
                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                         </label>
                         <button 
@@ -271,7 +271,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                            disabled={loadingImage || !formData.commonName}
                            className="bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-sm disabled:opacity-50"
                         >
-                           <Sparkles size={14} /> AI Generate
+                           <Sparkles size={14} /> {t('aiGenerate')}
                         </button>
                      </div>
                   </div>
@@ -288,11 +288,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1">
                            <label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label>
-                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder="e.g. Sumatran Tiger" required />
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} required />
                         </div>
                         <div className="space-y-1">
                            <label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label>
-                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder="e.g. Panthera tigris sumatrae" required />
+                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} required />
                         </div>
                         <div className="space-y-1">
                            <label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label>
@@ -343,13 +343,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      <h4 className="font-bold text-slate-800 flex items-center gap-2"><Calendar size={18} className="text-amber-500"/> {formData.type === 'Plant' ? t('floweringSeason') : t('breedingSeason')}</h4>
                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                           <label className="text-xs font-bold text-slate-500 uppercase">Start Month</label>
+                           <label className="text-xs font-bold text-slate-500 uppercase">{t('startMonth')}</label>
                            <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.breedingSeasonStart} onChange={e => setFormData({...formData, breedingSeasonStart: parseInt(e.target.value)})}>
                               {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{new Date(2024, m-1).toLocaleString('default', {month: 'long'})}</option>)}
                            </select>
                         </div>
                         <div className="space-y-1">
-                           <label className="text-xs font-bold text-slate-500 uppercase">End Month</label>
+                           <label className="text-xs font-bold text-slate-500 uppercase">{t('endMonth')}</label>
                            <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.breedingSeasonEnd} onChange={e => setFormData({...formData, breedingSeasonEnd: parseInt(e.target.value)})}>
                               {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{new Date(2024, m-1).toLocaleString('default', {month: 'long'})}</option>)}
                            </select>
@@ -375,7 +375,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                             </select>
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">Local Region Status</label>
+                            <label className="text-[10px] font-bold text-blue-700 uppercase block mb-1">{t('localRegionStatus')}</label>
                             <select 
                                 className="w-full p-2 border border-blue-200 rounded text-sm bg-white text-slate-900 outline-none focus:ring-1 focus:ring-blue-500"
                                 value={formData.nativeStatusLocal}
@@ -416,7 +416,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <div className="h-52 bg-slate-200 relative overflow-hidden">
                <img src={species.imageUrl} alt={species.commonName} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">
-                  {species.conservationStatus || 'Unknown Status'}
+                  {species.conservationStatus || t('unknownStatus')}
                </div>
                <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>
                   {species.type}
@@ -429,11 +429,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
               
               <div className="grid grid-cols-2 gap-3 mb-5">
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Maturity</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">{t('maturity')}</span>
                     <span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} {t('years')}</span>
                  </div>
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Lifespan</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">{t('lifespan')}</span>
                     <span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} {t('years')}</span>
                  </div>
               </div>
@@ -457,15 +457,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
       {showDeleteConfirm && (
          <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-8 text-center animate-in zoom-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl max-sm w-full p-8 text-center animate-in zoom-in duration-200">
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                   <AlertTriangle size={40}/>
                </div>
-               <h3 className="text-2xl font-bold text-slate-900 mb-2">Delete Species?</h3>
-               <p className="text-slate-500 mb-8 leading-relaxed">This will permanently remove the species and all associated breeding history. This action cannot be undone.</p>
+               <h3 className="text-2xl font-bold text-slate-900 mb-2">{t('deleteSpeciesConfirm')}</h3>
+               <p className="text-slate-500 mb-8 leading-relaxed">{t('deleteSpeciesDesc')}</p>
                <div className="flex gap-3">
                   <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">{t('cancel')}</button>
-                  <button onClick={handleDelete} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200">Yes, Delete</button>
+                  <button onClick={handleDelete} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200">{t('yesDelete')}</button>
                </div>
             </div>
          </div>

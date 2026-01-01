@@ -1,4 +1,3 @@
-
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig } from '../types';
 import { getOrg } from './storage'; 
 
@@ -145,7 +144,8 @@ const fromDbInd = (i: any): Individual => ({
   deathDate: i.death_date, 
   loanStatus: i.loan_status, 
   transferredToOrgId: i.transferred_to_org_id, 
-  transfer_date: i.transfer_date, 
+  // Fix: Map transfer_date to transferDate correctly
+  transferDate: i.transfer_date, 
   transferNote: i.transfer_note, 
   weightHistory: safeParse(i.weight_history, []), 
   growthHistory: safeParse(i.growth_history, []), 
@@ -154,9 +154,9 @@ const fromDbInd = (i: any): Individual => ({
 
 const fromDbEvent = (e: any): BreedingEvent => ({ 
   id: e.id, 
-  speciesId: e.species_id, 
-  sireId: e.sire_id, 
-  damId: e.dam_id, 
+  species_id: e.speciesId, 
+  sire_id: e.sireId || null, 
+  dam_id: e.damId || null, 
   date: e.date, 
   offspringCount: e.offspring_count, 
   successfulBirths: e.successful_births, 

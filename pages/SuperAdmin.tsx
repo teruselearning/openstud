@@ -136,7 +136,7 @@ const SuperAdmin: React.FC = () => {
 
     try {
       await testSmtpConnection(testEmail);
-      setTestResult({ success: true, message: "Test email sent successfully! Please check your inbox." });
+      setTestResult({ success: true, message: t('smtpTestSuccess') });
     } catch (e: any) {
       setTestResult({ success: false, message: e.message || "SMTP Connection Failed" });
     } finally {
@@ -177,7 +177,7 @@ const SuperAdmin: React.FC = () => {
           
           alert(`Organisation Created!\nTemporary Password for ${newOrgData.adminName}: ${data.tempPassword}`);
           setShowCreateOrg(false);
-          setNewOrgData({ orgName: '', adminName: '', adminEmail: '', focus: 'Animals' as OrganizationFocus, location: '' });
+          setNewOrgData({ orgName: '', adminName: '', adminEmail: '', focus: 'Animals', location: '' });
           
           // Refresh list
           const result = await fetch('/api/sync', { headers: { 'Authorization': `Bearer ${token}` } });
@@ -385,14 +385,14 @@ const SuperAdmin: React.FC = () => {
                                                <div className="bg-white p-4 rounded-xl shadow-sm border border-purple-100">
                                                   <div className="flex items-center gap-2 text-purple-600 mb-1">
                                                      <Leaf size={16} />
-                                                     <span className="text-[10px] font-bold uppercase tracking-wider">Collection Scope</span>
+                                                     <span className="text-[10px] font-bold uppercase tracking-wider">{t('collectionScope')}</span>
                                                   </div>
                                                   <p className="text-sm font-bold text-slate-900">{(org as any).focus || 'Animals'}</p>
                                                   <div className="flex items-center gap-2 text-slate-400 mt-4 mb-1">
                                                      <Building2 size={16} />
-                                                     <span className="text-[10px] font-bold uppercase tracking-wider">Founded</span>
+                                                     <span className="text-[10px] font-bold uppercase tracking-wider">{t('founded')}</span>
                                                   </div>
-                                                  <p className="text-sm font-bold text-slate-900">{(org as any).foundedYear || 'Not set'}</p>
+                                                  <p className="text-sm font-bold text-slate-900">{(org as any).foundedYear || t('unknown')}</p>
                                                </div>
                                             </div>
                                             
@@ -401,10 +401,10 @@ const SuperAdmin: React.FC = () => {
                                                   <div className="flex items-center justify-between mb-4">
                                                      <div className="flex items-center gap-2 text-purple-600">
                                                         <Dna size={18} />
-                                                        <h4 className="font-bold text-sm uppercase tracking-widest">Species Summary</h4>
+                                                        <h4 className="font-bold text-sm uppercase tracking-widest">{t('speciesSummary')}</h4>
                                                      </div>
                                                      <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                                                        {extPartner.speciesIds?.length || 0} Managed Species
+                                                        {extPartner.speciesIds?.length || 0} {t('managedSpecies')}
                                                      </span>
                                                   </div>
                                                   
@@ -431,7 +431,7 @@ const SuperAdmin: React.FC = () => {
                                                   ) : (
                                                      <div className="flex flex-col items-center justify-center py-10 opacity-30">
                                                         <Activity size={48} className="text-slate-400 mb-2" />
-                                                        <p className="text-sm font-medium">No active population data found</p>
+                                                        <p className="text-sm font-medium">{t('noPopDataFound')}</p>
                                                      </div>
                                                   )}
                                                </div>
@@ -618,7 +618,7 @@ const SuperAdmin: React.FC = () => {
                      </label>
                   </div>
                   <div className="space-y-1">
-                     <label className="text-[10px] font-bold text-slate-400 uppercase block">Subject Line</label>
+                     <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('emailSubject')}</label>
                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Email Subject" value={String(editingTemplate.subject || '')} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
                   </div>
                   <div className="flex-1 min-h-[250px] rounded-xl overflow-hidden border border-slate-200 shadow-inner">

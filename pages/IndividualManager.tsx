@@ -4,7 +4,6 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization } from '../types';
-/* Fix: Import X as XIcon from lucide-react for consistency */
 import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 
@@ -559,7 +558,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
-          <p className="text-slate-500">Track {org?.focus === 'Plants' ? 'botanical collection' : 'animal populations'} and lineage.</p>
+          <p className="text-slate-500">{org?.focus === 'Plants' ? t('indivSubtitlePlant') : t('indivSubtitleAnimal')}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
@@ -603,7 +602,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
                <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : t('registerIndividual')}</h3>
                <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors">
-                  {/* Fix: Using XIcon instead of X for consistency */}
                   <XIcon size={24} />
                </button>
              </div>
@@ -620,13 +618,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                          <label className="text-sm font-bold text-slate-700">{t('species')}</label>
                          {!editingId && (
                            <button type="button" onClick={() => setIsAutoSpecies(!isAutoSpecies)} className="text-xs text-emerald-600 hover:underline font-bold flex items-center gap-1">
-                              {isAutoSpecies ? "Select from list" : "+ Create species automatically"}
+                              {isAutoSpecies ? t('selectFromList') : t('createSpeciesAuto')}
                            </button>
                          )}
                       </div>
                       {isAutoSpecies ? (
                          <div className="flex gap-3 animate-in slide-in-from-top-2">
-                            <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Enter common name (e.g. Red Oak)" value={newSpeciesName} onChange={(e) => setNewSpeciesName(e.target.value)} required />
+                            <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder={t('autoCreateSpeciesHint')} value={newSpeciesName} onChange={(e) => setNewSpeciesName(e.target.value)} required />
                             <select className="w-32 px-2 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={newSpeciesType} onChange={(e) => setNewSpeciesType(e.target.value as SpeciesType)}>
                                <option value="Animal">{t('animal')}</option>
                                <option value="Plant">{t('plant')}</option>
@@ -639,7 +637,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                               <input 
                                  type="text"
                                  className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900"
-                                 placeholder="Type to search species..."
+                                 placeholder={t('searchSpeciesPlaceholder')}
                                  value={speciesSearchQuery}
                                  onChange={(e) => {
                                     setSpeciesSearchQuery(e.target.value);
@@ -737,7 +735,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                        <p className="text-xs text-slate-500 max-w-md">Assign specific coordinates for tracking the individual in the project's Plant Map.</p>
+                        <p className="text-xs text-slate-500 max-w-md">{t('assignCoordsDesc')}</p>
                         <div className="flex gap-2">
                           <button 
                              type="button" 
@@ -796,7 +794,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <div className="flex justify-between items-center mb-1">
                              <label className="text-sm font-bold text-slate-700">{t('sire')}</label>
                              <button type="button" onClick={() => setIsManualSire(!isManualSire)} className="text-[10px] text-purple-600 hover:underline font-bold">
-                                {isManualSire ? "Select from collection" : "Manual Entry (External ID)"}
+                                {isManualSire ? t('selectFromCollection') : t('manualEntryExternalId')}
                              </button>
                           </div>
                           {isManualSire ? (
@@ -812,7 +810,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <div className="flex justify-between items-center mb-1">
                              <label className="text-sm font-bold text-slate-700">{t('dam')}</label>
                              <button type="button" onClick={() => setIsManualDam(!isManualDam)} className="text-[10px] text-purple-600 hover:underline font-bold">
-                                {isManualDam ? "Select from collection" : "Manual Entry (External ID)"}
+                                {isManualDam ? t('selectFromCollection') : t('manualEntryExternalId')}
                              </button>
                           </div>
                           {isManualDam ? (
@@ -834,12 +832,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                      <h4 className="font-bold uppercase tracking-wider text-sm">{t('geneticDataTitle')}</h4>
                   </div>
                   <div className="space-y-4">
-                     <label className="text-sm font-bold text-slate-700 block">DNA Data File (FASTA, FASTQ, VCF, BAM, GBK, etc.)</label>
+                     <label className="text-sm font-bold text-slate-700 block">{t('dnaDataFileLabel')}</label>
                      <div className="flex flex-col gap-4">
                         <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-indigo-200 rounded-xl bg-indigo-50/30 cursor-pointer hover:bg-indigo-50 transition-all group">
                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
                               <Upload className="w-8 h-8 mb-3 text-indigo-400 group-hover:scale-110 transition-transform" />
-                              <p className="mb-1 text-sm text-indigo-600 font-bold">Click to upload DNA sequence</p>
+                              <p className="mb-1 text-sm text-indigo-600 font-bold">{t('clickToUploadDna')}</p>
                               <p className="text-xs text-indigo-400">FASTA, FASTQ, VCF, BAM, GBK, SAM, TXT</p>
                            </div>
                            <input type="file" className="hidden" accept=".fasta,.fa,.fastq,.fq,.vcf,.bam,.sam,.gb,.gbk,.txt" onChange={handleDnaUpload} />
@@ -857,13 +855,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                                  </div>
                               </div>
                               <button type="button" onClick={() => setFormData(prev => ({...prev, dnaSequence: '', dnaFileName: '', dnaFileType: ''}))} className="text-slate-400 hover:text-red-500 p-1">
-                                 {/* Fix: Using XIcon instead of X for consistency */}
                                  <XIcon size={16} />
                               </button>
                            </div>
                         )}
                      </div>
-                     <p className="text-[10px] text-slate-400 italic">Upload raw genetic data for analysis and long-term storage.</p>
+                     <p className="text-[10px] text-slate-400 italic">{t('secureGenomicStorage')}</p>
                   </div>
                </div>
 
@@ -883,7 +880,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <div className="flex items-center space-x-3">
                             <label className="flex-1 cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg transition-colors flex items-center justify-center space-x-2 shadow-sm border-dashed border-2">
                               <Camera size={20} />
-                              <span className="font-bold">{formData.imageUrl ? 'Change Photo' : 'Capture / Upload Photo'}</span>
+                              <span className="font-bold">{formData.imageUrl ? t('changePhoto') : t('captureUploadPhoto')}</span>
                               <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
                             </label>
                           </div>
@@ -896,7 +893,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                                    onClick={() => setFormData({...formData, imageUrl: ''})}
                                    className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600 text-white rounded-full transition-colors backdrop-blur-sm"
                                 >
-                                   {/* Fix: Using XIcon instead of X for consistency */}
                                    <XIcon size={16}/>
                                 </button>
                                 <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
@@ -936,7 +932,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                   <h3 className="font-bold text-slate-900 flex items-center gap-2"><MapIcon2 size={18} className="text-emerald-600"/> {t('geoLocationTitle')}</h3>
                   <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600">
-                     {/* Fix: Using XIcon instead of X for consistency */}
                      <XIcon size={20}/>
                   </button>
                </div>
@@ -990,7 +985,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   );
                 })()}
                 <button onClick={() => setSelectedMapInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10">
-                   {/* Fix: Using XIcon instead of X for consistency */}
                    <XIcon size={16} />
                 </button>
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
@@ -1007,7 +1001,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   return (
                     <>
                       <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">{t('species')}</span>
                         <p className="font-bold text-slate-900">{sp?.commonName}</p>
                         <p className="text-xs text-emerald-700 italic">{sp?.scientificName}</p>
                       </div>
@@ -1015,7 +1009,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                            {isPlant ? <Sprout size={10}/> : <Users size={10}/>} {isPlant ? 'Classification' : 'Sex'}
+                            {isPlant ? <Sprout size={10}/> : <Users size={10}/>} {isPlant ? t('classification') : t('sex')}
                           </span>
                           <p className="text-sm font-bold text-slate-800">
                             {isPlant ? (sp?.plantClassification || 'Unknown') : (selectedMapInd.sex || 'Unknown')}
@@ -1023,21 +1017,21 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                            <Calendar size={10}/> {isPlant ? 'Planted' : 'Born'}
+                            <Calendar size={10}/> {isPlant ? t('datePlanted') : t('dateOfBirth')}
                           </span>
                           <p className="text-sm font-bold text-slate-800">{selectedMapInd.birthDate || 'Unknown'}</p>
                         </div>
                         
                         {!isPlant && (
                           <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> {t('weight')}</span>
                             <p className="text-sm font-bold text-slate-800">{selectedMapInd.weightKg ? `${selectedMapInd.weightKg} kg` : 'N/A'}</p>
                           </div>
                         )}
                         
                         {isPlant && (
                           <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Sprout size={10}/> Flowers</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Sprout size={10}/> {t('floweringSeason')}</span>
                             <p className="text-[10px] font-bold text-slate-800">
                               {sp?.breedingSeasonStart ? `${getMonthName(sp.breedingSeasonStart)} - ${getMonthName(sp.breedingSeasonEnd)}` : 'N/A'}
                             </p>
@@ -1045,7 +1039,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         )}
 
                         <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> {t('status')}</span>
                           <p className={`text-sm font-bold ${selectedMapInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>
                             {selectedMapInd.isDeceased ? (isPlant ? 'Removed' : 'Deceased') : 'Active'}
                           </p>
@@ -1056,7 +1050,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                 })()}
 
                 <div className="pt-4 border-t border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Location Context</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">{t('geoLocationTitle')}</span>
                   <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
                     <MapPin size={14} className="text-blue-500" />
                     <span>{selectedMapInd.latitude?.toFixed(5)}, {selectedMapInd.longitude?.toFixed(5)}</span>
@@ -1065,15 +1059,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
                 {selectedMapInd.notes && (
                   <div className="pt-4 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Notes</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">{t('notes')}</span>
                     <p className="text-xs text-slate-600 italic leading-relaxed">"{selectedMapInd.notes}"</p>
                   </div>
                 )}
               </div>
 
               <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
-                <button onClick={() => handleEdit(selectedMapInd)} className="flex-1 bg-white border border-slate-300 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">Edit Record</button>
-                <Link to={`/individuals/${selectedMapInd.id}`} className="flex-1 bg-emerald-600 py-2 rounded-lg text-xs font-bold text-white hover:bg-emerald-700 text-center transition-all shadow-md">View Full File</Link>
+                <button onClick={() => handleEdit(selectedMapInd)} className="flex-1 bg-white border border-slate-300 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">{t('edit')}</button>
+                <Link to={`/individuals/${selectedMapInd.id}`} className="flex-1 bg-emerald-600 py-2 rounded-lg text-xs font-bold text-white hover:bg-emerald-700 text-center transition-all shadow-md">{t('viewFullFile')}</Link>
               </div>
             </div>
           )}
@@ -1101,7 +1095,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                             <button 
                               onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
                               className={`p-2 bg-white/90 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100 ${isLocatingThis ? 'text-emerald-600 animate-pulse' : 'text-slate-600 hover:text-emerald-600'}`}
-                              title="Set Current Location"
+                              title={t('useCurrentLocation')}
                               disabled={isLocatingThis}
                             >
                               {isLocatingThis ? <Loader2 size={14} className="animate-spin" /> : <LocateFixed size={14} />}
@@ -1126,18 +1120,18 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-50">
                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Planted' : 'Birth Date'}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? t('datePlanted') : t('dateOfBirth')}</p>
                               <p className="text-xs font-medium text-slate-700">{ind.birthDate || 'Not recorded'}</p>
                            </div>
                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Metric' : 'Current Weight'}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isIndPlant ? 'Metric' : t('weight')}</p>
                               <p className="text-xs font-medium text-slate-700">{isIndPlant ? '--' : `${ind.weightKg} kg`}</p>
                            </div>
                         </div>
                         <div className="mt-auto pt-4 flex gap-2">
                           {ind.isDeceased && <span className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded">Deceased</span>}
                           {ind.loanStatus !== 'None' && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded">{ind.loanStatus}</span>}
-                          {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> DNA</span>}
+                          {ind.dnaSequence && <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><Fingerprint size={10}/> {t('genetics')}</span>}
                           {isMapped && <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><MapPin size={10}/> Mapped</span>}
                         </div>
                      </div>
@@ -1156,15 +1150,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                          <p className="text-xs text-slate-500 font-mono">{ind.studbookId}</p>
                       </div>
                       <div>
-                         <p className="text-[10px] font-bold text-slate-400 uppercase">Species</p>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase">{t('species')}</p>
                          <p className="text-sm font-medium text-slate-700">{sp?.commonName}</p>
                       </div>
                       <div className="hidden md:block">
-                         <p className="text-[10px] font-bold text-slate-400 uppercase">{isIndPlant ? 'Planted' : 'Sex / Birth'}</p>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase">{isIndPlant ? t('datePlanted') : t('sex') + ' / ' + t('dateOfBirth')}</p>
                          <p className="text-sm font-medium text-slate-700">{isIndPlant ? ind.birthDate : `${ind.sex} • ${ind.birthDate}`}</p>
                       </div>
                       <div className="hidden md:block">
-                         <p className="text-[10px] font-bold text-slate-400 uppercase">Status</p>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase">{t('status')}</p>
                          <div className="flex gap-1 items-center">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ind.isDeceased ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{ind.isDeceased ? 'Dead' : 'Active'}</span>
                             {isMapped && <span className="text-emerald-600" title="GPS Location Set"><MapPin size={14} fill="currentColor" fillOpacity={0.2} /></span>}
@@ -1177,7 +1171,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         <button 
                            onClick={(e) => { e.preventDefault(); handleQuickSetLocation(ind); }}
                            className={`p-2 transition-colors ${isLocatingThis ? 'text-emerald-600 animate-spin' : 'text-slate-400 hover:text-emerald-600'}`}
-                           title="Set Current Location"
+                           title={t('useCurrentLocation')}
                            disabled={isLocatingThis}
                         >
                            {isLocatingThis ? <Loader2 size={18} /> : <LocateFixed size={18}/>}
@@ -1207,11 +1201,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                   <AlertTriangle size={40}/>
                </div>
-               <h3 className="text-2xl font-bold text-slate-900 mb-2">Delete Record?</h3>
-               <p className="text-slate-500 mb-8 leading-relaxed">This will permanently remove this individual and all their historical logs. This action cannot be undone.</p>
+               <h3 className="text-2xl font-bold text-slate-900 mb-2">{t('deleteRecord')}</h3>
+               <p className="text-slate-500 mb-8 leading-relaxed">{t('deleteRecordDesc')}</p>
                <div className="flex gap-3">
                   <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors">{t('cancel')}</button>
-                  <button onClick={handleDelete} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200">Yes, Delete</button>
+                  <button onClick={handleDelete} className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-red-200">{t('yesDelete')}</button>
                </div>
             </div>
          </div>

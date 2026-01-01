@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, getIndividuals, saveIndividuals, getBreedingEvents, saveBreedingEvents, getNetworkPartners, getBreedingLoans, saveBreedingLoans, getPartnerships, getOrg, sendMockNotification, generatePattern, getUsers, getSystemSettings } from '../services/storage';
 import { Species, Individual, BreedingEvent, Sex, BreedingLoan, ExternalPartner, LoanRole, Partnership, User, BreedingLoanChangeRequest } from '../types';
 import { Plus, Calendar, Heart, Baby, AlertCircle, Camera, Dna, PawPrint, Handshake, ArrowRight, ArrowLeft, Clock, Info, Check, X, ClipboardList, Bell, User as UserIcon, Filter, Globe2, MoreHorizontal, Edit, AlertTriangle, StopCircle } from 'lucide-react';
+// Fix: Corrected relative import path for LanguageContext
 import { LanguageContext } from '../App';
 
 interface BreedingManagerProps {
@@ -116,7 +116,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
   
   // Get ONLY established partners for the dropdown
   const myPartnerOrgs = partners.filter(p => 
-     partnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg.id))
+     partnerships.some(rel => (rel.orgId1 === myOrg.id && rel.orgId2 === p.id) || (rel.orgId1 === p.id && rel.orgId2 === myOrg?.id))
   );
 
   // --- Event Handlers ---
@@ -506,7 +506,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('breeding')}</h2>
-          <p className="text-slate-500">Manage pairings, record births, and track lineage.</p>
+          <p className="text-slate-500">{t('breedingSubtitle')}</p>
         </div>
         <div className="flex gap-2">
            {activeTab === 'events' ? (
@@ -515,7 +515,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                 className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
               >
                 <Plus size={18} />
-                <span>Record Breeding Event</span>
+                <span>{t('recordBreedingEvent')}</span>
               </button>
            ) : (
               <button 
@@ -523,7 +523,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                 className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
               >
                 <Plus size={18} />
-                <span>New Breeding Loan</span>
+                <span>{t('newBreedingLoan')}</span>
               </button>
            )}
         </div>
@@ -541,7 +541,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
              <span className="text-sm font-bold text-slate-700">{t('viewTitle')}:</span>
              <label className="flex items-center space-x-2 text-sm cursor-pointer select-none hover:bg-slate-50 p-1 rounded">
                <input type="checkbox" checked={includePartnerEvents} onChange={(e) => setIncludePartnerEvents(e.target.checked)} className="rounded text-emerald-600 focus:ring-emerald-500 border-slate-300" />
-               <span className="text-slate-700">Include Partner Organisations</span>
+               <span className="text-slate-700">{t('includePartnerOrgs')}</span>
              </label>
           </div>
 
@@ -549,25 +549,25 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                  <h3 className="text-lg font-bold text-slate-900">Record Breeding Event</h3>
+                  <h3 className="text-lg font-bold text-slate-900">{t('recordBreedingEvent')}</h3>
                   <button onClick={() => setShowEventForm(false)} className="text-slate-400 hover:text-slate-600"><Plus size={24} className="rotate-45" /></button>
                 </div>
                 <form onSubmit={handleEventSubmit} className="p-6 space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="col-span-1 md:col-span-2">
                       <label className="text-sm font-medium text-slate-700 mb-1 block">{t('species')}</label>
-                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={eventForm.speciesId} onChange={e => setEventForm({ ...eventForm, speciesId: e.target.value, sireId: '', damId: '' })} required><option value="">Select Species</option>{speciesList.filter(s => s.projectId === currentProjectId).map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}</select>
+                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={eventForm.speciesId} onChange={e => setEventForm({ ...eventForm, speciesId: e.target.value, sireId: '', damId: '' })} required><option value="">{t('selectSpecies')}</option>{speciesList.filter(s => s.projectId === currentProjectId).map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}</select>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-slate-700 mb-1 block">{t('sire')}</label>
-                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400" value={eventForm.sireId} onChange={e => setEventForm({ ...eventForm, sireId: e.target.value })} disabled={!eventForm.speciesId} required><option value="">Select Sire</option>{getSires(eventForm.speciesId!).map(s => <option key={s.id} value={s.id}>{s.name} ({s.studbookId})</option>)}</select>
+                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400" value={eventForm.sireId} onChange={e => setEventForm({ ...eventForm, sireId: e.target.value })} disabled={!eventForm.speciesId} required><option value="">{t('selectSire')}</option>{getSires(eventForm.speciesId!).map(s => <option key={s.id} value={s.id}>{s.name} ({s.studbookId})</option>)}</select>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-slate-700 mb-1 block">{t('dam')}</label>
-                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400" value={eventForm.damId} onChange={e => setEventForm({ ...eventForm, damId: e.target.value })} disabled={!eventForm.speciesId} required><option value="">Select Dam</option>{getDams(eventForm.speciesId!).map(s => <option key={s.id} value={s.id}>{s.name} ({s.studbookId})</option>)}</select>
+                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400" value={eventForm.damId} onChange={e => setEventForm({ ...eventForm, damId: e.target.value })} disabled={!eventForm.speciesId} required><option value="">{t('selectDam')}</option>{getDams(eventForm.speciesId!).map(s => <option key={s.id} value={s.id}>{s.name} ({s.studbookId})</option>)}</select>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-slate-700 mb-1 block">Event Date</label>
+                      <label className="text-sm font-medium text-slate-700 mb-1 block">{t('eventDate')}</label>
                       <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={eventForm.date} onChange={e => setEventForm({ ...eventForm, date: e.target.value })} required />
                     </div>
                     <div>
@@ -589,7 +589,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                   </div>
                   <div className="flex justify-end pt-4 border-t border-slate-100">
                     <button type="button" onClick={() => setShowEventForm(false)} className="mr-3 px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('cancel')}</button>
-                    <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">Save Event</button>
+                    <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">{t('saveEvent')}</button>
                   </div>
                 </form>
               </div>
@@ -602,9 +602,9 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                    <div>
                      <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><ClipboardList size={20} className="text-emerald-600" /> {t('batchOffspring')}</h3>
-                     <p className="text-sm text-slate-500">{recentEvent.successfulBirths} births recorded for {speciesList.find(s=>s.id === recentEvent.speciesId)?.commonName}. Fill details below to create records instantly.</p>
+                     <p className="text-sm text-slate-500">{recentEvent.successfulBirths} {t('batchOffspringDesc')} {speciesList.find(s=>s.id === recentEvent.speciesId)?.commonName}.</p>
                    </div>
-                   <button onClick={() => setShowQuickEntry(false)} className="text-slate-400 hover:text-slate-600">Skip / Close</button>
+                   <button onClick={() => setShowQuickEntry(false)} className="text-slate-400 hover:text-slate-600">{t('skipClose')}</button>
                 </div>
                 <div className="flex-1 overflow-auto p-6">
                    <table className="w-full text-left border-collapse">
@@ -612,7 +612,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                          <tr className="border-b border-slate-200">
                             <th className="p-2 text-sm font-medium text-slate-500 w-12">#</th>
                             <th className="p-2 text-sm font-medium text-slate-500">{t('studbookId')} <span className="text-red-500">*</span></th>
-                            <th className="p-2 text-sm font-medium text-slate-500">{t('name')} (Optional)</th>
+                            <th className="p-2 text-sm font-medium text-slate-500">{t('name')} ({t('optional')})</th>
                             <th className="p-2 text-sm font-medium text-slate-500">{t('sex')}</th>
                             <th className="p-2 text-sm font-medium text-slate-500">{t('weight')} (Kg)</th>
                          </tr>
@@ -622,8 +622,8 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                             <tr key={idx}>
                                <td className="p-2 text-slate-400 font-mono text-xs">{idx + 1}</td>
                                <td className="p-2"><input className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="e.g. SB-24-001" value={row.studbookId} onChange={(e) => handleQuickEntryChange(idx, 'studbookId', e.target.value)} /></td>
-                               <td className="p-2"><input className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Name" value={row.name} onChange={(e) => handleQuickEntryChange(idx, 'name', e.target.value)} /></td>
-                               <td className="p-2"><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" value={row.sex} onChange={(e) => handleQuickEntryChange(idx, 'sex', e.target.value as Sex)}><option value={Sex.UNKNOWN}>Unknown</option><option value={Sex.MALE}>Male</option><option value={Sex.FEMALE}>Female</option></select></td>
+                               <td className="p-2"><input className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder={t('name')} value={row.name} onChange={(e) => handleQuickEntryChange(idx, 'name', e.target.value)} /></td>
+                               <td className="p-2"><select className="w-full border border-slate-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" value={row.sex} onChange={(e) => handleQuickEntryChange(idx, 'sex', e.target.value as Sex)}><option value={Sex.UNKNOWN}>{t('unknown')}</option><option value={Sex.MALE}>{t('males')}</option><option value={Sex.FEMALE}>{t('females')}</option></select></td>
                                <td className="p-2"><input type="number" step="0.01" className="w-24 border border-slate-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="0.00" value={row.weightKg} onChange={(e) => handleQuickEntryChange(idx, 'weightKg', e.target.value)} /></td>
                             </tr>
                          ))}
@@ -633,7 +633,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                 <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-between items-center rounded-b-xl">
                    <p className="text-xs text-slate-500 italic">Parentage and Source will be auto-filled from the breeding event.</p>
                    <div className="flex gap-3">
-                      <button onClick={() => setShowQuickEntry(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">Skip</button>
+                      <button onClick={() => setShowQuickEntry(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">{t('back')}</button>
                       <button onClick={handleQuickEntrySubmit} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-medium shadow-sm">Save Individuals</button>
                    </div>
                 </div>
@@ -674,7 +674,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                 </div>
                 <div className="md:w-72 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 flex flex-col">
                   <h4 className="font-bold text-slate-900 mb-3 flex items-center"><Baby size={18} className="mr-2 text-emerald-500" /> {t('offspring')}</h4>
-                  <div className="flex-1 space-y-2 mb-4">{offspring.length > 0 ? (offspring.map(kid => (<div key={kid.id} className="flex items-center space-x-2 p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">{kid.imageUrl ? (<img src={kid.imageUrl} className="w-8 h-8 rounded-full object-cover" alt={kid.name} />) : (<div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-400"><PawPrint size={14} /></div>)}<div><p className="text-sm font-medium text-slate-900">{kid.name}</p><p className="text-xs text-slate-500">{kid.studbookId}</p></div></div>))) : (<p className="text-sm text-slate-400 italic">No offspring linked yet.</p>)}</div>
+                  <div className="flex-1 space-y-2 mb-4">{offspring.length > 0 ? (offspring.map(kid => (<div key={kid.id} className="flex items-center space-x-2 p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">{kid.imageUrl ? (<img src={kid.imageUrl} className="w-8 h-8 rounded-full object-cover" alt={kid.name} />) : (<div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-400"><PawPrint size={14} /></div>)}<div><p className="text-sm font-medium text-slate-900">{kid.name}</p><p className="text-xs text-slate-500">{kid.studbookId}</p></div></div>))) : (<p className="text-sm text-slate-400 italic">{t('noOffspringLinked')}</p>)}</div>
                   <button onClick={() => openOffspringModal(event.id)} className="w-full py-2 border border-dashed border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"><Plus size={16} /> {t('linkNewOffspring')}</button>
                 </div>
               </div>
@@ -688,15 +688,15 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
           {showLoanForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center"><h3 className="text-lg font-bold text-slate-900">New Breeding Loan</h3><button onClick={() => setShowLoanForm(false)} className="text-slate-400 hover:text-slate-600"><Plus size={24} className="rotate-45" /></button></div>
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center"><h3 className="text-lg font-bold text-slate-900">{t('newBreedingLoan')}</h3><button onClick={() => setShowLoanForm(false)} className="text-slate-400 hover:text-slate-600"><Plus size={24} className="rotate-45" /></button></div>
                 <form onSubmit={handleLoanSubmit} className="p-6 space-y-6">
                   {myPartnerOrgs.length === 0 ? (<div className="bg-amber-50 text-amber-800 p-4 rounded-lg flex gap-2"><AlertCircle className="flex-shrink-0"/><div><p className="font-bold">No Partners Available</p><p className="text-sm">You must establish a partnership with another organization in the Network Map page before you can initiate a breeding loan.</p></div></div>) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2"><label className="text-sm font-medium text-slate-700">Partner Organization</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900" value={loanForm.partnerOrgId} onChange={e => setLoanForm({ ...loanForm, partnerOrgId: e.target.value })} required><option value="">Select Partner...</option>{myPartnerOrgs.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.location})</option>))}</select></div>
-                        <div className="space-y-2"><label className="text-sm font-medium text-slate-700">Role</label><div className="flex gap-4"><label className="flex items-center gap-2 border p-3 rounded-lg flex-1 cursor-pointer hover:bg-slate-50"><input type="radio" name="role" value="Provider" checked={loanForm.role === 'Provider'} onChange={() => setLoanForm({ ...loanForm, role: 'Provider' })} /><div className="text-sm"><span className="font-bold block">Provider</span><span className="text-xs text-slate-500">I am sending animals</span></div></label><label className="flex items-center gap-2 border p-3 rounded-lg flex-1 cursor-pointer hover:bg-slate-50"><input type="radio" name="role" value="Recipient" checked={loanForm.role === 'Recipient'} onChange={() => setLoanForm({ ...loanForm, role: 'Recipient' })} /><div className="text-sm"><span className="font-bold block">Recipient</span><span className="text-xs text-slate-500">I am receiving animals</span></div></label></div></div>
+                        <div className="space-y-2"><label className="text-sm font-medium text-slate-700">{t('partnerOrg')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900" value={loanForm.partnerOrgId} onChange={e => setLoanForm({ ...loanForm, partnerOrgId: e.target.value })} required><option value="">Select Partner...</option>{myPartnerOrgs.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.location})</option>))}</select></div>
+                        <div className="space-y-2"><label className="text-sm font-medium text-slate-700">Role</label><div className="flex gap-4"><label className="flex items-center gap-2 border p-3 rounded-lg flex-1 cursor-pointer hover:bg-slate-50"><input type="radio" name="role" value="Provider" checked={loanForm.role === 'Provider'} onChange={() => setLoanForm({ ...loanForm, role: 'Provider' })} /><div className="text-sm"><span className="font-bold block">Provider</span><span className="text-xs text-slate-500">{t('providerDesc')}</span></div></label><label className="flex items-center gap-2 border p-3 rounded-lg flex-1 cursor-pointer hover:bg-slate-50"><input type="radio" name="role" value="Recipient" checked={loanForm.role === 'Recipient'} onChange={() => setLoanForm({ ...loanForm, role: 'Recipient' })} /><div className="text-sm"><span className="font-bold block">Recipient</span><span className="text-xs text-slate-500">{t('recipientDesc')}</span></div></label></div></div>
                         <div className="space-y-2"><label className="text-sm font-medium text-slate-700">Start Date</label><input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900" value={loanForm.startDate} onChange={e => setLoanForm({ ...loanForm, startDate: e.target.value })} required /></div>
-                        <div className="space-y-2"><label className="text-sm font-medium text-slate-700">End Date (Optional)</label><input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900" value={loanForm.endDate} onChange={e => setLoanForm({ ...loanForm, endDate: e.target.value })} /></div>
-                        <div className="col-span-1 md:col-span-2 space-y-2"><label className="text-sm font-medium text-slate-700">Individuals</label><div className="border border-slate-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50 grid grid-cols-1 sm:grid-cols-2 gap-2">{projectIndividuals.length > 0 ? (projectIndividuals.map(ind => (<label key={ind.id} className="flex items-center gap-2 bg-white p-2 rounded border border-slate-100 cursor-pointer hover:border-purple-200"><input type="checkbox" checked={loanForm.individualIds?.includes(ind.id)} onChange={() => toggleIndividualSelection(ind.id)} className="rounded text-purple-600 focus:ring-purple-500" /><div className="text-sm"><span className="font-bold block">{ind.name}</span><span className="text-xs text-slate-500">{ind.studbookId}</span></div></label>))) : (<p className="text-sm text-slate-400 italic p-2">No individuals found in this project.</p>)}</div></div>
+                        <div className="space-y-2"><label className="text-sm font-medium text-slate-700">End Date (Optional)</label><input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={loanForm.endDate} onChange={e => setLoanForm({ ...loanForm, endDate: e.target.value })} /></div>
+                        <div className="col-span-1 md:col-span-2 space-y-2"><label className="text-sm font-medium text-slate-700">{t('individuals')}</label><div className="border border-slate-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50 grid grid-cols-1 sm:grid-cols-2 gap-2">{projectIndividuals.length > 0 ? (projectIndividuals.map(ind => (<label key={ind.id} className="flex items-center gap-2 bg-white p-2 rounded border border-slate-100 cursor-pointer hover:border-purple-200"><input type="checkbox" checked={loanForm.individualIds?.includes(ind.id)} onChange={() => toggleIndividualSelection(ind.id)} className="rounded text-purple-600 focus:ring-purple-500" /><div className="text-sm"><span className="font-bold block">{ind.name}</span><span className="text-xs text-slate-500">{ind.studbookId}</span></div></label>))) : (<p className="text-sm text-slate-400 italic p-2">No individuals found in this project.</p>)}</div></div>
                         <div className="col-span-1 md:col-span-2 space-y-2"><label className="text-sm font-medium text-slate-700">Terms & Conditions</label><textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900" rows={3} value={loanForm.terms} onChange={e => setLoanForm({ ...loanForm, terms: e.target.value })} /></div>
                     </div>
                   )}
@@ -733,7 +733,7 @@ const BreedingManager: React.FC<BreedingManagerProps> = ({ currentProjectId }) =
                      </div>
                      {needsMyApproval && (<div className="bg-purple-50 border border-purple-100 p-4 rounded-lg flex items-center justify-between"><div className="text-sm text-purple-900"><p className="font-bold">Proposal Received</p><p>This partner has proposed a breeding loan. Do you accept the terms?</p></div><div className="flex gap-2"><button onClick={() => handleLoanDecision(loan.id, 'Active')} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold">Accept</button><button onClick={() => handleLoanDecision(loan.id, 'Rejected')} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg text-sm font-bold">Reject</button></div></div>)}
                      <div className="flex items-center gap-6 text-sm text-slate-600 flex-wrap"><div className="flex items-center gap-2"><Calendar size={16} className="text-slate-400" /><span>{loan.startDate}</span><ArrowRight size={14} /><span>{loan.endDate || 'Indefinite'}</span></div></div>
-                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><p className="text-xs font-bold text-slate-500 uppercase mb-2">Involved Individuals</p><div className="flex flex-wrap gap-2">{involvedInds.map(ind => (<div key={ind.id} className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">{ind.imageUrl ? (<img src={ind.imageUrl} className="w-5 h-5 rounded-full object-cover" />) : (<PawPrint size={14} className="text-slate-400" />)}<span className="text-sm font-medium">{ind.name}</span></div>))}</div></div>
+                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100"><p className="text-xs font-bold text-slate-500 uppercase mb-2">{t('involvedIndividuals')}</p><div className="flex flex-wrap gap-2">{involvedInds.map(ind => (<div key={ind.id} className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">{ind.imageUrl ? (<img src={ind.imageUrl} className="w-5 h-5 rounded-full object-cover" />) : (<PawPrint size={14} className="text-slate-400" />)}<span className="text-sm font-medium">{ind.name}</span></div>))}</div></div>
                   </div>
                </div>
              );
