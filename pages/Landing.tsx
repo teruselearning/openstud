@@ -107,31 +107,30 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const recaptchaRef = useRef<HTMLDivElement>(null);
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
 
-  // Robust ReCAPTCHA render to avoid MutationObserver and DOM binding errors
+  // Improved ReCAPTCHA logic to prevent observer errors
   useEffect(() => {
-    let active = true;
-    let timer: any = null;
+    let isMounted = true;
+    let pollTimer: any = null;
 
     const renderCaptcha = () => {
-      if (!active || !recaptchaRef.current) return;
+      if (!isMounted || !recaptchaRef.current) return;
       
       const grecaptcha = (window as any).grecaptcha;
       if (grecaptcha && grecaptcha.render) {
          try {
-            // Only render if container is empty
-            if (recaptchaRef.current.innerHTML === '') {
+            // Re-check container existence and verify it's still the correct element in the DOM
+            if (recaptchaRef.current && document.body.contains(recaptchaRef.current) && recaptchaRef.current.innerHTML === '') {
                widgetIdRef.current = grecaptcha.render(recaptchaRef.current, {
                  'sitekey': settings.recaptchaSiteKey,
-                 'callback': (token: string) => { if(active) setRecaptchaToken(token); },
-                 'expired-callback': () => { if(active) setRecaptchaToken(null); }
+                 'callback': (token: string) => { if(isMounted) setRecaptchaToken(token); },
+                 'expired-callback': () => { if(isMounted) setRecaptchaToken(null); }
                });
             }
          } catch (e) {
-            console.warn('ReCAPTCHA render attempt suppressed:', e);
+            console.warn('ReCAPTCHA init suppressed during transition:', e);
          }
       } else {
-         // Retry loop instead of one-shot timeout
-         timer = setTimeout(renderCaptcha, 500);
+         pollTimer = setTimeout(renderCaptcha, 500);
       }
     };
 
@@ -140,11 +139,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     }
 
     return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
+      isMounted = false;
+      if (pollTimer) clearTimeout(pollTimer);
       setRecaptchaToken(null);
-      // We don't explicitly destroy grecaptcha as it's globally managed, 
-      // but by clearinginnerHTML and seting active=false we prevent callback errors.
     };
   }, [viewMode, settings.recaptchaSiteKey]);
 
@@ -178,22 +175,27 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
-       // Provision demo user on server AND locally
-       await regenerateDemoData();
-       // Attempt login
-       let user = await login('sarah@wild.org', 'password');
-       if (user) {
+       // Attempt direct server login for demo Sarah
+       const loginResp = await fetch('/api/login', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ email: 'sarah@wild.org', password: 'password' })
+       });
+
+       if (loginResp.ok) {
+          const { token, user } = await loginResp.json();
+          localStorage.setItem('os_token', token);
           saveSession(user);
-          // Pre-fetch fresh data after setup
           await fetchRemoteData();
           onLogin(user);
        } else {
-          setError("Could not initialize demo session.");
+          const err = await loginResp.json();
+          setError(`Demo Service Error: ${err.error || 'Server unreachable'}`);
           setIsLoading(false);
        }
     } catch (e: any) {
-       console.error("Demo Logic failed", e);
-       setError("Demo environment setup failed. Check backend connection.");
+       console.error("Demo Login Exception", e);
+       setError("Failed to connect to backend for demo.");
        setIsLoading(false);
     }
   };
@@ -211,20 +213,15 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           body: JSON.stringify({ email: loginData.email.toLowerCase().trim(), password: loginData.password })
         });
         
+        const data = await response.json();
+
         if (!response.ok) {
-            // Check local fallback
-            const user = await login(loginData.email, loginData.password);
-            if (user) {
-                saveSession(user);
-                onLogin(user);
-                return;
-            }
-            setError("Invalid email or password.");
+            setError(data.error || "Invalid email or password.");
             setIsLoading(false);
             return;
         }
 
-        const { token, user, organization } = await response.json();
+        const { token, user, organization } = data;
         localStorage.setItem('os_token', token);
         
         const userOrg = organization as Organization;
@@ -246,7 +243,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             onLogin(user);
         }
     } catch (err: any) {
-        setError("Network error. Please try again.");
+        setError("Network error. Ensure the backend is running.");
         setIsLoading(false);
     }
   };

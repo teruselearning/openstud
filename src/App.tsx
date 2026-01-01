@@ -240,6 +240,8 @@ const App: React.FC = () => {
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
        const session = getSession();
+       const token = localStorage.getItem('os_token');
+
        if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
        else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
        
@@ -256,16 +258,20 @@ const App: React.FC = () => {
           }
        } catch (e) { console.warn("Public config failed."); }
        
-       if (session) {
+       // Handle inconsistent auth state
+       if (session && token) {
           try {
             await loadData(session);
           } catch (e: any) {
-            // If loadData (sync) failed with 401, clear session and show landing
             if (e.message.includes('expired') || e.message.includes('401')) {
                 logout();
                 setUser(null);
             }
           }
+       } else if (session && !token) {
+          console.warn("Session detected without token. Forcing re-login.");
+          logout();
+          setUser(null);
        }
        setIsLoading(false);
     };
@@ -368,7 +374,6 @@ const App: React.FC = () => {
            }
         } else if (!result.success) {
            setSyncError(result.message || "Unknown sync error");
-           // Only show setup modal if it's a structural 404 or connection failure, not a 401
            if (!result.message.includes('expired') && (result.message.includes('404') || result.message.includes('fetch'))) {
               setShowBackendSetup(true);
            }

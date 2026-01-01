@@ -47,8 +47,6 @@ const getDb = () => {
 
 const app: any = express();
 const PORT = Number(process.env.PORT) || 3001;
-// CRITICAL: Ensure this is stable. If env is missing, use a hardcoded fallback 
-// so tokens don't expire every time the server process restarts.
 const JWT_SECRET = process.env.JWT_SECRET || 'openstudbook-stable-dev-secret-2024';
 
 console.log(`[AUTH] JWT Secret initialized (hash prefix): ${crypto.createHash('sha256').update(JWT_SECRET).digest('hex').substring(0, 8)}`);
@@ -294,6 +292,20 @@ const initDatabase = async () => {
         `);
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
+        
+        // --- SEEDING: Demo User & Org ---
+        const [userCount]: any = await db.execute('SELECT COUNT(*) as count FROM users');
+        if (userCount[0].count === 0) {
+           console.log("[SEED] Creating default demo user (Sarah Keeper)...");
+           const orgId = 'org-1';
+           await db.execute(`INSERT IGNORE INTO organizations (id, name, location, focus) VALUES (?, ?, ?, ?)`, [orgId, 'Wilderness Trust', 'Global Sanctuary', 'Animals']);
+           await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES (?, ?, ?, ?)`, ['p-1', orgId, 'General Collection', 'Initial project for demo.']);
+           const hashedPassword = await bcrypt.hash('password', 10);
+           await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)`, 
+             ['u-1', orgId, 'Sarah Keeper', 'sarah@wild.org', 'Admin', 'Active', hashedPassword]);
+           console.log("[SEED] Demo user and organization created successfully.");
+        }
+
         console.log("Database schema synchronized and migrations complete.");
     } catch (e: any) {
         console.error("CRITICAL: Database Initialization Failed!", e.message);
@@ -341,8 +353,8 @@ app.post('/api/login', async (req: any, res: any) => {
            return res.status(401).json({ error: "Account not found." });
         }
 
-        // Handle plain text (dev/demo) or hashed passwords
-        const isMatch = user.password === password || (user.password && await bcrypt.compare(password, user.password));
+        // Handle hashed passwords (demo Sarah uses bcrypt)
+        const isMatch = await bcrypt.compare(password, user.password).catch(() => user.password === password);
         if (!isMatch) {
            return res.status(401).json({ error: "Invalid password." });
         }
@@ -356,7 +368,7 @@ app.post('/api/login', async (req: any, res: any) => {
             { expiresIn: '7d' }
         );
 
-        console.log(`[AUTH] User ${user.email} logged in successfully.`);
+        console.log(`[AUTH] User ${user.email} logged in successfully via server.`);
         res.json({ token, user, organization: orgRows[0] });
     } catch (e: any) { 
         console.error(`[LOGIN ERROR]`, e);
