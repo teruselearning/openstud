@@ -2,64 +2,43 @@
 import { getSystemSettings } from './storage';
 
 // API Configuration
-// Using window location check to avoid import.meta.env runtime issues if build replacement fails
 const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const API_BASE_URL = isLocal ? 'http://localhost:3001' : '';
 
-const getTemplate = (type: string) => {
-  const settings = getSystemSettings();
-  if (settings.emailTemplates && settings.emailTemplates[type]) {
-    return settings.emailTemplates[type];
-  }
-  return null;
-};
-
-const replacePlaceholders = (text: string, data: Record<string, string>) => {
-  let result = text;
-  Object.keys(data).forEach(key => {
-    result = result.replace(new RegExp(`{{${key}}}`, 'g'), data[key]);
-  });
-  return result;
-};
-
+/**
+ * Sends a system email by communicating with the backend.
+ * Uses template key to let the backend pull from the DB.
+ */
 export const sendSystemEmail = async (
   to: string, 
-  templateType: 'mfa' | 'invite' | 'notification', 
-  data: Record<string, string>,
+  templateType: 'mfa' | 'invite' | 'notification' | 'registration', 
+  placeholders: Record<string, string>,
   fallbackSubject: string,
   fallbackBody: string
 ) => {
+  // Use session token for auth
   const token = localStorage.getItem('os_token');
-  if (!token) {
-    console.warn("Cannot send email: No auth token available (offline mode?)");
-    return false;
-  }
-
-  // 1. Get Template from Settings
-  const template = getTemplate(templateType);
   
-  // 2. Prepare Content
-  const subject = template?.enabled ? replacePlaceholders(template.subject, data) : replacePlaceholders(fallbackSubject, data);
-  const bodyHtml = template?.enabled ? replacePlaceholders(template.bodyHtml, data) : replacePlaceholders(fallbackBody, data);
-
-  // 3. Send to Backend
   try {
     const response = await fetch(`${API_BASE_URL}/api/email/send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': token ? `Bearer ${token.replace(/"/g, '')}` : ''
       },
       body: JSON.stringify({
         to,
-        subject,
-        html: bodyHtml
+        templateKey: templateType,
+        placeholders,
+        // Optional raw fields if template key fails on backend
+        subject: fallbackSubject,
+        html: fallbackBody
       })
     });
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err.error || "Email failed");
+      throw new Error(err.error || "Email delivery failed");
     }
     return true;
   } catch (e) {
@@ -76,7 +55,7 @@ export const testSmtpConnection = async (testEmail: string) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      'Authorization': `Bearer ${token.replace(/"/g, '')}`
     },
     body: JSON.stringify({ to: testEmail })
   });

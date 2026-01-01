@@ -260,11 +260,32 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
-const restrictToSuperAdmin = (req: any, res: any, next: express.NextFunction) => {
-    if (req.user && (req.user.role === 'Super Admin' || req.user.role === 'SUPER_ADMIN')) {
-        next();
-    } else {
-        res.status(403).json({ error: "Super Admin privileges required" });
+// Global default templates (synchronized with frontend seeds)
+const DEFAULT_EMAIL_TEMPLATES: Record<string, { subject: string, bodyHtml: string, enabled: boolean }> = {
+    registration: { 
+        enabled: true, 
+        subject: "Verify your OpenStudbook account", 
+        bodyHtml: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;"><div style="background-color: #059669; padding: 32px 24px; text-align: center;"><h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1></div><div style="padding: 40px 32px; color: #1e293b;"><h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Welcome! Verify your account</h2><p style="font-size: 16px; line-height: 1.6; color: #475569;">To complete your registration for <strong>{{orgName}}</strong>, please use the following verification code:</p><div style="margin: 32px 0; padding: 24px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center;"><span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #065f46;">{{code}}</span></div><p style="font-size: 14px; color: #64748b;">This code will expire in 30 minutes. If you did not request this, please ignore this email.</p></div><div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;"><p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p></div></div>`
+    },
+    mfa: { 
+        enabled: true, 
+        subject: "Your OpenStudbook Security Code", 
+        bodyHtml: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;"><div style="background-color: #1e293b; padding: 32px 24px; text-align: center;"><h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1></div><div style="padding: 40px 32px; color: #1e293b;"><h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Security Code</h2><p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello, please use the following code to complete your secure sign-in:</p><div style="margin: 32px 0; padding: 24px; background-color: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; text-align: center;"><span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #1e293b;">{{code}}</span></div><p style="font-size: 14px; color: #64748b;">This code is valid for 10 minutes. Do not share this code with anyone.</p></div><div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;"><p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p></div></div>`
+    },
+    invite: { 
+        enabled: true, 
+        subject: "Invitation to join {{orgName}} on OpenStudbook", 
+        bodyHtml: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;"><div style="background-color: #059669; padding: 32px 24px; text-align: center;"><h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1></div><div style="padding: 40px 32px; color: #1e293b;"><h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">You've been invited!</h2><p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello <strong>{{userName}}</strong>,</p><p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>{{orgName}}</strong>.</p><div style="margin: 32px 0; text-align: center;"><a href="{{inviteUrl}}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block;">Accept Invitation</a></div><p style="font-size: 14px; color: #64748b;">This invitation expires in 7 days.</p></div><div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;"><p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p></div></div>`
+    },
+    notification: { 
+        enabled: true, 
+        subject: "New Notification from OpenStudbook", 
+        bodyHtml: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;"><div style="background-color: #059669; padding: 32px 24px; text-align: center;"><h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1></div><div style="padding: 40px 32px; color: #1e293b;"><h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">System Activity</h2><p style="font-size: 16px; line-height: 1.6; color: #475569;">{{message}}</p></div><div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;"><p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p></div></div>`
+    },
+    password_reset: { 
+        enabled: true, 
+        subject: "OpenStudbook Password Reset", 
+        bodyHtml: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;"><div style="background-color: #0f172a; padding: 32px 24px; text-align: center;"><h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1></div><div style="padding: 40px 32px; color: #1e293b;"><h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Password Reset</h2><p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello {{userName}}, please use the code below to reset your password:</p><div style="margin: 32px 0; padding: 24px; background-color: #f1f5f9; border-radius: 12px; text-align: center;"><span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #0f172a;">{{code}}</span></div><p style="font-size: 14px; color: #64748b;">If you did not request this, please ignore this email.</p></div><div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;"><p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p></div></div>`
     }
 };
 
@@ -274,8 +295,17 @@ const getGlobalConfig = async () => {
     const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings' LIMIT 1`);
     let s = rows?.[0]?.settings || {};
     if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { s = {}; } }
+    
+    // Ensure email templates exist and are merged with defaults
+    if (!s.emailTemplates) s.emailTemplates = {};
+    Object.keys(DEFAULT_EMAIL_TEMPLATES).forEach(key => {
+        if (!s.emailTemplates[key]) {
+            s.emailTemplates[key] = { ...DEFAULT_EMAIL_TEMPLATES[key] };
+        }
+    });
+
     return s;
-  } catch (e) { return {}; }
+  } catch (e) { return { emailTemplates: DEFAULT_EMAIL_TEMPLATES }; }
 };
 
 const getTransporter = (s: any) => {
@@ -292,6 +322,32 @@ const replacePlaceholders = (text: string, data: Record<string, string>) => {
   let res = text || "";
   Object.keys(data).forEach(key => { res = res.split(`{{${key}}}`).join(String(data[key])); });
   return res;
+};
+
+const sendFormattedEmail = async (to: string, templateKey: string, placeholders: Record<string, string>) => {
+    const settings = await getGlobalConfig();
+    const transporter = getTransporter(settings);
+    if (!transporter) {
+        console.error("CRITICAL: SMTP Not Configured. Email failed.");
+        throw new Error("SMTP Not Configured");
+    }
+
+    const template = settings.emailTemplates?.[templateKey] || DEFAULT_EMAIL_TEMPLATES[templateKey];
+    const dataWithYear = { ...placeholders, year: new Date().getFullYear().toString() };
+    
+    // Use template if enabled, otherwise fallback to global default definition
+    let subject = (template?.enabled && template.subject) ? template.subject : (DEFAULT_EMAIL_TEMPLATES[templateKey]?.subject || "");
+    let bodyHtml = (template?.enabled && template.bodyHtml) ? template.bodyHtml : (DEFAULT_EMAIL_TEMPLATES[templateKey]?.bodyHtml || "");
+
+    const finalSubject = replacePlaceholders(subject, dataWithYear);
+    const finalBody = replacePlaceholders(bodyHtml, dataWithYear);
+
+    return transporter.sendMail({
+        from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+        to,
+        subject: finalSubject,
+        html: finalBody
+    });
 };
 
 // --- PUBLIC ROUTES ---
@@ -322,17 +378,11 @@ app.post('/api/register', async (req: any, res: any) => {
             code,
             expires: Date.now() + 1800000
         });
-        const settings = await getGlobalConfig();
-        const transporter = getTransporter(settings);
-        if (transporter) {
-            try {
-                const template = settings.emailTemplates?.registration;
-                const placeholders = { orgName, code, userName, year: new Date().getFullYear().toString() };
-                const subject = (template?.enabled && template.subject) ? replacePlaceholders(template.subject, placeholders) : "Verify your OpenStudbook account";
-                const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : `<p>Your code for <strong>${orgName}</strong> is: <strong>${code}</strong></p>`;
-                await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
-            } catch (mailErr: any) { console.error("SMTP Failed", mailErr.message); }
-        }
+        
+        try {
+            await sendFormattedEmail(cleanEmail, 'registration', { orgName, code, userName });
+        } catch (mailErr: any) { console.error("SMTP Failed", mailErr.message); }
+
         res.json({ success: true, needsVerification: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -375,6 +425,36 @@ app.post('/api/login', async (req: any, res: any) => {
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// --- EMAIL ROUTE (Used by MFA and System Notifications) ---
+
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, subject, html, templateKey, placeholders } = req.body;
+    try {
+        if (templateKey) {
+            // Use unified template engine
+            await sendFormattedEmail(to, templateKey, placeholders || {});
+        } else {
+            // Raw send (Direct fallback)
+            const settings = await getGlobalConfig();
+            const transporter = getTransporter(settings);
+            if (!transporter) return res.status(500).json({ error: "SMTP not configured" });
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>',
+                to, subject, html
+            });
+        }
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const { to } = req.body;
+    try {
+        await sendFormattedEmail(to, 'notification', { message: "OpenStudbook SMTP Connection Test Successful!" });
+        res.json({ success: true, message: "Test email sent." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // --- PASSWORD RESET ---
 
 app.post('/api/auth/forgot-password', async (req: any, res: any) => {
@@ -386,28 +466,12 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
         if (users.length === 0) return res.status(404).json({ success: false, error: "Email not found." });
         
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        passwordResets.set(cleanEmail, {
-            code,
-            expires: Date.now() + 3600000 // 1 hour
-        });
+        passwordResets.set(cleanEmail, { code, expires: Date.now() + 3600000 });
         
-        const settings = await getGlobalConfig();
-        const transporter = getTransporter(settings);
-        if (transporter) {
-            const subject = "OpenStudbook Password Reset";
-            const bodyHtml = `
-                <div style="font-family: sans-serif; padding: 40px; color: #1e293b;">
-                    <h2 style="color: #0f172a;">Password Reset Requested</h2>
-                    <p>Hello ${users[0].name},</p>
-                    <p>You requested a password reset for your OpenStudbook account. Please use the following code to proceed:</p>
-                    <div style="margin: 24px 0; padding: 16px; background: #f1f5f9; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 4px; border-radius: 8px;">
-                        ${code}
-                    </div>
-                    <p style="font-size: 14px; color: #64748b;">This code will expire in 60 minutes. If you did not request this, please ignore this email.</p>
-                </div>
-            `;
-            await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
-        }
+        try {
+            await sendFormattedEmail(cleanEmail, 'password_reset', { code, userName: users[0].name });
+        } catch (mailErr: any) { console.error("Password reset mail failed", mailErr); }
+
         res.json({ success: true, message: "A recovery code has been sent to your email." });
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
 });
@@ -430,7 +494,7 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// --- USER INVITE & MANAGEMENT WORKFLOW ---
+// --- USER INVITE ---
 
 app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
     const { name, email, role, allowedProjectIds } = req.body;
@@ -438,9 +502,9 @@ app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
     const cleanEmail = email.toLowerCase().trim();
     const db = getDb();
     try {
-        if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized to invite users." });
+        if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized." });
         const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
-        if (existing.length > 0) return res.status(400).json({ error: "User with this email already exists." });
+        if (existing.length > 0) return res.status(400).json({ error: "User already exists." });
         
         const inviteToken = crypto.randomBytes(32).toString('hex');
         const inviteExpires = Date.now() + (7 * 24 * 60 * 60 * 1000); 
@@ -451,90 +515,42 @@ app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
         const [orgRows]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [adminOrgId]);
         const orgName = orgRows[0]?.name || 'Your Organization';
         
-        const settings = await getGlobalConfig();
-        const transporter = getTransporter(settings);
-        
-        if (transporter) {
-            const template = settings.emailTemplates?.invite;
-            const host = req.get('host');
-            const protocol = req.protocol;
-            const appHost = (host.includes(':3001')) ? host.replace(':3001', ':3000') : host;
-            const appUrl = process.env.APP_URL || `${protocol}://${appHost}`;
-            const inviteUrl = `${appUrl}/#/accept-invite?token=${inviteToken}`;
-            const placeholders = { orgName, userName: name, inviteUrl, year: new Date().getFullYear().toString() };
-            const subject = (template?.enabled && template.subject) ? replacePlaceholders(template.subject, placeholders) : `Invitation to join ${orgName} on OpenStudbook`;
-            
-            const fallbackBody = `
-              <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
-                <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
-                  <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
-                </div>
-                <div style="padding: 40px 32px; color: #1e293b;">
-                  <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">You've been invited!</h2>
-                  <p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello <strong>${name}</strong>,</p>
-                  <p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>${orgName}</strong>.</p>
-                  <div style="margin: 32px 0; text-align: center;">
-                    <a href="${inviteUrl}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">Accept Invitation</a>
-                  </div>
-                </div>
-              </div>
-            `;
-            const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : fallbackBody;
-            await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
-        }
+        const host = req.get('host');
+        const protocol = req.protocol;
+        const appHost = (host.includes(':3001')) ? host.replace(':3001', ':3000') : host;
+        const appUrl = process.env.APP_URL || `${protocol}://${appHost}`;
+        const inviteUrl = `${appUrl}/#/accept-invite?token=${inviteToken}`;
+
+        try {
+            await sendFormattedEmail(cleanEmail, 'invite', { orgName, userName: name, inviteUrl });
+        } catch (mailErr: any) { console.error("Invite mail failed", mailErr); }
+
         res.json({ success: true, message: "Invitation sent." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Granular Deletion Route with Role Checking & Emails
 app.delete('/api/users/:targetUserId', authenticate, async (req: any, res: any) => {
     const { targetUserId } = req.params;
     const requester = (req as any).user;
     const db = getDb();
-    
     try {
-        if (requester.role !== 'Admin' && requester.role !== 'Super Admin') {
-            return res.status(403).json({ error: "Unauthorized. Admin privileges required to delete users." });
-        }
-
+        if (requester.role !== 'Admin' && requester.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized." });
         const [userRows]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [targetUserId]);
         const userToDelete = userRows[0];
-
         if (!userToDelete) return res.status(404).json({ error: "User not found." });
+        if (requester.role !== 'Super Admin' && userToDelete.org_id !== requester.orgId) return res.status(403).json({ error: "Unauthorized." });
 
-        // Ensure Admin only deletes users in their own org
-        if (requester.role !== 'Super Admin' && userToDelete.org_id !== requester.orgId) {
-            return res.status(403).json({ error: "Unauthorized to delete users in other organisations." });
-        }
+        const isPending = userToDelete.status === 'Invited';
+        const message = isPending 
+            ? "Your invitation has been revoked." 
+            : "Your account has been disabled.";
 
-        const settings = await getGlobalConfig();
-        const transporter = getTransporter(settings);
-
-        if (transporter) {
-            const [orgRows]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [userToDelete.org_id]);
-            const orgName = orgRows[0]?.name || 'Your Organization';
-            
-            const isPending = userToDelete.status === 'Invited';
-            const subject = isPending ? "Invitation Revoked - OpenStudbook" : "Account Disabled - OpenStudbook";
-            
-            const messageBody = isPending 
-                ? `Your invitation to join <strong>${orgName}</strong> has been revoked by the organisation administrator.`
-                : `Your account at <strong>${orgName}</strong> has been disabled by the organisation administrator. You no longer have access to this system.`;
-
-            const bodyHtml = `
-              <div style="font-family: sans-serif; padding: 40px; color: #1e293b;">
-                <h2 style="color: #0f172a;">${subject}</h2>
-                <p>Hello ${userToDelete.name},</p>
-                <p>${messageBody}</p>
-                <p>If you believe this is an error, please contact your organisation lead.</p>
-              </div>
-            `;
-            
-            await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: userToDelete.email, subject, html: bodyHtml });
-        }
+        try {
+            await sendFormattedEmail(userToDelete.email, 'notification', { message });
+        } catch (mailErr: any) { console.warn("Delete notify failed", mailErr); }
 
         await db.execute(`DELETE FROM users WHERE id = ?`, [targetUserId]);
-        res.json({ success: true, message: "User removed and notified." });
+        res.json({ success: true, message: "User removed." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -544,7 +560,7 @@ app.post('/api/users/accept-invite', async (req: any, res: any) => {
     try {
         const [users]: any = await db.execute(`SELECT * FROM users WHERE invite_token = ? AND invite_expires > ?`, [token, Date.now()]);
         const user = users[0];
-        if (!user) return res.status(400).json({ error: "Invalid or expired invitation token." });
+        if (!user) return res.status(400).json({ error: "Invalid token." });
         const hashedPassword = await bcrypt.hash(password, 10);
         await db.execute(`UPDATE users SET status = 'Active', password = ?, invite_token = NULL, invite_expires = NULL WHERE id = ?`, [hashedPassword, user.id]);
         const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
@@ -568,7 +584,7 @@ app.post('/api/users/check-invite', async (req: any, res: any) => {
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const table = req.params.table;
     if (['app_config', 'languages'].includes(table) && req.user.role !== 'Super Admin' && req.user.role !== 'SUPER_ADMIN') {
-        return res.status(403).json({ error: "Global configuration restricted to Super Admins." });
+        return res.status(403).json({ error: "Forbidden." });
     }
 
     const data = Array.isArray(req.body) ? req.body : [req.body];
@@ -578,7 +594,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             if (item.password && !item.password.startsWith('$2')) {
                 item.password = await bcrypt.hash(String(item.password), 10);
             }
-            
             const keys = Object.keys(item);
             const vals = keys.map(k => {
                 const v = item[k];
@@ -586,28 +601,17 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
                 if (typeof v === 'object' && v !== null) return JSON.stringify(v);
                 return v ?? null;
             });
-
             const placeholders = keys.map(() => '?').join(', ');
             const primaryKeyCol = (table === 'languages') ? 'code' : 'id';
             const nonPkKeys = keys.filter(k => k !== primaryKeyCol);
-            
             const escapedTable = `\`${table}\``;
             const escapedKeys = keys.map(k => `\`${k}\``).join(', ');
-            
-            let updateClause = "";
-            if (nonPkKeys.length > 0) {
-                updateClause = "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
-            } else {
-                updateClause = `ON DUPLICATE KEY UPDATE \`${primaryKeyCol}\` = \`${primaryKeyCol}\``;
-            }
-            
+            let updateClause = nonPkKeys.length > 0 ? "ON DUPLICATE KEY UPDATE " + nonPkKeys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ') : `ON DUPLICATE KEY UPDATE \`${primaryKeyCol}\` = \`${primaryKeyCol}\``;
             const sql = `INSERT INTO ${escapedTable} (${escapedKeys}) VALUES (${placeholders}) ${updateClause}`;
-            try { await db.execute(sql, vals); } catch (innerError: any) { await db.query(sql, vals); }
+            await db.query(sql, vals);
         }
         res.json({ success: true });
-    } catch (e: any) { 
-        res.status(500).json({ error: e.message || "Database execution failed." }); 
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {

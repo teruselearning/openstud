@@ -124,9 +124,10 @@ export const getSystemSettings = (): SystemSettings => {
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
     emailTemplates: {
       registration: { enabled: true, subject: BASE_TRANSLATIONS.emailVerifySubject, bodyHtml: BASE_TRANSLATIONS.emailVerifyBody },
-      mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, // Reuse style
+      mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, 
       invite: { enabled: true, subject: BASE_TRANSLATIONS.emailInviteSubject, bodyHtml: BASE_TRANSLATIONS.emailInviteBody },
-      notification: { enabled: true, subject: BASE_TRANSLATIONS.emailNotifySubject, bodyHtml: BASE_TRANSLATIONS.emailNotifyBody }
+      notification: { enabled: true, subject: BASE_TRANSLATIONS.emailNotifySubject, bodyHtml: BASE_TRANSLATIONS.emailNotifyBody },
+      password_reset: { enabled: true, subject: "OpenStudbook Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody } // Default reset template
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
     aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management.</p>' },
@@ -307,7 +308,6 @@ export const saveNetworkPartners = (partners: ExternalPartner[]) => set(KEYS.PAR
 
 export const exportFullData = () => ({ org: getOrg(), projects: getProjects(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(), breedingEvents: getBreedingEvents(), breedingLoans: getBreedingLoans(), partnerships: getPartnerships(), settings: getSystemSettings(), languages: getLanguages() });
 
-// Fix: Implemented and exported the missing exportDataAsCSV function to fix the module export error referenced in OrgSettings.tsx.
 /**
  * Exports essential collection data as CSV
  */
@@ -490,7 +490,8 @@ export const trustDevice = (userId: string) => {
 };
 
 export const sendMfaCode = async (email: string, code: string) => {
-   await sendSystemEmail(email, 'mfa', { code, year: new Date().getFullYear().toString(), orgName: 'OpenStudbook' }, "Your Verification Code", `Code: ${code}`);
+   const org = getOrg();
+   await sendSystemEmail(email, 'mfa', { code, orgName: org.name || 'OpenStudbook' }, "Your Verification Code", `Code: ${code}`);
 };
 
 export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []);
