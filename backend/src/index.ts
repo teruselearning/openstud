@@ -51,6 +51,7 @@ const PORT = Number(process.env.PORT) || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-dev-secret-do-not-use-in-prod';
 
 const pendingRegistrations = new Map<string, { data: any, code: string, expires: number }>();
+const passwordResets = new Map<string, { code: string, expires: number }>();
 
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
@@ -372,6 +373,61 @@ app.post('/api/login', async (req: any, res: any) => {
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, orgId: user.org_id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user, organization: orgs[0] });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// --- PASSWORD RESET ---
+
+app.post('/api/auth/forgot-password', async (req: any, res: any) => {
+    const { email } = req.body;
+    const cleanEmail = email.toLowerCase().trim();
+    const db = getDb();
+    try {
+        const [users]: any = await db.execute(`SELECT name FROM users WHERE email = ?`, [cleanEmail]);
+        if (users.length === 0) return res.status(404).json({ success: false, error: "Email not found." });
+        
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        passwordResets.set(cleanEmail, {
+            code,
+            expires: Date.now() + 3600000 // 1 hour
+        });
+        
+        const settings = await getGlobalConfig();
+        const transporter = getTransporter(settings);
+        if (transporter) {
+            const subject = "OpenStudbook Password Reset";
+            const bodyHtml = `
+                <div style="font-family: sans-serif; padding: 40px; color: #1e293b;">
+                    <h2 style="color: #0f172a;">Password Reset Requested</h2>
+                    <p>Hello ${users[0].name},</p>
+                    <p>You requested a password reset for your OpenStudbook account. Please use the following code to proceed:</p>
+                    <div style="margin: 24px 0; padding: 16px; background: #f1f5f9; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 4px; border-radius: 8px;">
+                        ${code}
+                    </div>
+                    <p style="font-size: 14px; color: #64748b;">This code will expire in 60 minutes. If you did not request this, please ignore this email.</p>
+                </div>
+            `;
+            await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
+        }
+        res.json({ success: true, message: "A recovery code has been sent to your email." });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/auth/reset-password', async (req: any, res: any) => {
+    const { email, code, newPassword } = req.body;
+    const cleanEmail = email.toLowerCase().trim();
+    const resetData = passwordResets.get(cleanEmail);
+    const db = getDb();
+    
+    if (!resetData || resetData.code !== code || resetData.expires < Date.now()) {
+        return res.status(400).json({ success: false, error: "Invalid or expired reset code." });
+    }
+    
+    try {
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.execute(`UPDATE users SET password = ? WHERE email = ?`, [hashedPassword, cleanEmail]);
+        passwordResets.delete(cleanEmail);
+        res.json({ success: true, message: "Password updated successfully." });
+    } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // --- USER INVITE & MANAGEMENT WORKFLOW ---
