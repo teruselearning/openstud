@@ -2,21 +2,13 @@
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig, Enclosure } from '../types';
 import { getOrg } from './storage'; 
 
-// Using relative paths to leverage the Vite proxy (defined in vite.config.ts)
 const API_BASE_URL = '';
 
-// Helper for Fetch Wrapper with Retry
 const apiRequest = async (endpoint: string, method: string, body?: any, retries = 3, backoff = 300) => {
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    // Include the auth token if available
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const token = localStorage.getItem('os_token');
-    if (token) {
-      headers['Authorization'] = `Bearer ${token.replace(/"/g, '')}`;
-    }
+    if (token) headers['Authorization'] = `Bearer ${token.replace(/"/g, '')}`;
 
     const config: RequestInit = {
       method,
@@ -30,38 +22,25 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
        const text = await response.text();
-       console.error(`Non-JSON Response from ${endpoint}:`, text.substring(0, 500));
        throw new Error(`Server Error: The backend returned an unexpected response (${response.status}).`);
     }
 
     const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'API Request Failed');
-    }
+    if (!response.ok) throw new Error(data.error || 'API Request Failed');
     return data;
   } catch (error: any) {
     if (retries > 0 && (error.message.includes('Failed to fetch') || error.message.includes('Network request failed'))) {
        await new Promise(resolve => setTimeout(resolve, backoff));
        return apiRequest(endpoint, method, body, retries - 1, backoff * 2);
     }
-    if (method === 'GET') {
-       console.warn(`API Sync Skipped [${method} ${endpoint}]: Backend unavailable.`);
-       return { success: false, message: error.message };
-    }
     throw error;
   }
 };
 
-// Helper to safely parse JSON columns which might be strings or objects depending on driver/env
 const safeParse = (data: any, fallback: any = {}) => {
   if (!data) return fallback;
   if (typeof data === 'object' && data !== null) return data;
-  try {
-    return JSON.parse(data.toString());
-  } catch (e) {
-    return fallback;
-  }
+  try { return JSON.parse(data.toString()); } catch (e) { return fallback; }
 };
 
 // --- Mappers ---
@@ -87,127 +66,20 @@ const fromDbOrg = (o: any): Organization => ({
   deleted: !!o.is_deleted 
 });
 
-const fromDbProject = (p: any): Project => ({ 
-  id: p.id, 
-  name: p.name, 
-  description: p.description, 
-  orgId: p.org_id 
-});
-
-const fromDbUser = (u: any): User => ({ 
-  id: u.id, 
-  orgId: u.org_id || u.orgId, 
-  name: u.name, 
-  email: u.email, 
-  role: u.role, 
-  status: u.status, 
-  avatarUrl: u.avatar_url, 
-  allowedProjectIds: safeParse(u.allowed_project_ids, []) 
-});
-
-const fromDbSpecies = (s: any): Species => ({ 
-  id: s.id, 
-  projectId: s.project_id, 
-  commonName: s.common_name, 
-  scientificName: s.scientific_name, 
-  type: s.type, 
-  plantClassification: s.plant_classification, 
-  conservationStatus: s.conservation_status, 
-  sexualMaturityAgeYears: s.sexual_maturity_age_years, 
-  averageAdultWeightKg: s.average_adult_weight_kg, 
-  lifeExpectancyYears: s.life_expectancy_years, 
-  breedingSeasonStart: s.breeding_season_start, 
-  breedingSeasonEnd: s.breeding_season_end, 
-  imageUrl: s.image_url, 
-  nativeStatusCountry: s.native_status_country, 
-  nativeStatusLocal: s.native_status_local 
-});
+const fromDbProject = (p: any): Project => ({ id: p.id, name: p.name, description: p.description, orgId: p.org_id });
+const fromDbUser = (u: any): User => ({ id: u.id, orgId: u.org_id, name: u.name, email: u.email, role: u.role, status: u.status, avatarUrl: u.avatar_url, allowedProjectIds: safeParse(u.allowed_project_ids, []) });
+const fromDbSpecies = (s: any): Species => ({ id: s.id, projectId: s.project_id, commonName: s.common_name, scientificName: s.scientific_name, type: s.type, plantClassification: s.plant_classification, conservationStatus: s.conservation_status, sexualMaturityAgeYears: s.sexual_maturity_age_years, averageAdultWeightKg: s.average_adult_weight_kg, lifeExpectancyYears: s.life_expectancy_years, breedingSeasonStart: s.breeding_season_start, breedingSeasonEnd: s.breeding_season_end, imageUrl: s.image_url, nativeStatusCountry: s.native_status_country, nativeStatusLocal: s.native_status_local });
 
 const fromDbInd = (i: any): Individual => ({ 
-  id: i.id, 
-  projectId: i.project_id, 
-  speciesId: i.species_id, 
-  enclosureId: i.enclosure_id,
-  studbookId: i.studbook_id, 
-  name: i.name, 
-  sex: i.sex, 
-  birthDate: i.birth_date, 
-  weightKg: i.weight_kg, 
-  sireId: i.sire_id, 
-  damId: i.dam_id, 
-  imageUrl: i.image_url, 
-  dnaSequence: i.dna_sequence, 
-  notes: i.notes, 
-  source: i.source, 
-  sourceDetails: i.source_details, 
-  latitude: i.latitude, 
-  longitude: i.longitude, 
-  isDeceased: !!i.is_deceased, 
-  deathDate: i.death_date, 
-  loanStatus: i.loan_status, 
-  transferredToOrgId: i.transferred_to_org_id, 
-  transferDate: i.transfer_date, 
-  transferNote: i.transfer_note, 
-  weightHistory: safeParse(i.weight_history, []), 
-  growthHistory: safeParse(i.growth_history, []), 
-  healthHistory: safeParse(i.health_history, []) 
+  id: i.id, projectId: i.project_id, speciesId: i.species_id, enclosureId: i.enclosure_id, studbookId: i.studbook_id, name: i.name, sex: i.sex, birthDate: i.birth_date, weightKg: i.weight_kg, sireId: i.sire_id, damId: i.dam_id, imageUrl: i.image_url, dnaSequence: i.dna_sequence, notes: i.notes, source: i.source, sourceDetails: i.source_details, latitude: i.latitude, longitude: i.longitude, isDeceased: !!i.is_deceased, deathDate: i.death_date, loanStatus: i.loan_status, transferredToOrgId: i.transferred_to_org_id, transferDate: i.transfer_date, transferNote: i.transfer_note, weightHistory: safeParse(i.weight_history, []), growthHistory: safeParse(i.growth_history, []), healthHistory: safeParse(i.health_history, []) 
 });
 
-const fromDbEnclosure = (e: any): Enclosure => ({
-  id: e.id,
-  orgId: e.org_id,
-  name: e.name,
-  description: e.description,
-  latitude: e.latitude,
-  longitude: e.longitude,
-  speciesIds: safeParse(e.species_ids, [])
-});
+const fromDbEnclosure = (e: any): Enclosure => ({ id: e.id, orgId: e.org_id, name: e.name, description: e.description, latitude: e.latitude, longitude: e.longitude, speciesIds: safeParse(e.species_ids, []) });
+const fromDbEvent = (e: any): BreedingEvent => ({ id: e.id, speciesId: e.species_id, sireId: e.sire_id || '', damId: e.dam_id || '', date: e.date, offspringCount: e.offspring_count, successfulBirths: e.successful_births, losses: e.losses, notes: e.notes, offspringIds: safeParse(e.offspring_ids, []) });
+const fromDbLoan = (l: any): BreedingLoan => ({ id: l.id, partnerOrgId: l.partner_org_id, proposerOrgId: l.proposer_org_id, role: l.role, startDate: l.start_date, endDate: l.end_date, status: l.status, individualIds: safeParse(l.individual_ids, []), terms: l.terms, notificationRecipientId: l.notification_recipient_id, changeRequest: safeParse(l.change_request, null) });
+const fromDbPartnership = (p: any): Partnership => ({ id: p.id, orgId1: p.org_id_1, orgId2: p.org_id_2, status: p.status, establishedDate: p.established_date });
+const fromDbLanguage = (l: any): LanguageConfig => ({ code: l.code, name: l.name, translations: safeParse(l.translations, {}), isDefault: !!l.is_default, manualOverrides: safeParse(l.manual_overrides, []), deleted: !!l.is_deleted });
 
-const fromDbEvent = (e: any): BreedingEvent => ({ 
-  id: e.id, 
-  speciesId: e.species_id, 
-  sireId: e.sire_id || '', 
-  damId: e.dam_id || '', 
-  date: e.date, 
-  offspringCount: e.offspring_count, 
-  successfulBirths: e.successful_births, 
-  losses: e.losses, 
-  notes: e.notes, 
-  offspringIds: safeParse(e.offspring_ids, []) 
-});
-
-const fromDbLoan = (l: any): BreedingLoan => ({ 
-  id: l.id, 
-  partnerOrgId: l.partner_org_id, 
-  proposerOrgId: l.proposer_org_id, 
-  role: l.role, 
-  startDate: l.start_date, 
-  endDate: l.end_date, 
-  status: l.status, 
-  individualIds: safeParse(l.individual_ids, []), 
-  terms: l.terms, 
-  notificationRecipientId: l.notification_recipient_id, 
-  changeRequest: safeParse(l.change_request, null) 
-});
-
-const fromDbPartnership = (p: any): Partnership => ({ 
-  id: p.id, 
-  orgId1: p.org_id_1, 
-  orgId2: p.org_id_2, 
-  status: p.status, 
-  establishedDate: p.established_date 
-});
-
-const fromDbLanguage = (l: any): LanguageConfig => ({ 
-  code: l.code, 
-  name: l.name, 
-  translations: safeParse(l.translations, {}), 
-  isDefault: !!l.is_default, 
-  manualOverrides: safeParse(l.manual_overrides, []), 
-  deleted: !!l.is_deleted 
-});
-
-// Helper to sanitize numeric values (preventing NaN breaking JSON stringify)
 const sanitizeNum = (val: any, fallback: any = 0) => {
     if (val === null || val === undefined) return fallback;
     const n = Number(val);
@@ -217,96 +89,15 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
 export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
-
-export const mapSpeciesToDb = (s: Species) => ({ 
-  id: s.id, 
-  project_id: s.projectId, 
-  common_name: s.commonName, 
-  scientific_name: s.scientificName, 
-  type: s.type, 
-  plant_classification: s.plantClassification || null, 
-  // Fix: changed s.conservation_status to s.conservationStatus
-  conservation_status: s.conservationStatus, 
-  sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), 
-  average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), 
-  life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), 
-  breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), 
-  breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), 
-  image_url: s.imageUrl || null, 
-  native_status_country: s.nativeStatusCountry || null, 
-  native_status_local: s.nativeStatusLocal || null 
-});
+export const mapSpeciesToDb = (s: Species) => ({ id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, plant_classification: s.plantClassification || null, conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null });
 
 export const mapIndToDb = (i: Individual) => ({ 
-  id: i.id, 
-  project_id: i.projectId, 
-  species_id: i.speciesId, 
-  enclosure_id: i.enclosureId || null,
-  studbook_id: i.studbookId, 
-  name: i.name, 
-  sex: i.sex, 
-  birth_date: i.birthDate || null, 
-  weight_kg: sanitizeNum(i.weightKg), 
-  sire_id: i.sireId || null, 
-  dam_id: i.damId || null, 
-  image_url: i.imageUrl || null, 
-  dna_sequence: i.dnaSequence || null, 
-  notes: i.notes || null, 
-  source: i.source || null, 
-  source_details: i.sourceDetails || null, 
-  latitude: i.latitude ?? null, 
-  longitude: i.longitude ?? null, 
-  is_deceased: i.isDeceased ?? false, 
-  // Fix: changed i.death_date to i.deathDate
-  death_date: i.deathDate || null, 
-  loan_status: i.loanStatus || null, 
-  transferred_to_org_id: i.transferredToOrgId || null, 
-  transfer_date: i.transferDate || null, 
-  transfer_note: i.transferNote || null, 
-  weight_history: i.weightHistory || [], 
-  growth_history: i.growthHistory || [], 
-  health_history: i.healthHistory || [] 
+  id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dnaSequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, loan_status: i.loanStatus || null, transferred_to_org_id: i.transferredToOrgId || null, transfer_date: i.transferDate || null, transfer_note: i.transferNote || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] 
 });
 
-export const mapEnclosureToDb = (e: Enclosure) => ({
-  id: e.id,
-  org_id: e.orgId,
-  name: e.name,
-  description: e.description || null,
-  latitude: e.latitude ?? null,
-  longitude: e.longitude ?? null,
-  species_ids: e.speciesIds || []
-});
-
-export const mapEventToDb = (e: BreedingEvent) => ({ 
-  id: e.id, 
-  species_id: e.speciesId, 
-  // Fix: changed e.sire_id/e.dam_id to e.sireId/e.damId
-  sire_id: e.sireId || null, 
-  dam_id: e.damId || null, 
-  date: e.date, 
-  offspring_count: sanitizeNum(e.offspringCount), 
-  successful_births: sanitizeNum(e.successfulBirths), 
-  losses: sanitizeNum(e.losses), 
-  notes: e.notes, 
-  offspring_ids: e.offspringIds || [] 
-});
-
-// Fix: mapLoanToDb property names from camelCase to snake_case for DB mapping
-export const mapLoanToDb = (l: BreedingLoan) => ({ 
-  id: l.id, 
-  partner_org_id: l.partnerOrgId, 
-  proposer_org_id: l.proposerOrgId, 
-  role: l.role, 
-  start_date: l.startDate, 
-  end_date: l.endDate || null, 
-  status: l.status, 
-  individual_ids: l.individualIds || [], 
-  terms: l.terms, 
-  notification_recipient_id: l.notificationRecipientId || null, 
-  change_request: l.changeRequest || null 
-});
-
+export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.orgId, name: e.name, description: e.description || null, latitude: e.latitude ?? null, longitude: e.longitude ?? null, species_ids: e.speciesIds || [] });
+export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
+export const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
 export const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });
 export const mapLanguageToDb = (l: LanguageConfig) => ({ code: l.code, name: l.name, translations: l.translations || {}, is_default: !!l.isDefault, manual_overrides: l.manualOverrides || [], is_deleted: !!l.deleted });
 
@@ -324,14 +115,8 @@ export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest(
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(mapEventToDb));
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(mapLoanToDb));
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(mapPartnershipToDb));
-
-export const syncPushSettings = async (settings: SystemSettings) => {
-    const cleanSettings = { ...settings, smtpPort: sanitizeNum(settings.smtpPort, 587) };
-    return apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings: cleanSettings });
-};
-
+export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });
 export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(mapLanguageToDb));
-
 export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/languages?code=${code}`, 'PATCH');
 export const syncDeleteOrganization = async (orgId: string) => apiRequest(`/rest/v1/organizations?id=${orgId}`, 'PATCH');
 export const syncPermanentDeleteOrganization = async (orgId: string) => apiRequest(`/api/super-admin/organizations/${orgId}`, 'DELETE');
@@ -345,18 +130,13 @@ export const fetchPublicConfig = async () => {
          return { success: true, settings: res.data.settings, languages: (res.data.languages || []).map(fromDbLanguage) };
       }
       return { success: false };
-   } catch (e) {
-      console.warn("Public config fetch failed.");
-      return { success: false };
-   }
+   } catch (e) { return { success: false }; }
 };
 
-// GET METHOD WITH TRANSFORMATION
 export const fetchRemoteData = async () => {
   try {
     const response = await apiRequest('/api/sync', 'GET');
     const raw = response.success ? response.data : response;
-    
     const results = {
        org: raw.org ? fromDbOrg(raw.org) : null,
        partners: (raw.partners || []).map(fromDbOrg),
@@ -371,15 +151,10 @@ export const fetchRemoteData = async () => {
        languages: (raw.languages || []).map(fromDbLanguage),
        settings: raw.settings
     };
-
     const localOrg = getOrg();
     let myOrgData = results.org;
-    if (!myOrgData && results.partners && localOrg.id) {
-       myOrgData = results.partners.find((p: any) => p.id === localOrg.id);
-    }
-    
+    if (!myOrgData && results.partners && localOrg.id) myOrgData = results.partners.find((p: any) => p.id === localOrg.id);
     const finalPartners = (results.partners || []).filter((p: any) => p.id !== (myOrgData?.id || localOrg.id));
-    
     return { success: true, data: { ...results, org: myOrgData, partners: finalPartners } };
   } catch (error: any) {
     console.error("Sync Pull Failed:", error);

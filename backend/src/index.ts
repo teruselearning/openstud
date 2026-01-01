@@ -9,7 +9,6 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import crypto from 'crypto';
-// Import process explicitly to resolve typing issues in some environments
 import process from 'process';
 
 declare const __dirname: string;
@@ -25,7 +24,7 @@ dotenv.config();
   console.error('CRITICAL ERROR (Unhandled Rejection):', reason);
 });
 
-// Database Connection
+// Database Connection Configuration
 const dbConfig = {
   host: process.env.DATABASE_HOST || 'localhost',
   user: process.env.DATABASE_USER || 'root',
@@ -59,6 +58,20 @@ app.use(morgan('dev'));
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
+    // Initial attempt to create the database if it doesn't exist
+    try {
+        const connection = await mysql.createConnection({
+            host: dbConfig.host,
+            user: dbConfig.user,
+            password: dbConfig.password,
+            port: dbConfig.port
+        });
+        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
+        await connection.end();
+    } catch (e) {
+        console.warn("Could not ensure database existence, proceeding assuming it exists or connection fails later.");
+    }
+
     const db = getDb();
     try {
         await db.query('SELECT 1');
@@ -90,12 +103,10 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migrations helper for columns
         const ensureColumn = async (table: string, column: string, definition: string) => {
            try {
               const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
               if (rows.length === 0) {
-                 console.log(`Migrating: Adding column ${column} to ${table}`);
                  await db.execute(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
               }
            } catch (e) { console.warn(`Migration check failed for ${table}.${column}`); }
@@ -134,9 +145,6 @@ const initDatabase = async () => {
                 CONSTRAINT fk_user_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
-
-        await ensureColumn('users', 'invite_token', 'VARCHAR(255)');
-        await ensureColumn('users', 'invite_expires', 'BIGINT');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS projects (
@@ -203,8 +211,6 @@ const initDatabase = async () => {
             )
         `);
 
-        await ensureColumn('individuals', 'enclosure_id', 'VARCHAR(255)');
-
         await db.execute(`
             CREATE TABLE IF NOT EXISTS breeding_events (
                 id VARCHAR(255) PRIMARY KEY,
@@ -265,9 +271,6 @@ const initDatabase = async () => {
             )
         `);
 
-        await ensureColumn('languages', 'manual_overrides', 'JSON');
-        await ensureColumn('languages', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
-
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
         console.log("Database schema synchronized.");
     } catch (e: any) {
@@ -298,8 +301,6 @@ app.post('/api/login', async (req: any, res: any) => {
         const user = rows[0];
         if (!user) return res.status(401).json({ error: "User not found" });
 
-        // In this simple implementation, we allow common passwords if not hashed, 
-        // or check against bcrypt if hashed.
         const isMatch = user.password === password || (user.password && await bcrypt.compare(password, user.password));
         if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
 
@@ -311,19 +312,22 @@ app.post('/api/login', async (req: any, res: any) => {
 });
 
 // --- GENERIC UPSERT REST ROUTES ---
-// This handles the calls from syncService.ts during performSync in App.tsx
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const db = getDb();
     const data = Array.isArray(req.body) ? req.body : [req.body];
     
-    if (data.length === 0) return res.json({ success: true, message: "No data to upsert" });
+    if (data.length === 0) return res.json({ success: true });
 
     try {
         for (const item of data) {
             const keys = Object.keys(item);
-            const values = Object.values(item).map(v => {
+            if (keys.length === 0) continue;
+
+            const values = keys.map(k => {
+                const v = item[k];
+                if (v === undefined) return null;
                 if (v !== null && typeof v === 'object') return JSON.stringify(v);
                 return v;
             });
@@ -344,7 +348,6 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     }
 });
 
-// Patch for soft deletes or simple updates
 app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const db = getDb();
@@ -356,22 +359,57 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 
     try {
         if (Object.keys(updates).length === 0) {
-            // If no updates provided, assume it's a soft delete via query params if present
-            const softDeleteField = table === 'organizations' || table === 'languages' ? 'is_deleted' : null;
+            const softDeleteField = (table === 'organizations' || table === 'languages') ? (table === 'languages' ? 'is_deleted' : 'is_deleted') : null;
             if (softDeleteField) {
                 await db.execute(`UPDATE \`${table}\` SET \`${softDeleteField}\` = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
                 return res.json({ success: true });
             }
+            return res.status(400).json({ error: "No updates provided" });
         }
 
         const keys = Object.keys(updates);
-        const values = Object.values(updates).map(v => {
+        const values = keys.map(k => {
+            const v = updates[k];
+            if (v === undefined) return null;
             if (v !== null && typeof v === 'object') return JSON.stringify(v);
             return v;
         });
         const setClause = keys.map(k => `\`${k}\` = ?`).join(', ');
         
         await db.execute(`UPDATE \`${table}\` SET ${setClause} WHERE \`${pkField}\` = ?`, [...values, pkValue]);
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// --- SUPER ADMIN ROUTES ---
+
+app.post('/api/super-admin/organizations', authenticate, async (req: any, res: any) => {
+    if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
+    const { orgName, adminName, adminEmail, focus, location } = req.body;
+    const db = getDb();
+    try {
+        const orgId = `org-${Date.now()}`;
+        const userId = `u-${Date.now()}`;
+        const tempPassword = Math.random().toString(36).substring(2, 10);
+        const hashedPass = await bcrypt.hash(tempPassword, 10);
+
+        await db.execute(
+            'INSERT INTO organizations (id, name, focus, location, founded_year, is_org_public, is_species_public) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [orgId, orgName, focus, location, new Date().getFullYear(), true, true]
+        );
+        await db.execute(
+            'INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [userId, orgId, adminName, adminEmail, 'Admin', 'Active', hashedPass]
+        );
+        res.json({ success: true, tempPassword });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/super-admin/organizations/:id', authenticate, async (req: any, res: any) => {
+    if (req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized" });
+    const db = getDb();
+    try {
+        await db.execute('DELETE FROM organizations WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -391,7 +429,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
          ? await db.execute(`SELECT * FROM enclosures`) 
          : await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
 
-      // Super Admin gets all data, others get filtered
       const [projects]: any = isSuper 
          ? await db.execute(`SELECT * FROM projects`) 
          : await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
@@ -423,13 +460,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
       
-      // Discovery Species: Unique public species metadata for network browsing
-      const [discoverySpecies]: any = await db.execute(`
-         SELECT DISTINCT scientific_name, common_name, type, image_url, conservation_status 
-         FROM species 
-         WHERE project_id IN (SELECT id FROM projects WHERE org_id IN (SELECT id FROM organizations WHERE is_species_public = 1))
-      `);
-
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
       
@@ -445,15 +475,19 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
          breedingLoans: loans, 
          partnerships, 
          languages: langs, 
-         settings,
-         discoverySpecies
+         settings
       } });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
 
-// Serving the React app
+// Final Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled Middleware Error:", err);
+    res.status(500).json({ error: err.message || "Internal Server Error" });
+});
+
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
    if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Not Found" });
