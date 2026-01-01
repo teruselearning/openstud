@@ -55,7 +55,6 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
 // Helper to safely parse JSON columns which might be strings or objects depending on driver/env
 const safeParse = (data: any, fallback: any = {}) => {
   if (!data) return fallback;
-  // Fix: Removed reference to 'Buffer' which is not available in the browser environment
   if (typeof data === 'object' && data !== null) return data;
   try {
     return JSON.parse(data.toString());
@@ -144,7 +143,6 @@ const fromDbInd = (i: any): Individual => ({
   deathDate: i.death_date, 
   loanStatus: i.loan_status, 
   transferredToOrgId: i.transferred_to_org_id, 
-  // Fix: Map transfer_date to transferDate correctly
   transferDate: i.transfer_date, 
   transferNote: i.transfer_note, 
   weightHistory: safeParse(i.weight_history, []), 
@@ -152,11 +150,12 @@ const fromDbInd = (i: any): Individual => ({
   healthHistory: safeParse(i.health_history, []) 
 });
 
+// Corrected fromDbEvent to map correctly to BreedingEvent interface
 const fromDbEvent = (e: any): BreedingEvent => ({ 
   id: e.id, 
-  species_id: e.speciesId, 
-  sire_id: e.sireId || null, 
-  dam_id: e.damId || null, 
+  speciesId: e.species_id, 
+  sireId: e.sire_id || '', 
+  damId: e.dam_id || '', 
   date: e.date, 
   offspringCount: e.offspring_count, 
   successfulBirths: e.successful_births, 
@@ -207,7 +206,7 @@ export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, locati
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
 
-// Fix: mapSpeciesToDb corrected property scientificName from scientific_name
+// Corrected mapSpeciesToDb property scientific_name
 export const mapSpeciesToDb = (s: Species) => ({ 
   id: s.id, 
   project_id: s.projectId, 

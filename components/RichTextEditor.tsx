@@ -52,6 +52,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     });
 
     quillRef.current = quill;
+
+    // Proper Cleanup for Quill instance
+    return () => {
+       if (quillRef.current) {
+          // Quill doesn't have a built-in destroy() in 1.3.6, but we can clear the internal refs
+          // to prevent MutationObserver issues. 
+          quillRef.current = null;
+       }
+    };
   }, []);
 
   // Sync value from props when it changes externally

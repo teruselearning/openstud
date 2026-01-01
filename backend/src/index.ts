@@ -689,20 +689,47 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
    const db = getDb();
    const orgId = (req as any).user.orgId;
+   const isSuper = req.user.role === 'Super Admin';
+   
    try {
       const [allOrgs]: any = await db.execute(`SELECT * FROM organizations WHERE is_deleted = 0`);
       const [myOrgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? LIMIT 1`, [orgId]);
-      const [projects]: any = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
-      const [users]: any = await db.execute(`SELECT * FROM users WHERE org_id = ?`, [orgId]);
-      const [species]: any = await db.execute(`SELECT * FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
-      const [individuals]: any = await db.execute(`SELECT * FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
-      const [events]: any = await db.execute(`SELECT * FROM breeding_events WHERE species_id IN (SELECT id FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?))`, [orgId]);
-      const [loans]: any = await db.execute(`SELECT * FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
-      const [partnerships]: any = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
+      
+      // Super Admin gets all data, others get filtered
+      const [projects]: any = isSuper 
+         ? await db.execute(`SELECT * FROM projects`) 
+         : await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
+         
+      const [users]: any = isSuper 
+         ? await db.execute(`SELECT * FROM users`) 
+         : await db.execute(`SELECT * FROM users WHERE org_id = ?`, [orgId]);
+         
+      const [species]: any = isSuper 
+         ? await db.execute(`SELECT * FROM species`) 
+         : await db.execute(`SELECT * FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+         
+      const [individuals]: any = isSuper 
+         ? await db.execute(`SELECT * FROM individuals`) 
+         : await db.execute(`SELECT * FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+         
+      const [events]: any = isSuper 
+         ? await db.execute(`SELECT * FROM breeding_events`) 
+         : await db.execute(`SELECT * FROM breeding_events WHERE species_id IN (SELECT id FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?))`, [orgId]);
+         
+      const [loans]: any = isSuper 
+         ? await db.execute(`SELECT * FROM breeding_loans`) 
+         : await db.execute(`SELECT * FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
+         
+      const [partnerships]: any = isSuper 
+         ? await db.execute(`SELECT * FROM partnerships`) 
+         : await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
+         
       const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
       const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+      
       let settings = config[0]?.settings;
       if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
+      
       res.json({ success: true, data: { org: myOrgRows[0] || null, partners: allOrgs, projects, users, species, individuals, breedingEvents: events, breedingLoans: loans, partnerships, languages: langs, settings } });
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

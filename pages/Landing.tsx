@@ -23,6 +23,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const [locationStatus, setLocationStatus] = useState<'idle' | 'detecting' | 'ready'>('idle');
   const [isLangOpen, setIsLangOpen] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<any>(null);
   
   // Accept Invite State
   const [inviteToken, setInviteToken] = useState('');
@@ -106,18 +107,40 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const recaptchaRef = useRef<HTMLDivElement>(null);
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
 
+  // Robust ReCAPTCHA render and cleanup to fix MutationObserver error
   useEffect(() => {
-    if ((viewMode === 'login' || viewMode === 'register') && settings.recaptchaSiteKey && (window as any).grecaptcha) {
-      if (recaptchaRef.current) recaptchaRef.current.innerHTML = '';
-      try {
-        (window as any).grecaptcha.render(recaptchaRef.current, {
-          'sitekey': settings.recaptchaSiteKey,
-          'callback': (token: string) => setRecaptchaToken(token),
-          'expired-callback': () => setRecaptchaToken(null)
-        });
-      } catch (e) { console.warn('ReCAPTCHA failed to render.'); }
+    let active = true;
+    if ((viewMode === 'login' || viewMode === 'register') && settings.recaptchaSiteKey) {
+      const renderCaptcha = () => {
+        if (!active || !recaptchaRef.current || !(window as any).grecaptcha) return;
+        
+        try {
+          if (recaptchaRef.current.children.length === 0) {
+             widgetIdRef.current = (window as any).grecaptcha.render(recaptchaRef.current, {
+               'sitekey': settings.recaptchaSiteKey,
+               'callback': (token: string) => { if(active) setRecaptchaToken(token); },
+               'expired-callback': () => { if(active) setRecaptchaToken(null); }
+             });
+          }
+        } catch (e) {
+          console.warn('ReCAPTCHA initialization bypassed or failed.');
+        }
+      };
+
+      if ((window as any).grecaptcha && (window as any).grecaptcha.render) {
+        renderCaptcha();
+      } else {
+        // Retry if script isn't quite ready
+        setTimeout(renderCaptcha, 1000);
+      }
     }
-    setRecaptchaToken(null);
+
+    return () => {
+      active = false;
+      setRecaptchaToken(null);
+      // Note: ReCAPTCHA doesn't officially support explicit cleanup of a single widget easily 
+      // without affecting the global state, so we rely on DOM isolation.
+    };
   }, [viewMode, settings.recaptchaSiteKey]);
 
   useEffect(() => {

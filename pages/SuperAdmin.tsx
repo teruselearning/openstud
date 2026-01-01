@@ -1,6 +1,6 @@
 
 import { useContext, useState, useEffect, useMemo } from 'react';
-import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies } from '../services/storage';
+import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
 import { translateDictionary } from '../services/geminiService';
 import { 
@@ -11,7 +11,7 @@ import {
   ChevronDown, ChevronRight, Dna, Users, Activity, Leaf
 } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner } from '../types';
+import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner, Project, Individual, Species } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 import React from 'react';
@@ -24,7 +24,9 @@ const SuperAdmin: React.FC = () => {
   
   const [partners, setPartners] = useState<ExternalPartner[]>([]);
   const [myOrg, setMyOrg] = useState<Organization | null>(null);
-  const [allSpecies, setAllSpecies] = useState<any[]>([]);
+  const [allSpecies, setAllSpecies] = useState<Species[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [allIndividuals, setAllIndividuals] = useState<Individual[]>([]);
   const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
@@ -70,6 +72,8 @@ const SuperAdmin: React.FC = () => {
     setPartners(getNetworkPartners());
     setMyOrg(getOrg());
     setAllSpecies(getSpecies());
+    setAllProjects(getProjects());
+    setAllIndividuals(getIndividuals());
     
     const initialTpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
     if (initialTpl) {
@@ -343,9 +347,12 @@ const SuperAdmin: React.FC = () => {
                      <tbody className="divide-y divide-slate-100">
                         {allOrganizations.map(org => {
                            const isExpanded = expandedOrgId === org.id;
-                           // Safely check for external partner properties
-                           const extPartner = org as ExternalPartner;
-                           const hasSpecies = extPartner.speciesIds && extPartner.speciesIds.length > 0;
+                           
+                           // Dynamic Species Calculation for System Admins
+                           const orgProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === org.id);
+                           const orgProjectIds = orgProjects.map(p => p.id);
+                           const orgSpecies = allSpecies.filter(s => orgProjectIds.includes(s.projectId));
+                           const hasSpeciesData = orgSpecies.length > 0;
                            
                            return (
                              <React.Fragment key={org.id}>
@@ -404,18 +411,21 @@ const SuperAdmin: React.FC = () => {
                                                         <h4 className="font-bold text-sm uppercase tracking-widest">{t('speciesSummary')}</h4>
                                                      </div>
                                                      <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                                                        {extPartner.speciesIds?.length || 0} {t('managedSpecies')}
+                                                        {orgSpecies.length} {t('managedSpecies')}
                                                      </span>
                                                   </div>
                                                   
-                                                  {hasSpecies ? (
+                                                  {hasSpeciesData ? (
                                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                        {extPartner.speciesIds.map(sid => {
-                                                           const sp = allSpecies.find(s => s.id === sid);
-                                                           const counts = extPartner.populationCounts?.[sid] || "0.0.0";
-                                                           if (!sp) return null;
+                                                        {orgSpecies.map(sp => {
+                                                           const pop = allIndividuals.filter(i => i.speciesId === sp.id && !i.isDeceased);
+                                                           const m = pop.filter(i => i.sex === 'Male').length;
+                                                           const f = pop.filter(i => i.sex === 'Female').length;
+                                                           const u = pop.filter(i => i.sex === 'Unknown').length;
+                                                           const counts = `${m}.${f}.${u}`;
+                                                           
                                                            return (
-                                                              <div key={sid} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-white hover:border-purple-200 transition-colors">
+                                                              <div key={sp.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-white hover:border-purple-200 transition-colors">
                                                                  <div className="overflow-hidden">
                                                                     <p className="text-sm font-bold text-slate-800 truncate">{sp.commonName}</p>
                                                                     <p className="text-[10px] text-slate-400 italic truncate">{sp.scientificName}</p>
