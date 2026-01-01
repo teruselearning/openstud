@@ -650,6 +650,8 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             const keys = Object.keys(item);
             const vals = keys.map(k => {
                 const v = item[k];
+                // CRITICAL FIX: Explicitly handle boolean types to prevent MySQL rejection
+                if (typeof v === 'boolean') return v ? 1 : 0;
                 if (typeof v === 'number') return v;
                 if (typeof v === 'object' && v !== null) return JSON.stringify(v);
                 return v ?? null;
@@ -664,7 +666,10 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             await db.query(sql, vals);
         }
         res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error(`Generic REST Handler Error [POST /rest/v1/${table}]:`, e.message);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {

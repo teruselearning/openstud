@@ -245,7 +245,10 @@ const App: React.FC = () => {
                 saveSystemSettings(merged, true); 
                 setSystemSettings(merged);
              }
-             if (res.languages) { saveLanguages(res.languages, true); setLanguages(res.languages); }
+             if (res.languages && res.languages.length > 0) { 
+                saveLanguages(res.languages, true); 
+                setLanguages(res.languages); 
+             }
           }
        } catch (e) { console.warn("Public config failed."); }
 
@@ -326,7 +329,11 @@ const App: React.FC = () => {
                  saveSystemSettings(merged, true); 
                  setSystemSettings(merged); 
               }
-              if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
+              // PROTECTION: Only overwrite local languages if the server returns a valid list
+              if (data.languages && data.languages.length > 0) { 
+                 saveLanguages(data.languages, true); 
+                 setLanguages(data.languages); 
+              }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);
               if (data.species) saveSpecies(data.species, true);
