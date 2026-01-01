@@ -242,6 +242,7 @@ const App: React.FC = () => {
        const session = getSession();
        if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
        else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
+       
        try {
           const res = await fetchPublicConfig();
           if (res.success) {
@@ -254,8 +255,19 @@ const App: React.FC = () => {
              if (res.languages && res.languages.length > 0) { saveLanguages(res.languages, true); setLanguages(res.languages); }
           }
        } catch (e) { console.warn("Public config failed."); }
-       if (session) await loadData(session);
-       else setIsLoading(false);
+       
+       if (session) {
+          try {
+            await loadData(session);
+          } catch (e: any) {
+            // If loadData (sync) failed with 401, clear session and show landing
+            if (e.message.includes('expired') || e.message.includes('401')) {
+                logout();
+                setUser(null);
+            }
+          }
+       }
+       setIsLoading(false);
     };
     initializeApp();
   }, []);
@@ -361,11 +373,17 @@ const App: React.FC = () => {
               setShowBackendSetup(true);
            }
         }
-     } catch (e: any) { setSyncError(e.message || "Sync Exception"); } finally { setIsSyncing(false); }
+     } catch (e: any) { 
+        setSyncError(e.message || "Sync Exception"); 
+        if (e.message.includes('expired') || e.message.includes('401')) {
+            logout();
+            setUser(null);
+        }
+     } finally { setIsSyncing(false); }
   };
 
   const loadData = async (session: User) => {
-    // If we have a session, perform initial pull
+    // perform initial pull
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
@@ -391,7 +409,6 @@ const App: React.FC = () => {
     setCurrentProjectIdState(savedPid);
     calculateFeatureVisibility(savedPid);
     setUnreadCount(getNotifications().filter(n => n.recipientId === session.id && !n.isRead).length);
-    setIsLoading(false);
   };
 
   const handleLogin = (u: User) => loadData(u);

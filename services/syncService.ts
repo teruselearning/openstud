@@ -26,14 +26,13 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
     
     // HANDLE 401 UNAUTHORIZED (Auth Token Mismatch or Expired)
     if (response.status === 401) {
-       console.error("API 401 Detected: Session invalid. Force logout triggered.");
+       console.error(`API 401 Detected at ${endpoint}: Session invalid.`);
+       // Clear tokens but DON'T reload automatically - it causes infinite loops
        localStorage.removeItem('os_token');
        localStorage.removeItem('os_session');
-       // Reload to trigger App.tsx redirect to Landing
-       if (typeof window !== 'undefined') {
-          window.location.reload();
-       }
-       throw new Error("Session expired. Please log in again.");
+       
+       const errorData = await response.json().catch(() => ({}));
+       throw new Error(errorData.error || "Session expired. Please log in again.");
     }
 
     const contentType = response.headers.get("content-type");
@@ -46,6 +45,11 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
     if (!response.ok) throw new Error(data.error || 'API Request Failed');
     return data;
   } catch (error: any) {
+    // If it's an Auth error, don't retry, just propagate
+    if (error.message.includes('Session expired') || error.message.includes('Unauthorized')) {
+       throw error;
+    }
+
     if (retries > 0 && (error.message.includes('Failed to fetch') || error.message.includes('Network request failed'))) {
        await new Promise(resolve => setTimeout(resolve, backoff));
        return apiRequest(endpoint, method, body, retries - 1, backoff * 2);

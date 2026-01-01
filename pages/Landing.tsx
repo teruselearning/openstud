@@ -107,39 +107,44 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const recaptchaRef = useRef<HTMLDivElement>(null);
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
 
-  // Robust ReCAPTCHA render and cleanup to fix MutationObserver error
+  // Robust ReCAPTCHA render to avoid MutationObserver and DOM binding errors
   useEffect(() => {
     let active = true;
-    if ((viewMode === 'login' || viewMode === 'register') && settings.recaptchaSiteKey) {
-      const renderCaptcha = () => {
-        if (!active || !recaptchaRef.current || !(window as any).grecaptcha) return;
-        
-        try {
-          if (recaptchaRef.current.children.length === 0) {
-             widgetIdRef.current = (window as any).grecaptcha.render(recaptchaRef.current, {
-               'sitekey': settings.recaptchaSiteKey,
-               'callback': (token: string) => { if(active) setRecaptchaToken(token); },
-               'expired-callback': () => { if(active) setRecaptchaToken(null); }
-             });
-          }
-        } catch (e) {
-          console.warn('ReCAPTCHA initialization bypassed or failed.');
-        }
-      };
+    let timer: any = null;
 
-      if ((window as any).grecaptcha && (window as any).grecaptcha.render) {
-        renderCaptcha();
+    const renderCaptcha = () => {
+      if (!active || !recaptchaRef.current) return;
+      
+      const grecaptcha = (window as any).grecaptcha;
+      if (grecaptcha && grecaptcha.render) {
+         try {
+            // Only render if container is empty
+            if (recaptchaRef.current.innerHTML === '') {
+               widgetIdRef.current = grecaptcha.render(recaptchaRef.current, {
+                 'sitekey': settings.recaptchaSiteKey,
+                 'callback': (token: string) => { if(active) setRecaptchaToken(token); },
+                 'expired-callback': () => { if(active) setRecaptchaToken(null); }
+               });
+            }
+         } catch (e) {
+            console.warn('ReCAPTCHA render attempt suppressed:', e);
+         }
       } else {
-        // Retry if script isn't quite ready
-        setTimeout(renderCaptcha, 1000);
+         // Retry loop instead of one-shot timeout
+         timer = setTimeout(renderCaptcha, 500);
       }
+    };
+
+    if ((viewMode === 'login' || viewMode === 'register') && settings.recaptchaSiteKey) {
+       renderCaptcha();
     }
 
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
       setRecaptchaToken(null);
-      // Note: ReCAPTCHA doesn't officially support explicit cleanup of a single widget easily 
-      // without affecting the global state, so we rely on DOM isolation.
+      // We don't explicitly destroy grecaptcha as it's globally managed, 
+      // but by clearinginnerHTML and seting active=false we prevent callback errors.
     };
   }, [viewMode, settings.recaptchaSiteKey]);
 
@@ -418,8 +423,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                       <div className="flex items-center gap-3 mb-2"><Building2 size={18} className="text-slate-400"/><span className="text-sm font-bold text-slate-700">{inviteData.orgName}</span></div>
                       <div className="flex items-center gap-3"><Mail size={18} className="text-slate-400"/><span className="text-sm text-slate-600">{inviteData.email}</span></div>
                    </div>
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Set Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div></div>
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div></div>
+                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Set Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div></div>
+                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div></div>
                    <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Join Organization</button></div>
                 </form>
              </div>
@@ -438,7 +443,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={loginData.email} onChange={e => setLoginData({...loginData, email: e.target.value})} required /></div></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="password" autoComplete="current-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} required /></div></div>
                 <div className="text-right"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('forgot_password'); }} className="text-xs text-slate-500 hover:text-emerald-600">Forgot Password?</button></div>
-                {settings.recaptchaSiteKey && <div className="flex justify-center my-2"><div ref={recaptchaRef}></div></div>}
+                {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Sign In</button></div>
                 {isRegistrationEnabled && (
                   <div className="text-center pt-2"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('register'); }} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>
@@ -462,7 +467,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 </div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">City / Location</label><div className="relative"><MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. London, UK" value={regData.location} onChange={e => setRegData({...regData, location: e.target.value})} required />{locationStatus === 'detecting' && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={16} className="animate-spin text-emerald-600"/></div>}</div></div>
                 <div className="pt-2 border-t border-slate-100 mt-2"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Admin Account Details</label><div className="space-y-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Your Full Name</label><div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Work Email</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div></div></div></div></div>
-                {settings.recaptchaSiteKey && <div className="flex justify-center my-2"><div ref={recaptchaRef}></div></div>}
+                {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-4"><button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg" disabled={isLoading}>{t('createAccount')}</button></div>
               </form>
             </div>
