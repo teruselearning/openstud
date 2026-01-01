@@ -76,7 +76,7 @@ const initDatabase = async () => {
     try {
         await db.query('SELECT 1');
         
-        // Define all tables
+        // Define all tables with updated enclosure fields
         await db.execute(`
             CREATE TABLE IF NOT EXISTS organizations (
                 id VARCHAR(255) PRIMARY KEY,
@@ -104,7 +104,7 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migrations helper for columns
+        // Migration helper for columns
         const ensureColumn = async (table: string, column: string, definition: string) => {
            try {
               const [rows]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
@@ -120,6 +120,9 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'enable_enclosures', 'BOOLEAN DEFAULT FALSE');
         await ensureColumn('organizations', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
         await ensureColumn('organizations', 'dashboard_block', 'JSON');
+        await ensureColumn('organizations', 'ai_usage_limit', 'INT DEFAULT 100');
+        await ensureColumn('organizations', 'ai_usage_count', 'INT DEFAULT 0');
+        await ensureColumn('organizations', 'ai_usage_last_reset', 'VARCHAR(255)');
 
         await db.execute(`
             CREATE TABLE IF NOT EXISTS enclosures (
@@ -299,6 +302,30 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
   }
 };
 
+// --- PUBLIC CONFIG ROUTE (Fixes 404) ---
+
+app.get('/api/config', async (req: any, res: any) => {
+   const db = getDb();
+   try {
+      const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+      const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+      
+      let settings = config[0]?.settings;
+      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
+
+      res.json({ 
+         success: true, 
+         data: { 
+            settings: settings || {}, 
+            languages: langs || [] 
+         } 
+      });
+   } catch (e: any) {
+      console.error("Config fetch error:", e);
+      res.status(500).json({ error: e.message });
+   }
+});
+
 // --- AUTH ROUTES ---
 
 app.post('/api/login', async (req: any, res: any) => {
@@ -319,29 +346,6 @@ app.post('/api/login', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// --- PUBLIC CONFIG ROUTE (Fixes 404) ---
-
-app.get('/api/config', async (req: any, res: any) => {
-   const db = getDb();
-   try {
-      const [config]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-      const [langs]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-      
-      let settings = config[0]?.settings;
-      if (typeof settings === 'string') { try { settings = JSON.parse(settings); } catch (e) {} }
-
-      res.json({ 
-         success: true, 
-         data: { 
-            settings: settings || {}, 
-            languages: langs || [] 
-         } 
-      });
-   } catch (e: any) {
-      res.status(500).json({ error: e.message });
-   }
-});
-
 // --- GENERIC UPSERT REST ROUTES ---
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
@@ -360,6 +364,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
                 const v = item[k];
                 if (v === undefined) return null;
                 if (v !== null && typeof v === 'object') return JSON.stringify(v);
+                if (typeof v === 'boolean') return v ? 1 : 0; // Explicit boolean conversion for MySQL
                 return v;
             });
             
@@ -375,7 +380,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
         res.json({ success: true });
     } catch (e: any) {
         console.error(`Upsert failed for table ${table}:`, e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: `SQL Error in ${table}: ${e.message}` });
     }
 });
 
@@ -390,12 +395,14 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 
     try {
         if (Object.keys(updates).length === 0) {
-            const softDeleteField = (table === 'organizations' || table === 'languages') ? 'is_deleted' : null;
-            if (softDeleteField) {
+            const softDeleteField = 'is_deleted';
+            // Verify if is_deleted exists
+            const [cols]: any = await db.execute(`SHOW COLUMNS FROM \`${table}\` LIKE 'is_deleted'`);
+            if (cols.length > 0) {
                 await db.execute(`UPDATE \`${table}\` SET \`${softDeleteField}\` = 1 WHERE \`${pkField}\` = ?`, [pkValue]);
                 return res.json({ success: true });
             }
-            return res.status(400).json({ error: "No updates provided" });
+            return res.status(400).json({ error: "No updates provided and table lacks is_deleted column" });
         }
 
         const keys = Object.keys(updates);
@@ -403,13 +410,17 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
             const v = updates[k];
             if (v === undefined) return null;
             if (v !== null && typeof v === 'object') return JSON.stringify(v);
+            if (typeof v === 'boolean') return v ? 1 : 0;
             return v;
         });
         const setClause = keys.map(k => `\`${k}\` = ?`).join(', ');
         
         await db.execute(`UPDATE \`${table}\` SET ${setClause} WHERE \`${pkField}\` = ?`, [...values, pkValue]);
         res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+    } catch (e: any) { 
+        console.error(`Patch failed for table ${table}:`, e.message);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 // --- SUPER ADMIN ROUTES ---
@@ -508,7 +519,10 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
          languages: langs, 
          settings
       } });
-   } catch (e: any) { res.status(500).json({ error: e.message }); }
+   } catch (e: any) { 
+       console.error("Sync fetch error:", e);
+       res.status(500).json({ error: e.message }); 
+   }
 });
 
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
