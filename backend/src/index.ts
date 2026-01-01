@@ -92,7 +92,7 @@ const initDatabase = async () => {
             )
         `);
 
-        // Migration check for existing databases
+        // Migration check for organizations
         try { await db.execute('ALTER TABLE organizations ADD COLUMN enable_mfa BOOLEAN DEFAULT FALSE'); } catch(e) {}
 
         await db.execute(`
@@ -239,6 +239,9 @@ const initDatabase = async () => {
                 is_deleted BOOLEAN DEFAULT FALSE
             )
         `);
+
+        // Migration check for languages
+        try { await db.execute('ALTER TABLE languages ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE'); } catch(e) {}
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
         console.log("Database tables ready.");
@@ -668,6 +671,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
         res.json({ success: true });
     } catch (e: any) { 
         console.error(`Generic REST Handler Error [POST /rest/v1/${table}]:`, e.message);
+        console.error("SQL Error context:", e);
         res.status(500).json({ error: e.message }); 
     }
 });

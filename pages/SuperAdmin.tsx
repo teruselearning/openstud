@@ -1,16 +1,17 @@
 
 import { useContext, useState, useEffect, useMemo } from 'react';
-import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache } from '../services/storage';
+import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
 import { translateDictionary } from '../services/geminiService';
 import { 
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
   Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
-  Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check, Search
+  Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check, Search,
+  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf
 } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature } from '../types';
+import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 import React from 'react';
@@ -21,10 +22,12 @@ const SuperAdmin: React.FC = () => {
   const { t, refreshTranslations } = useContext(LanguageContext);
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   
-  const [partners, setPartners] = useState<Organization[]>([]);
+  const [partners, setPartners] = useState<ExternalPartner[]>([]);
   const [myOrg, setMyOrg] = useState<Organization | null>(null);
+  const [allSpecies, setAllSpecies] = useState<any[]>([]);
   const [orgToDelete, setOrgToDelete] = useState<Organization | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<SystemSettings>(getSystemSettings());
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -64,8 +67,9 @@ const SuperAdmin: React.FC = () => {
     const current = getSystemSettings();
     setSettings(current);
     setLanguages(getLanguages());
-    setPartners(getNetworkPartners() as unknown as Organization[]);
+    setPartners(getNetworkPartners());
     setMyOrg(getOrg());
+    setAllSpecies(getSpecies());
     
     const initialTpl = current.emailTemplates?.[selectedTemplate as keyof typeof current.emailTemplates];
     if (initialTpl) {
@@ -73,14 +77,14 @@ const SuperAdmin: React.FC = () => {
     }
   }, [selectedTemplate]);
 
-  const allOrganizations = [myOrg, ...(partners || [])].filter(p => p && !p.deleted) as Organization[];
+  const allOrganizations = [myOrg, ...(partners || [])].filter(p => p && !p.deleted) as (Organization | ExternalPartner)[];
 
   const filteredTranslationKeys = useMemo(() => {
     const query = translationSearch.toLowerCase().trim();
     if (!query) return Object.keys(BASE_TRANSLATIONS);
     return Object.keys(BASE_TRANSLATIONS).filter(key => {
         const sourceVal = (BASE_TRANSLATIONS as any)[key]?.toLowerCase() || '';
-        const currentVal = (editingLang?.translations[key] || '').toLowerCase();
+        const currentVal = (editingLang?.translations[key] || '').toString().toLowerCase();
         return key.toLowerCase().includes(query) || sourceVal.includes(query) || currentVal.includes(query);
     });
   }, [translationSearch, editingLang]);
@@ -331,34 +335,115 @@ const SuperAdmin: React.FC = () => {
                   <table className="w-full text-left">
                      <thead className="bg-slate-50 border-b border-slate-200">
                         <tr>
+                           <th className="w-12 px-6 py-4"></th>
                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">{t('organization')}</th>
                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">{t('action')}</th>
                         </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
-                        {allOrganizations.map(org => (
-                           <tr key={org.id} className="hover:bg-slate-50 group transition-colors">
-                              <td className="px-6 py-4">
-                                 <div className="font-bold text-slate-900 flex items-center gap-2">
-                                    {org.name}
-                                    {org.id === myOrg?.id && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">{t('hostTag')}</span>}
-                                 </div>
-                                 <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                 <div className="flex justify-end gap-2">
-                                   <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-slate-100 group-hover:bg-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1">
-                                      <LogIn size={12}/> {t('loginAs')}
-                                   </button>
-                                   {org.id !== myOrg?.id && (
-                                      <button onClick={() => setOrgToDelete(org)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white p-1.5 rounded-lg transition-all" title={t('delete')}>
-                                         <Trash2 size={14}/>
-                                      </button>
-                                   )}
-                                 </div>
-                              </td>
-                           </tr>
-                        ))}
+                        {allOrganizations.map(org => {
+                           const isExpanded = expandedOrgId === org.id;
+                           // Safely check for external partner properties
+                           const extPartner = org as ExternalPartner;
+                           const hasSpecies = extPartner.speciesIds && extPartner.speciesIds.length > 0;
+                           
+                           return (
+                             <React.Fragment key={org.id}>
+                               <tr className={`group transition-colors cursor-pointer ${isExpanded ? 'bg-purple-50/50' : 'hover:bg-slate-50'}`} onClick={() => setExpandedOrgId(isExpanded ? null : org.id)}>
+                                  <td className="px-6 py-4 text-center">
+                                     <button className="text-slate-400 group-hover:text-purple-600 transition-colors">
+                                        {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                     </button>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                     <div className="font-bold text-slate-900 flex items-center gap-2">
+                                        {org.hideName ? "Anonymous Organization" : org.name}
+                                        {org.id === myOrg?.id && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">{t('hostTag')}</span>}
+                                        {(org as any).focus === 'Plants' ? <Leaf size={14} className="text-emerald-500" /> : <Activity size={14} className="text-blue-500" />}
+                                     </div>
+                                     <div className="text-[10px] font-mono text-slate-400">{org.location} • {org.id}</div>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                     <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
+                                       <button onClick={() => switchOrganization(org.id, org) && window.location.reload()} className="bg-white border border-slate-200 group-hover:bg-purple-600 group-hover:border-purple-600 group-hover:text-white text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 shadow-sm">
+                                          <LogIn size={12}/> {t('loginAs')}
+                                       </button>
+                                       {org.id !== myOrg?.id && (
+                                          <button onClick={() => setOrgToDelete(org)} className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white p-1.5 rounded-lg transition-all" title={t('delete')}>
+                                             <Trash2 size={14}/>
+                                          </button>
+                                       )}
+                                     </div>
+                                  </td>
+                               </tr>
+                               {isExpanded && (
+                                 <tr>
+                                   <td colSpan={3} className="px-8 py-6 bg-purple-50/30 border-b border-purple-100">
+                                      <div className="animate-in slide-in-from-top-2 duration-300">
+                                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                            <div className="md:col-span-1 space-y-4">
+                                               <div className="bg-white p-4 rounded-xl shadow-sm border border-purple-100">
+                                                  <div className="flex items-center gap-2 text-purple-600 mb-1">
+                                                     <Leaf size={16} />
+                                                     <span className="text-[10px] font-bold uppercase tracking-wider">Collection Scope</span>
+                                                  </div>
+                                                  <p className="text-sm font-bold text-slate-900">{(org as any).focus || 'Animals'}</p>
+                                                  <div className="flex items-center gap-2 text-slate-400 mt-4 mb-1">
+                                                     <Building2 size={16} />
+                                                     <span className="text-[10px] font-bold uppercase tracking-wider">Founded</span>
+                                                  </div>
+                                                  <p className="text-sm font-bold text-slate-900">{(org as any).foundedYear || 'Not set'}</p>
+                                               </div>
+                                            </div>
+                                            
+                                            <div className="md:col-span-3">
+                                               <div className="bg-white p-6 rounded-xl shadow-sm border border-purple-100 h-full">
+                                                  <div className="flex items-center justify-between mb-4">
+                                                     <div className="flex items-center gap-2 text-purple-600">
+                                                        <Dna size={18} />
+                                                        <h4 className="font-bold text-sm uppercase tracking-widest">Species Summary</h4>
+                                                     </div>
+                                                     <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                                                        {extPartner.speciesIds?.length || 0} Managed Species
+                                                     </span>
+                                                  </div>
+                                                  
+                                                  {hasSpecies ? (
+                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        {extPartner.speciesIds.map(sid => {
+                                                           const sp = allSpecies.find(s => s.id === sid);
+                                                           const counts = extPartner.populationCounts?.[sid] || "0.0.0";
+                                                           if (!sp) return null;
+                                                           return (
+                                                              <div key={sid} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 hover:bg-white hover:border-purple-200 transition-colors">
+                                                                 <div className="overflow-hidden">
+                                                                    <p className="text-sm font-bold text-slate-800 truncate">{sp.commonName}</p>
+                                                                    <p className="text-[10px] text-slate-400 italic truncate">{sp.scientificName}</p>
+                                                                 </div>
+                                                                 <div className="text-right">
+                                                                    <p className="text-[9px] font-bold text-slate-400 uppercase leading-none mb-1">M.F.U</p>
+                                                                    <p className="text-sm font-mono font-bold text-purple-600">{counts}</p>
+                                                                 </div>
+                                                              </div>
+                                                           );
+                                                        })}
+                                                     </div>
+                                                  ) : (
+                                                     <div className="flex flex-col items-center justify-center py-10 opacity-30">
+                                                        <Activity size={48} className="text-slate-400 mb-2" />
+                                                        <p className="text-sm font-medium">No active population data found</p>
+                                                     </div>
+                                                  )}
+                                               </div>
+                                            </div>
+                                         </div>
+                                      </div>
+                                   </td>
+                                 </tr>
+                               )}
+                             </React.Fragment>
+                           );
+                        })}
                      </tbody>
                   </table>
                </div>
@@ -534,10 +619,10 @@ const SuperAdmin: React.FC = () => {
                   </div>
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Subject Line</label>
-                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Email Subject" value={editingTemplate.subject ?? ''} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
+                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Email Subject" value={String(editingTemplate.subject || '')} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} />
                   </div>
                   <div className="flex-1 min-h-[250px] rounded-xl overflow-hidden border border-slate-200 shadow-inner">
-                     <RichTextEditor value={editingTemplate.bodyHtml ?? ''} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
+                     <RichTextEditor value={String(editingTemplate.bodyHtml || '')} onChange={v => setEditingTemplate({...editingTemplate, bodyHtml: v})} height="100%"/>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-50 p-2 rounded">
                      <span>Available Variables: {'{{orgName}}, {{userName}}, {{code}}, {{message}}, {{year}}'}</span>
@@ -567,14 +652,14 @@ const SuperAdmin: React.FC = () => {
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('primaryColor')}</label>
                      <div className="flex gap-2">
                         <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themePrimaryColor ?? '#059669'} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
-                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themePrimaryColor ?? ''} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
+                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={String(settings.themePrimaryColor || '')} onChange={e => setSettings({...settings, themePrimaryColor: e.target.value})} />
                      </div>
                   </div>
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('secondaryColor')}</label>
                      <div className="flex gap-2">
                         <input type="color" className="h-10 w-12 rounded border border-slate-200 cursor-pointer" value={settings.themeSecondaryColor ?? '#10b981'} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
-                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={settings.themeSecondaryColor ?? ''} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
+                        <input className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" value={String(settings.themeSecondaryColor || '')} onChange={e => setSettings({...settings, themeSecondaryColor: e.target.value})} />
                      </div>
                   </div>
                </div>
@@ -585,13 +670,13 @@ const SuperAdmin: React.FC = () => {
                      <div className="h-10 w-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center overflow-hidden">
                         {settings.appLogoUrl ? <img src={settings.appLogoUrl} className="max-h-full max-w-full object-contain" /> : <ImageIcon size={16} className="text-slate-400"/>}
                      </div>
-                     <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://..." value={settings.appLogoUrl ?? ''} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
+                     <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://..." value={String(settings.appLogoUrl || '')} onChange={e => setSettings({...settings, appLogoUrl: e.target.value})} />
                   </div>
                </div>
 
                <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('customCss')}</label>
-                  <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="/* Custom CSS */" value={settings.customCss ?? ''} onChange={e => setSettings({...settings, customCss: e.target.value})} />
+                  <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs outline-none focus:ring-2 focus:ring-emerald-500" placeholder="/* Custom CSS */" value={String(settings.customCss || '')} onChange={e => setSettings({...settings, customCss: e.target.value})} />
                </div>
             </div>
 
@@ -617,11 +702,11 @@ const SuperAdmin: React.FC = () => {
 
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('heroTitle')}</label>
-                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={settings.landingPageConfig?.heroTitle ?? ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroTitle: e.target.value}})} />
+                     <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={String(settings.landingPageConfig?.heroTitle || '')} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroTitle: e.target.value}})} />
                   </div>
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold text-slate-400 uppercase block">{t('heroSubtitle')}</label>
-                     <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows={2} value={settings.landingPageConfig?.heroSubtitle ?? ''} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroSubtitle: e.target.value}})} />
+                     <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500" rows={2} value={String(settings.landingPageConfig?.heroSubtitle || '')} onChange={e => setSettings({...settings, landingPageConfig: {...settings.landingPageConfig, heroSubtitle: e.target.value}})} />
                   </div>
                   
                   {/* DYNAMIC FEATURE CARDS */}
@@ -641,16 +726,16 @@ const SuperAdmin: React.FC = () => {
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="space-y-1">
                                    <label className="text-[9px] font-bold text-slate-400 uppercase">Title</label>
-                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" value={feature.title ?? ''} onChange={e => handleUpdateFeature(feature.id, 'title', e.target.value)} />
+                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" value={String(feature.title || '')} onChange={e => handleUpdateFeature(feature.id, 'title', e.target.value)} />
                                 </div>
                                 <div className="space-y-1">
                                    <label className="text-[9px] font-bold text-slate-400 uppercase">Icon (Lucide name)</label>
-                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={feature.icon ?? ''} onChange={e => handleUpdateFeature(feature.id, 'icon', e.target.value)} placeholder="Shield, Sprout, Heart..." />
+                                   <input className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-mono bg-white" value={String(feature.icon || '')} onChange={e => handleUpdateFeature(feature.id, 'icon', e.target.value)} placeholder="Shield, Sprout, Heart..." />
                                 </div>
                              </div>
                              <div className="space-y-1">
                                 <label className="text-[9px] font-bold text-slate-400 uppercase">Description</label>
-                                <textarea className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" rows={2} value={feature.description ?? ''} onChange={e => handleUpdateFeature(feature.id, 'description', e.target.value)} />
+                                <textarea className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white" rows={2} value={String(feature.description || '')} onChange={e => handleUpdateFeature(feature.id, 'description', e.target.value)} />
                              </div>
                           </div>
                        ))}
@@ -757,10 +842,10 @@ const SuperAdmin: React.FC = () => {
                                     </div>
                                     {key.toLowerCase().includes('body') || key.toLowerCase().includes('html') ? (
                                        <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                                          <RichTextEditor value={editingLang.translations[key] ?? ''} onChange={v => handleUpdateTranslation(key, v)} height="200px" />
+                                          <RichTextEditor value={String(editingLang.translations[key] || '')} onChange={v => handleUpdateTranslation(key, v)} height="200px" />
                                        </div>
                                     ) : (
-                                       <input className="w-full border border-slate-200 px-4 py-2 rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all" value={editingLang.translations[key] ?? ''} onChange={e => handleUpdateTranslation(key, e.target.value)} />
+                                       <input className="w-full border border-slate-200 px-4 py-2 rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all" value={String(editingLang.translations[key] || '')} onChange={e => handleUpdateTranslation(key, e.target.value)} />
                                     )}
                                  </div>
                               ))
@@ -809,7 +894,7 @@ const SuperAdmin: React.FC = () => {
                            <input 
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm font-bold"
                               placeholder="e.g. Island Sanctuary"
-                              value={newOrgData.orgName ?? ''}
+                              value={String(newOrgData.orgName || '')}
                               onChange={e => setNewOrgData({...newOrgData, orgName: e.target.value})}
                               required
                            />
@@ -818,7 +903,7 @@ const SuperAdmin: React.FC = () => {
                            <label className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Org Focus</label>
                            <select 
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm font-bold"
-                              value={newOrgData.focus ?? 'Animals'}
+                              value={newOrgData.focus || 'Animals'}
                               onChange={e => setNewOrgData({...newOrgData, focus: e.target.value as OrganizationFocus})}
                            >
                               <option value="Animals">{t('animal')}</option>
@@ -832,7 +917,7 @@ const SuperAdmin: React.FC = () => {
                               <input 
                                  className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
                                  placeholder="e.g. Victoria, Seychelles"
-                                 value={newOrgData.location ?? ''}
+                                 value={String(newOrgData.location || '')}
                                  onChange={e => setNewOrgData({...newOrgData, location: e.target.value})}
                                  required
                               />
@@ -849,7 +934,7 @@ const SuperAdmin: React.FC = () => {
                            <input 
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
                               placeholder="John Smith"
-                              value={newOrgData.adminName ?? ''}
+                              value={String(newOrgData.adminName || '')}
                               onChange={e => setNewOrgData({...newOrgData, adminName: e.target.value})}
                               required
                            />
@@ -860,7 +945,7 @@ const SuperAdmin: React.FC = () => {
                               type="email"
                               className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-900 text-sm"
                               placeholder="john@island-sanctuary.org"
-                              value={newOrgData.adminEmail ?? ''}
+                              value={String(newOrgData.adminEmail || '')}
                               onChange={e => setNewOrgData({...newOrgData, adminEmail: e.target.value})}
                               required
                            />
