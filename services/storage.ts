@@ -6,13 +6,10 @@ import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 import { localDb } from './localDb';
 
-// Simplified API Base URL - handled by Vite Proxy
 const API_BASE_URL = '';
 
-// Re-export sync functions for external use
 export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures };
 
-// Re-export syncPermanentDeleteOrganization as permanentDeleteOrganization to fix SuperAdmin.tsx error
 export const permanentDeleteOrganization = syncPermanentDeleteOrganization;
 
 const STORAGE_PREFIX = 'os_';
@@ -39,16 +36,12 @@ const KEYS = {
   BACKUP: `${STORAGE_PREFIX}backup`
 };
 
-// In-Memory Cache for heavy collections to maintain synchronous performance
 let individualsCache: Individual[] = [];
 let speciesCache: Species[] = [];
 let languagesCache: LanguageConfig[] = [];
 let enclosuresCache: Enclosure[] = [];
 let isLoaded = false;
 
-/**
- * Initializes high-capacity storage. Must be called on app start.
- */
 export const initHighCapacityStorage = async () => {
   if (isLoaded) return;
   try {
@@ -63,7 +56,6 @@ export const initHighCapacityStorage = async () => {
     speciesCache = specs;
     enclosuresCache = encls;
     
-    // Initial Seed for languages if IndexedDB is empty
     if (langs.length === 0) {
       languagesCache = SEED_LANGUAGES;
       await localDb.saveAll('languages', SEED_LANGUAGES);
@@ -73,9 +65,8 @@ export const initHighCapacityStorage = async () => {
     }
 
     isLoaded = true;
-    console.log(`OpenStudbook Storage: Loaded ${inds.length} individuals, ${specs.length} species, ${encls.length} enclosures, and ${langs.length} languages from IndexedDB.`);
   } catch (err) {
-    console.error("Failed to initialize IndexedDB storage:", err);
+    console.error("Failed to initialize storage:", err);
     individualsCache = [];
     speciesCache = [];
     enclosuresCache = [];
@@ -90,52 +81,27 @@ const get = <T>(key: string, defaultVal: T): T => {
   if (!item) return defaultVal;
   try {
     const parsed = JSON.parse(item);
-    if (parsed === null) return defaultVal;
-    return parsed;
+    return parsed === null ? defaultVal : parsed;
   } catch (e) {
-    if (typeof defaultVal === 'string') return defaultVal as unknown as T;
     return defaultVal;
   }
 };
 
 const set = <T>(key: string, val: T) => {
   if (typeof window !== 'undefined') {
-    if ([KEYS.INDIVIDUALS, KEYS.SPECIES, KEYS.LANGUAGES, KEYS.ENCLOSURES].includes(key)) {
-       console.warn(`Attempted to save giant collection ${key} to localStorage. High-capacity storage should handle this.`);
-       return;
-    }
-
-    const stringified = JSON.stringify(val);
-    try {
-      localStorage.setItem(key, stringified);
-    } catch (e) {
-      if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-         localStorage.removeItem(KEYS.BACKUP);
-         localStorage.removeItem(KEYS.NOTIFICATIONS);
-         localStorage.removeItem(KEYS.PARTNERS); 
-         try {
-            localStorage.setItem(key, stringified);
-         } catch (e2) {}
-      }
-    }
+    if ([KEYS.INDIVIDUALS, KEYS.SPECIES, KEYS.LANGUAGES, KEYS.ENCLOSURES].includes(key)) return;
+    localStorage.setItem(key, JSON.stringify(val));
   }
 };
 
 export const clearLocalCache = () => {
-    const essentialKeys = [KEYS.SESSION, KEYS.TOKEN, KEYS.ORG, KEYS.CURRENT_PROJECT];
-    const allKeys = Object.keys(localStorage);
-    allKeys.forEach(k => {
-        if (k.startsWith(STORAGE_PREFIX) && !essentialKeys.includes(k)) {
-            localStorage.removeItem(k);
-        }
-    });
+    localStorage.removeItem(KEYS.BACKUP);
+    localStorage.removeItem(KEYS.PARTNERS);
     individualsCache = [];
     speciesCache = [];
-    languagesCache = [];
     enclosuresCache = [];
     localDb.saveAll('individuals', []);
     localDb.saveAll('species', []);
-    localDb.saveAll('languages', []);
     localDb.saveAll('enclosures', []);
     window.location.reload();
 };
@@ -145,34 +111,21 @@ export const getSystemSettings = (): SystemSettings => {
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpSecure: false,
     emailTemplates: {
       registration: { enabled: true, subject: BASE_TRANSLATIONS.emailVerifySubject, bodyHtml: BASE_TRANSLATIONS.emailVerifyBody },
-      mfa: { enabled: true, subject: "Your OpenStudbook Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, 
+      mfa: { enabled: true, subject: "Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, 
       invite: { enabled: true, subject: BASE_TRANSLATIONS.emailInviteSubject, bodyHtml: BASE_TRANSLATIONS.emailInviteBody },
       notification: { enabled: true, subject: BASE_TRANSLATIONS.emailNotifySubject, bodyHtml: BASE_TRANSLATIONS.emailNotifyBody },
-      password_reset: { enabled: true, subject: "OpenStudbook Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody } 
+      password_reset: { enabled: true, subject: "Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody } 
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
-    aboutPage: { enabled: true, title: 'About OpenStudbook', contentHtml: '<p>Open-source population management.</p>' },
-    privacyPage: { enabled: true, title: 'Privacy Policy', contentHtml: '<p>Your data is protected.</p>' },
-    termsPage: { enabled: true, title: 'Terms & Conditions', contentHtml: '<p>Standard open-source license.</p>' },
+    aboutPage: { enabled: true, title: 'About', contentHtml: '' },
+    privacyPage: { enabled: true, title: 'Privacy', contentHtml: '' },
+    termsPage: { enabled: true, title: 'Terms', contentHtml: '' },
     enableMfa: false,
     enableRegistration: true,
-    landingPageConfig: {
-      heroTitle: "The Future of Captive Breeding Management",
-      heroSubtitle: "Open-source platform for zoos and botanical gardens.",
-      showFeatures: true,
-      features: []
-    }
+    landingPageConfig: { heroTitle: "", heroSubtitle: "", showFeatures: true, features: [] }
   };
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
-  return { 
-    ...defaults, 
-    ...stored, 
-    emailTemplates: { ...defaults.emailTemplates, ...(stored.emailTemplates || {}) }, 
-    aboutPage: { ...defaults.aboutPage, ...(stored.aboutPage || {}) }, 
-    privacyPage: { ...defaults.privacyPage, ...(stored.privacyPage || {}) }, 
-    termsPage: { ...defaults.termsPage, ...(stored.termsPage || {}) },
-    landingPageConfig: { ...defaults.landingPageConfig, ...(stored.landingPageConfig || {}) }
-  };
+  return { ...defaults, ...stored };
 };
 
 export const saveSystemSettings = async (s: SystemSettings, skipSync = false) => {
@@ -180,13 +133,10 @@ export const saveSystemSettings = async (s: SystemSettings, skipSync = false) =>
   if (!skipSync) await syncPushSettings(s);
 };
 
-export const getLanguages = (): LanguageConfig[] => {
-  return languagesCache.filter(l => !l.deleted);
-};
-
+export const getLanguages = (): LanguageConfig[] => languagesCache.filter(l => !l.deleted);
 export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
   languagesCache = langs;
-  localDb.saveAll('languages', langs).catch(err => console.error("Languages DB Save Failed:", err));
+  localDb.saveAll('languages', langs);
   if (!skipSync) syncPushLanguages(langs).catch(() => {});
 };
 
@@ -207,16 +157,13 @@ export const getSession = (): User | null => get(KEYS.SESSION, null);
 export const saveSession = (u: User) => set(KEYS.SESSION, u);
 
 export const logout = () => {
-   if (typeof window === 'undefined') return;
    localStorage.removeItem(KEYS.SESSION);
    localStorage.removeItem(KEYS.TOKEN);
    localStorage.removeItem(KEYS.IMPERSONATING);
    localStorage.removeItem(KEYS.BACKUP);
-   localStorage.removeItem(KEYS.ORG);
-   localStorage.removeItem(KEYS.CURRENT_PROJECT);
 };
 
-export const isImpersonating = () => typeof window !== 'undefined' && !!localStorage.getItem(KEYS.IMPERSONATING);
+export const isImpersonating = () => !!localStorage.getItem(KEYS.IMPERSONATING);
 export const restoreMainOrg = () => {
    if (isImpersonating()) {
       const backup = localStorage.getItem(KEYS.BACKUP);
@@ -240,24 +187,13 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
 };
 
 export const getOrg = (): Organization => {
-  const defaultOrg: Organization = { 
-    id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', 
-    focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, 
-    obscureLocation: false, allowBreedingRequests: false,
-    aiUsageLimit: 100, aiUsageCount: 0, enableMfa: false, enableEnclosures: false
-  };
-  const org = get(KEYS.ORG, defaultOrg);
-  if (!org || typeof org !== 'object') return defaultOrg;
-  return org;
+  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false };
+  return get(KEYS.ORG, defaultOrg);
 };
 
 export const saveOrg = (o: Organization, skipSync = false) => {
   set(KEYS.ORG, o);
-  if (!skipSync) {
-    syncPushOrg(o)
-      .then(() => console.log("Org settings pushed to server successfully."))
-      .catch((err) => console.error("Failed to push org settings to server:", err));
-  }
+  if (!skipSync) syncPushOrg(o).catch(() => {});
 };
 
 export const checkAndIncrementAiUsage = (): boolean => {
@@ -266,11 +202,9 @@ export const checkAndIncrementAiUsage = (): boolean => {
   const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
   let count = org.aiUsageCount || 0;
   let lastReset = org.aiUsageLastReset || "";
-  const limit = org.aiUsageLimit || 100;
   if (lastReset !== currentMonthStr) { count = 0; lastReset = currentMonthStr; }
-  if (count >= limit) return false;
-  const updatedOrg = { ...org, aiUsageCount: count + 1, aiUsageLastReset: currentMonthStr };
-  saveOrg(updatedOrg);
+  if (count >= (org.aiUsageLimit || 100)) return false;
+  saveOrg({ ...org, aiUsageCount: count + 1, aiUsageLastReset: currentMonthStr });
   return true;
 };
 
@@ -292,21 +226,21 @@ export const saveUsers = (u: User[], skipSync = false) => {
 export const getSpecies = (): Species[] => speciesCache;
 export const saveSpecies = (s: Species[], skipSync = false) => {
   speciesCache = s;
-  localDb.saveAll('species', s).catch(err => console.error("Species DB Save Failed:", err));
+  localDb.saveAll('species', s);
   if (!skipSync) syncPushSpecies(s).catch(() => {});
 };
 
 export const getIndividuals = (): Individual[] => individualsCache;
 export const saveIndividuals = (i: Individual[], skipSync = false) => {
   individualsCache = i;
-  localDb.saveAll('individuals', i).catch(err => console.error("Individuals DB Save Failed:", err));
+  localDb.saveAll('individuals', i);
   if (!skipSync) syncPushIndividuals(i).catch(() => {});
 };
 
 export const getEnclosures = (): Enclosure[] => enclosuresCache;
 export const saveEnclosures = (e: Enclosure[], skipSync = false) => {
   enclosuresCache = e;
-  localDb.saveAll('enclosures', e).catch(err => console.error("Enclosures DB Save Failed:", err));
+  localDb.saveAll('enclosures', e);
   if (!skipSync) syncPushEnclosures(e).catch(() => {});
 };
 
@@ -335,70 +269,48 @@ export const getNotifications = (): Notification[] => get(KEYS.NOTIFICATIONS, []
 export const saveNotifications = (n: Notification[]) => set(KEYS.NOTIFICATIONS, n);
 
 export const sendMockNotification = (recipientId: string, senderOrgName: string, message: string, type: 'BreedingRequest' | 'System' | 'Partnership' | 'LoanUpdate' = 'System') => {
-  const notifications = getNotifications();
-  const newNotif: Notification = {
-    id: `notif-${Date.now()}`,
-    recipientId,
-    senderOrgName,
-    title: type === 'System' ? 'System Update' : type.replace(/([A-Z])/g, ' $1').trim(),
-    message,
-    date: new Date().toISOString().split('T')[0],
-    isRead: false,
-    type
-  };
-  saveNotifications([newNotif, ...notifications]);
+  const n = getNotifications();
+  saveNotifications([{ id: `notif-${Date.now()}`, recipientId, senderOrgName, title: 'System Notification', message, date: new Date().toISOString().split('T')[0], isRead: false, type }, ...n]);
 };
 
-export const isMfaTrustedDevice = (userId: string): boolean => {
-  const devices = get(KEYS.TRUSTED_DEVICES, [] as string[]);
-  return devices.includes(userId);
-};
-
+export const isMfaTrustedDevice = (userId: string): boolean => get(KEYS.TRUSTED_DEVICES, [] as string[]).includes(userId);
 export const trustDevice = (userId: string) => {
-  const devices = get(KEYS.TRUSTED_DEVICES, [] as string[]);
-  if (!devices.includes(userId)) {
-    set(KEYS.TRUSTED_DEVICES, [...devices, userId]);
-  }
+  const d = get(KEYS.TRUSTED_DEVICES, [] as string[]);
+  if (!d.includes(userId)) set(KEYS.TRUSTED_DEVICES, [...d, userId]);
 };
 
 export const sendMfaCode = async (email: string, code: string) => {
-  const settings = getSystemSettings();
-  const template = settings.emailTemplates?.mfa;
-  if (!template || !template.enabled) return;
-  await sendSystemEmail(email, 'mfa', { code }, template.subject, template.bodyHtml);
+  const s = getSystemSettings();
+  const t = s.emailTemplates?.mfa;
+  if (t?.enabled) await sendSystemEmail(email, 'mfa', { code }, t.subject, t.bodyHtml);
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
-  const users = getUsers();
-  const match = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (match) return match;
+  // Frontend handles /api/login directly in Landing.tsx, this is a fallback for legacy local logic
   return null;
 };
 
-export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, pass: string, lang: string, lat?: number, lng?: number, location?: string) => {
-  const id = `org-${Date.now()}`;
-  const newOrg: Organization = {
-    id, name: orgName, location: location || '', latitude: lat, longitude: lng,
-    foundedYear: new Date().getFullYear(), description: '', focus,
-    isOrgPublic: true, isSpeciesPublic: true, obscureLocation: false, allowBreedingRequests: true,
-    aiUsageLimit: 100, aiUsageCount: 0, enableMfa: false, enableEnclosures: false
-  };
-  const newUser: User = {
-    id: `u-${Date.now()}`, orgId: id, name: userName, email, role: UserRole.ADMIN, status: UserStatus.ACTIVE,
-    preferredLanguage: lang
-  };
-  saveOrg(newOrg);
-  saveUsers([...getUsers(), newUser]);
+export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string, latitude?: number, longitude?: number, location?: string) => {
+  const response = await fetch('/api/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orgName, userName, email, focus, password, language: lang, latitude, longitude, location })
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Registration failed");
+
+  localStorage.setItem('os_token', data.token);
+  saveSession(data.user);
+  saveOrg(data.organization, true);
   return { needsVerification: false };
 };
 
 export const confirmRegistration = async (email: string, code: string): Promise<User> => {
-   const user = getUsers().find(u => u.email === email);
-   if (!user) throw new Error("User not found");
-   return user;
+   throw new Error("Verification handled by login flow.");
 };
 
-export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => ({ success: true, message: "Reset code sent to email." });
+export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => ({ success: true, message: "Reset code sent." });
 export const resetPassword = async (email: string, code: string, pass: string): Promise<{ success: boolean; error?: string }> => ({ success: true });
 
 export const regenerateDemoData = async () => {};
@@ -410,42 +322,28 @@ export const generatePartnerInvite = (): string => {
   return code;
 };
 
-export const redeemPartnerInvite = (code: string): {success: boolean, message: string} => {
-  return { success: true, message: "Partnership established!" };
-};
+export const redeemPartnerInvite = (code: string): {success: boolean, message: string} => ({ success: true, message: "Partnership established!" });
 
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[]) => {
-  const newUser: User = {
-    id: `u-${Date.now()}`,
-    orgId: getOrg().id,
-    name, email, role, status: UserStatus.INVITED,
-    allowedProjectIds
-  };
-  const updated = [...getUsers(), newUser];
-  saveUsers(updated);
+  const newUser: User = { id: `u-${Date.now()}`, orgId: getOrg().id, name, email, role, status: UserStatus.INVITED, allowedProjectIds };
+  saveUsers([...getUsers(), newUser]);
 };
 
-export const deleteUser = async (id: string) => {
-  const updated = getUsers().filter(u => u.id !== id);
-  saveUsers(updated);
-};
+export const deleteUser = async (id: string) => saveUsers(getUsers().filter(u => u.id !== id));
 
 export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => ({ success: true, data: { name: 'Invited User', email: 'user@example.com', orgName: 'Sample Org' } });
 
-export const acceptInvite = async (token: string, pass: string) => {
-  const user = getUsers()[0];
-  return { user };
-};
+export const acceptInvite = async (token: string, pass: string) => ({ user: getUsers()[0] });
 
 export const exportFullData = () => ({ org: getOrg(), projects: getProjects(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(), enclosures: getEnclosures(), breedingEvents: getBreedingEvents(), breedingLoans: getBreedingLoans(), partnerships: getPartnerships(), settings: getSystemSettings(), languages: getLanguages() });
 
 export const exportDataAsCSV = (): string => {
   const species = getSpecies();
   const individuals = getIndividuals();
-  const headers = ['Studbook ID', 'Name', 'Common Name', 'Scientific Name', 'Sex', 'Birth Date', 'Weight (kg)', 'Status', 'Notes', 'Source', 'Latitude', 'Longitude'];
+  const headers = ['Studbook ID', 'Name', 'Common Name', 'Scientific Name', 'Sex', 'Birth Date', 'Weight (kg)', 'Status'];
   const rows = individuals.map(ind => {
     const sp = species.find(s => s.id === ind.speciesId);
-    return [ind.studbookId || '', `"${(ind.name || '').replace(/"/g, '""')}"`, `"${(sp?.commonName || '').replace(/"/g, '""')}"`, `"${(sp?.scientificName || '').replace(/"/g, '""')}"`, ind.sex || '', ind.birthDate || '', ind.weightKg || '0', ind.isDeceased ? 'Deceased' : 'Active', `"${(ind.notes || '').replace(/"/g, '""')}"`, ind.source || '', ind.latitude || '', ind.longitude || ''];
+    return [ind.studbookId || '', `"${ind.name}"`, `"${sp?.commonName}"`, `"${sp?.scientificName}"`, ind.sex || '', ind.birthDate || '', ind.weightKg || '0', ind.isDeceased ? 'Deceased' : 'Active'];
   });
   return [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
 };
