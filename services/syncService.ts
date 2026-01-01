@@ -196,11 +196,13 @@ export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, descrip
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
 // Fixed plant_classification mapping to use s.plantClassification
 export const mapSpeciesToDb = (s: Species) => ({ id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, plant_classification: s.plantClassification || null, conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null });
+
+// Fixed mapIndToDb to use correct frontend camelCase property names when accessing Individual 'i'
 export const mapIndToDb = (i: Individual) => ({ 
   id: i.id, 
   project_id: i.projectId, 
   species_id: i.speciesId, 
-  studbook_id: i.studbook_id, 
+  studbook_id: i.studbookId, 
   name: i.name, 
   sex: i.sex, 
   birth_date: i.birthDate || null, 
@@ -220,9 +222,9 @@ export const mapIndToDb = (i: Individual) => ({
   transferred_to_org_id: i.transferredToOrgId || null, 
   transfer_date: i.transferDate || null, 
   transfer_note: i.transferNote || null, 
-  weight_history: i.weight_history || [], 
-  growth_history: i.growth_history || [], 
-  health_history: i.health_history || [] 
+  weight_history: i.weightHistory || [], 
+  growth_history: i.growthHistory || [], 
+  health_history: i.healthHistory || [] 
 });
 export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
 export const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });

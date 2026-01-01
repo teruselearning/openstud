@@ -385,21 +385,56 @@ app.post('/api/users/invite', authenticate, async (req: any, res: any) => {
         if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: "Unauthorized to invite users." });
         const [existing]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
         if (existing.length > 0) return res.status(400).json({ error: "User with this email already exists." });
+        
         const inviteToken = crypto.randomBytes(32).toString('hex');
         const inviteExpires = Date.now() + (7 * 24 * 60 * 60 * 1000); 
         const userId = `u-${Date.now()}`;
+        
         await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, allowed_project_ids, invite_token, invite_expires) VALUES (?, ?, ?, ?, ?, 'Invited', ?, ?, ?)`, [userId, adminOrgId, name, cleanEmail, role, JSON.stringify(allowedProjectIds || []), inviteToken, inviteExpires]);
+        
         const [orgRows]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [adminOrgId]);
         const orgName = orgRows[0]?.name || 'Your Organization';
+        
         const settings = await getGlobalConfig();
         const transporter = getTransporter(settings);
+        
         if (transporter) {
             const template = settings.emailTemplates?.invite;
-            const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+            // Build absolute URL for the invitation
+            const host = req.get('host');
+            const protocol = req.protocol;
+            // If running on 3001 (backend) but client likely on 3000 in dev
+            const appHost = (host.includes(':3001')) ? host.replace(':3001', ':3000') : host;
+            const appUrl = process.env.APP_URL || `${protocol}://${appHost}`;
             const inviteUrl = `${appUrl}/#/accept-invite?token=${inviteToken}`;
+            
             const placeholders = { orgName, userName: name, inviteUrl, year: new Date().getFullYear().toString() };
+            
             const subject = (template?.enabled && template.subject) ? replacePlaceholders(template.subject, placeholders) : `Invitation to join ${orgName} on OpenStudbook`;
-            const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : `<p>Hello ${name},</p><p>You have been invited to join <strong>${orgName}</strong> on OpenStudbook.</p><p><a href="${inviteUrl}">Click here to accept the invitation and set your password.</a></p>`;
+            
+            // Professional Fallback Styled Template if no custom one exists
+            const fallbackBody = `
+              <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
+                <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
+                  <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
+                </div>
+                <div style="padding: 40px 32px; color: #1e293b;">
+                  <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">You've been invited!</h2>
+                  <p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello <strong>${name}</strong>,</p>
+                  <p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>${orgName}</strong>.</p>
+                  <div style="margin: 32px 0; text-align: center;">
+                    <a href="${inviteUrl}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">Accept Invitation</a>
+                  </div>
+                  <p style="font-size: 14px; color: #64748b;">If the button doesn't work, copy and paste this link: <br> <span style="color: #059669; text-decoration: underline;">${inviteUrl}</span></p>
+                </div>
+                <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+                  <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
+                </div>
+              </div>
+            `;
+
+            const bodyHtml = (template?.enabled && template.bodyHtml) ? replacePlaceholders(template.bodyHtml, placeholders) : fallbackBody;
+            
             await transporter.sendMail({ from: process.env.SMTP_FROM || '"OpenStudbook" <no-reply@openstudbook.org>', to: cleanEmail, subject, html: bodyHtml });
         }
         res.json({ success: true, message: "Invitation sent." });
