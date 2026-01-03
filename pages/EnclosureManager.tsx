@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals } from '../services/storage';
 import { Enclosure, Species, Individual, EnclosurePoint, Sex } from '../types';
-// Added AlertCircle to imports
-import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle, AlertCircle, ArrowRightLeft, Move } from 'lucide-react';
+// Added Loader2 to imports
+import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle, AlertCircle, ArrowRightLeft, Move, Navigation, Loader2 } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -45,6 +44,7 @@ const EnclosureManager: React.FC = () => {
   });
 
   const [showMapPicker, setShowMapPicker] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
@@ -59,14 +59,12 @@ const EnclosureManager: React.FC = () => {
     setAllSpecies(getSpecies());
     setAllIndividuals(getIndividuals());
 
-    // Handle incoming navigation for editing a specific enclosure
     if (location.state?.editId) {
       const found = encls.find(e => e.id === location.state.editId);
       if (found) {
         setEditingId(found.id);
         setFormData(found);
         setShowForm(true);
-        // Clear history state
         window.history.replaceState({}, document.title);
       }
     }
@@ -151,36 +149,94 @@ const EnclosureManager: React.FC = () => {
        pickerInstance.current = map;
        pickerMarkers.current = [];
 
+       // Reference Layer for OTHER enclosures
+       const otherEnclosures = enclosures.filter(e => e.id !== editingId);
+       otherEnclosures.forEach(enc => {
+         if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length >= 3) {
+           L.polygon(enc.boundary.map(p => [p.lat, p.lng]), {
+             color: '#cbd5e1',
+             fillColor: '#f1f5f9',
+             fillOpacity: 0.3,
+             weight: 1,
+             dashArray: '4, 4',
+             interactive: false
+           }).addTo(map);
+         }
+       });
+
        const updatePolygon = () => {
          const points = pickerMarkers.current.map(m => m.getLatLng());
          if (pickerPolygon.current) {
             pickerPolygon.current.setLatLngs(points);
          } else if (points.length >= 2) {
-            pickerPolygon.current = L.polygon(points, { color: '#9333ea' }).addTo(map);
+            pickerPolygon.current = L.polygon(points, { 
+              color: '#9333ea',
+              fillColor: '#9333ea',
+              fillOpacity: 0.3
+            }).addTo(map);
          }
+       };
+
+       const createMarker = (latlng: any) => {
+          const marker = L.marker(latlng, { draggable: true }).addTo(map);
+          marker.on('drag', updatePolygon);
+          pickerMarkers.current.push(marker);
+          updatePolygon();
+          return marker;
        };
 
        if (formData.boundary && Array.isArray(formData.boundary) && formData.boundary.length > 0) {
           formData.boundary.forEach(p => {
              if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
-                const marker = L.marker([p.lat, p.lng], { draggable: true }).addTo(map);
-                marker.on('drag', updatePolygon);
-                pickerMarkers.current.push(marker);
+                createMarker([p.lat, p.lng]);
              }
           });
           updatePolygon();
        }
 
        map.on('click', (e: any) => {
-          const marker = L.marker(e.latlng, { draggable: true }).addTo(map);
-          marker.on('drag', updatePolygon);
-          pickerMarkers.current.push(marker);
-          updatePolygon();
+          createMarker(e.latlng);
        });
+
+       // Export method to global scope for the component to call
+       (window as any)._addPickerMarker = (lat: number, lng: number) => {
+          const marker = createMarker([lat, lng]);
+          map.panTo([lat, lng]);
+       };
 
        setTimeout(() => map.invalidateSize(), 200);
     }
-  }, [showMapPicker, org, formData.boundary]);
+
+    return () => {
+      if (pickerInstance.current && !showMapPicker) {
+        pickerInstance.current.remove();
+        pickerInstance.current = null;
+        pickerPolygon.current = null;
+        pickerMarkers.current = [];
+        delete (window as any)._addPickerMarker;
+      }
+    };
+  }, [showMapPicker, org, editingId, enclosures]);
+
+  const handleMarkLocation = () => {
+    if (!navigator.geolocation) return;
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        if ((window as any)._addPickerMarker) {
+          (window as any)._addPickerMarker(latitude, longitude);
+        }
+        setIsLocating(false);
+      },
+      (err) => {
+        console.error("GPS Mark Failed", err);
+        setIsLocating(false);
+        alert("Unable to get current location. Ensure GPS is enabled.");
+      },
+      { enableHighAccuracy: true }
+    );
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -230,7 +286,6 @@ const EnclosureManager: React.FC = () => {
      let updatedInds = [...allIndividuals];
      let updatedEncls = [...enclosures];
 
-     // 1. Update Individuals
      updatedInds = updatedInds.map(ind => {
         if (movingIds.includes(ind.id)) {
            return { ...ind, enclosureId: moveDestId === 'NONE' ? undefined : moveDestId };
@@ -238,11 +293,8 @@ const EnclosureManager: React.FC = () => {
         return ind;
      });
 
-     // 2. Update Enclosures (IndividualIds arrays)
      updatedEncls = updatedEncls.map(enc => {
-        // Remove from everywhere they currently are
         let newIds = enc.individualIds.filter(id => !movingIds.includes(id));
-        // Add to destination if this IS the destination
         if (enc.id === moveDestId) {
            newIds = Array.from(new Set([...newIds, ...movingIds]));
         }
@@ -476,7 +528,6 @@ const EnclosureManager: React.FC = () => {
               </div>
               
               <div className="flex-1 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                 {/* Step 1: Source */}
                  <div className="flex-1 p-6 space-y-4 overflow-y-auto">
                     <div className="space-y-1">
                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Select Source Location</label>
@@ -512,7 +563,6 @@ const EnclosureManager: React.FC = () => {
                     )}
                  </div>
 
-                 {/* Step 2: Destination */}
                  <div className="md:w-80 p-6 bg-slate-50/50 flex flex-col justify-between">
                     <div className="space-y-6">
                        <div className="space-y-1">
@@ -710,7 +760,7 @@ const EnclosureManager: React.FC = () => {
                      <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><MapIcon size={20}/></div>
                      <div>
                         <h3 className="font-bold text-slate-900">Define {label} Boundaries</h3>
-                        <p className="text-xs text-slate-500">Click points on the map to create the enclosure perimeter.</p>
+                        <p className="text-xs text-slate-500">Click points on the map or walk to the boundary and mark your location.</p>
                      </div>
                   </div>
                   <button onClick={() => setShowMapPicker(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
@@ -721,11 +771,21 @@ const EnclosureManager: React.FC = () => {
                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Instructions</p>
                         <ul className="text-[10px] text-slate-600 space-y-1.5">
                            <li className="flex items-start gap-1.5"><ChevronRight size={10} className="mt-0.5 flex-shrink-0" /> Click anywhere to add a corner</li>
-                           <li className="flex items-start gap-1.5"><ChevronRight size={10} className="mt-0.5 flex-shrink-0" /> Drag markers to adjust</li>
+                           <li className="flex items-start gap-1.5"><ChevronRight size={10} className="mt-0.5 flex-shrink-0" /> Walk to corners and use 'Mark My Location'</li>
+                           <li className="flex items-start gap-1.5"><ChevronRight size={10} className="mt-0.5 flex-shrink-0" /> Grey dashed areas are existing enclosures</li>
                         </ul>
                      </div>
                   </div>
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex gap-2">
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex flex-col sm:flex-row gap-2">
+                     <button 
+                        type="button" 
+                        onClick={handleMarkLocation}
+                        disabled={isLocating}
+                        className="bg-emerald-600 text-white px-6 py-3 rounded-full text-sm font-bold shadow-lg hover:bg-emerald-700 flex items-center gap-2 transition-all transform active:scale-95"
+                     >
+                        {isLocating ? <Loader2 size={18} className="animate-spin" /> : <Navigation size={18}/>}
+                        Add Point at My Location
+                     </button>
                      <button 
                         type="button" 
                         onClick={() => {
@@ -738,9 +798,9 @@ const EnclosureManager: React.FC = () => {
                               pickerPolygon.current = null;
                            }
                         }}
-                        className="bg-white border border-slate-200 text-red-600 px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-50 flex items-center gap-1.5"
+                        className="bg-white border border-slate-200 text-red-600 px-4 py-3 rounded-full text-sm font-bold shadow-lg hover:bg-red-50 flex items-center justify-center gap-1.5"
                      >
-                        <Trash size={14}/> Clear All Points
+                        <Trash size={16}/> Clear All
                      </button>
                   </div>
                </div>
@@ -764,7 +824,6 @@ const EnclosureManager: React.FC = () => {
          </div>
       )}
 
-      {/* Confirmation Modal for Deletion */}
       {enclosureToDelete && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
            <div className="bg-white rounded-2xl shadow-2xl max-md w-full overflow-hidden animate-in zoom-in duration-200">
