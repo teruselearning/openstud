@@ -126,7 +126,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       if (markersLayer) markersLayer.clearLayers();
       if (enclosuresLayer) enclosuresLayer.clearLayers();
 
-      // Draw Individuals - STRICT TYPE CHECKING FOR COORDS
+      // Draw Individuals
       filtered.forEach(ind => {
         if (typeof ind.latitude === 'number' && typeof ind.longitude === 'number') {
           const icon = L.divIcon({
@@ -146,13 +146,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         }
       });
 
-      // Draw Enclosures - STRICT TYPE CHECKING FOR COORDS
+      // Draw Enclosures
       if (showEnclosuresOnMap && enclosuresLayer) {
         allEnclosures.forEach(enc => {
           if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
             const validPoints = enc.boundary.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number');
             
-            if (validPoints.length >= 3) { // Polygons need at least 3 points
+            if (validPoints.length >= 3) {
                const poly = L.polygon(validPoints.map(p => [p.lat, p.lng]), {
                  color: '#9333ea',
                  fillColor: '#9333ea',
@@ -245,6 +245,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const potentialDams = potentialParents.filter(i => i.sex === Sex.FEMALE || i.sex === Sex.UNKNOWN);
 
   const hasMappedIndividuals = filtered.some(ind => typeof ind.latitude === 'number' && typeof ind.longitude === 'number');
+  const hasVisibleEnclosures = showEnclosuresOnMap && allEnclosures.some(enc => enc.boundary && enc.boundary.length >= 3);
+  const shouldShowEmptyMapOverlay = !hasMappedIndividuals && !hasVisibleEnclosures;
 
   const getResidentsOfEnclosure = (enc: Enclosure) => {
      const residents = allIndividuals.filter(i => enc.individualIds.includes(i.id) && !i.isDeceased);
@@ -358,7 +360,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
       {viewMode === 'map' && (
         <div className="relative flex-1 min-h-[600px] rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-          <div ref={mapContainerRef} className={`w-full h-[600px] ${!hasMappedIndividuals ? 'opacity-30' : ''}`} />
+          <div ref={mapContainerRef} className={`w-full h-[600px] ${shouldShowEmptyMapOverlay ? 'opacity-30' : ''}`} />
           
           <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
              <button 
@@ -405,7 +407,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              </div>
           )}
 
-          {!hasMappedIndividuals && (
+          {shouldShowEmptyMapOverlay && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center pointer-events-none">
                <div className="w-16 h-16 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-400 mb-4 shadow-xl border border-slate-100">
                   <MapPin size={32} />
