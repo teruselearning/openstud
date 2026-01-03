@@ -73,6 +73,7 @@ export interface EnclosurePoint {
 export interface Enclosure {
   id: string;
   orgId: string;
+  projectId?: string; // Scoped to a specific project
   name: string;
   description?: string;
   boundary?: EnclosurePoint[]; // Array of points for the polygon
@@ -186,6 +187,7 @@ export interface Species {
   conservationStatus: string;
   sexualMaturityAgeYears: number;
   averageAdultWeightKg: number;
+  life_expectancy_years?: number; // Legacy sync compat
   lifeExpectancyYears: number;
   breedingSeasonStart?: number;
   breedingSeasonEnd?: number;

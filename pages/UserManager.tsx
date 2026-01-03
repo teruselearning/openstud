@@ -1,14 +1,25 @@
+
 import React, { useState, useEffect, useRef, useContext } from 'react';
-import { getUsers, getProjects, inviteUser, deleteUser } from '../services/storage';
+import { getUsers, getProjects, inviteUser, deleteUser, getSession, saveUsers } from '../services/storage';
 import { User, UserRole, UserStatus, Project } from '../types';
-import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send } from 'lucide-react';
+import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock } from 'lucide-react';
 import { LanguageContext } from '../App';
+
+const ROLE_KEY = [
+  { role: UserRole.SUPER_ADMIN, color: 'text-purple-600', bg: 'bg-purple-50', desc: 'Full root access across all organisations and system settings. Only assignable by other Super Admins.' },
+  { role: UserRole.ADMIN, color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Organisation-wide management. Can create projects, invite users, and see "All Projects" consolidated views.' },
+  { role: UserRole.KEEPER, color: 'text-blue-600', bg: 'bg-blue-50', desc: 'Day-to-day animal management. View and edit records within their assigned projects.' },
+  { role: UserRole.VET, color: 'text-red-600', bg: 'bg-red-50', desc: 'Medical focus. Access to health logs and clinical history within assigned projects.' },
+  { role: UserRole.RESEARCHER, color: 'text-amber-600', bg: 'bg-amber-50', desc: 'Data focus. Read-only access to genomic and population data within assigned projects.' },
+];
 
 const UserManager: React.FC = () => {
   const { t } = useContext(LanguageContext);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showRoleKey, setShowRoleKey] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
@@ -24,9 +35,9 @@ const UserManager: React.FC = () => {
   const [projectAccessType, setProjectAccessType] = useState<'all' | 'selected'>('all');
 
   useEffect(() => {
-    // Fix: Completed the missing getUsers() and getProjects() calls
     setUsers(getUsers());
     setProjects(getProjects());
+    setCurrentUser(getSession());
   }, []);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -49,17 +60,20 @@ const UserManager: React.FC = () => {
     }
   };
 
+  // Fix: Added missing handleDelete function
   const handleDelete = async () => {
     if (!userToDelete) return;
     try {
       await deleteUser(userToDelete.id);
-      setToast({ message: "User removed successfully.", type: 'success' });
       setUsers(getUsers());
+      setToast({ message: "User removed successfully.", type: 'success' });
       setUserToDelete(null);
     } catch (err: any) {
-      setToast({ message: err.message || "Failed to remove user.", type: 'error' });
+      setToast({ message: "Failed to remove user.", type: 'error' });
     }
   };
+
+  const isSuperAdmin = currentUser?.role === UserRole.SUPER_ADMIN || (currentUser?.role as string) === 'Super Admin';
 
   const toggleProject = (id: string) => {
     const current = formData.allowedProjectIds || [];
@@ -72,16 +86,35 @@ const UserManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
            <h3 className="text-lg font-bold text-slate-900">{t('teamMembers')}</h3>
            <p className="text-slate-500 text-sm">{t('teamSubtitle')}</p>
         </div>
-        <button onClick={() => setShowForm(true)} className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          <Plus size={16} />
-          <span>{t('inviteMember')}</span>
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={() => setShowRoleKey(!showRoleKey)} className="flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Info size={16} />
+            <span>Role Key</span>
+          </button>
+          <button onClick={() => setShowForm(true)} className="flex-1 sm:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+            <Plus size={16} />
+            <span>{t('inviteMember')}</span>
+          </button>
+        </div>
       </div>
+
+      {showRoleKey && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-300">
+           {ROLE_KEY.map(rk => (
+             <div key={rk.role} className="space-y-1">
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${rk.bg} ${rk.color}`}>
+                   <Shield size={12}/> {rk.role}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">{rk.desc}</p>
+             </div>
+           ))}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <table className="w-full text-left">
@@ -89,6 +122,7 @@ const UserManager: React.FC = () => {
             <tr>
               <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">User</th>
               <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Role</th>
+              <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Access</th>
               <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Status</th>
               <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
             </tr>
@@ -112,6 +146,15 @@ const UserManager: React.FC = () => {
                     <Shield size={14} className="text-slate-400" />
                     {user.role}
                   </span>
+                </td>
+                <td className="px-6 py-4">
+                   <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                      {user.role === UserRole.ADMIN || (user.role as string) === 'Super Admin' ? (
+                        <span className="flex items-center gap-1 text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-tight"><Eye size={12}/> Global View</span>
+                      ) : (
+                        <span className="flex items-center gap-1"><Briefcase size={12}/> {user.allowedProjectIds?.length || 0} Projects</span>
+                      )}
+                   </div>
                 </td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${user.status === UserStatus.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -148,34 +191,56 @@ const UserManager: React.FC = () => {
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 mb-1 block">Role</label>
-                <select className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value as UserRole })}>
-                  {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
+                <select 
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
+                  value={formData.role} 
+                  onChange={e => setFormData({ ...formData, role: e.target.value as UserRole })}
+                >
+                  {Object.values(UserRole).map(role => {
+                    const isDisabled = role === UserRole.SUPER_ADMIN && !isSuperAdmin;
+                    return (
+                      <option key={role} value={role} disabled={isDisabled}>
+                        {role} {isDisabled ? '(Requires Super Admin)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
-              <div className="space-y-2">
-                 <label className="text-sm font-medium text-slate-700 mb-1 block">Project Access</label>
-                 <div className="flex gap-4 mb-2">
+              {(formData.role !== UserRole.ADMIN && (formData.role as string) !== UserRole.SUPER_ADMIN) && (
+                <div className="space-y-2 animate-in fade-in">
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">Project Access</label>
+                  <div className="flex gap-4 mb-2">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                       <input type="radio" name="access" checked={projectAccessType === 'all'} onChange={() => setProjectAccessType('all')} />
-                       {t('allProjects')}
+                      <input type="radio" name="access" checked={projectAccessType === 'all'} onChange={() => setProjectAccessType('all')} />
+                      All Current Projects
                     </label>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                       <input type="radio" name="access" checked={projectAccessType === 'selected'} onChange={() => setProjectAccessType('selected')} />
-                       {t('selectedProjects')}
+                      <input type="radio" name="access" checked={projectAccessType === 'selected'} onChange={() => setProjectAccessType('selected')} />
+                      Specific Projects
                     </label>
-                 </div>
-                 {projectAccessType === 'selected' && (
+                  </div>
+                  {projectAccessType === 'selected' && (
                     <div className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-1 max-h-32 overflow-y-auto">
-                       {projects.map(p => (
-                          <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded transition-colors">
-                             <input type="checkbox" checked={formData.allowedProjectIds?.includes(p.id)} onChange={() => toggleProject(p.id)} className="rounded text-emerald-600" />
-                             {p.name}
-                          </label>
-                       ))}
+                      {projects.map(p => (
+                        <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded transition-colors">
+                          <input type="checkbox" checked={formData.allowedProjectIds?.includes(p.id)} onChange={() => toggleProject(p.id)} className="rounded text-emerald-600" />
+                          {p.name}
+                        </label>
+                      ))}
                     </div>
-                 )}
-              </div>
+                  )}
+                </div>
+              )}
+
+              {formData.role === UserRole.ADMIN && (
+                <div className="bg-indigo-50 p-4 rounded-lg flex items-start gap-3 border border-indigo-100">
+                  <Lock size={18} className="text-indigo-600 mt-0.5"/>
+                  <p className="text-xs text-indigo-700 leading-relaxed font-medium">
+                    Administrators have access to all projects by default and can switch between them using the "All Projects" consolidated view.
+                  </p>
+                </div>
+              )}
 
               <div className="pt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>

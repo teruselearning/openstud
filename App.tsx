@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -32,7 +33,8 @@ import {
   Loader2,
   Check,
   Server,
-  Box 
+  Box,
+  Layers
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -121,6 +123,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
+  const isAdmin = user.role === UserRole.ADMIN || isSuper;
   const org = getOrg();
   const enclosureLabel = org.focus === 'Plants' ? 'Areas' : 'Enclosures';
   
@@ -135,14 +138,26 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           </div>
           <div className="relative">
              <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> Current Project</div>
-             <select value={currentProjectId} onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium">
+             <select 
+               value={currentProjectId} 
+               onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} 
+               className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium disabled:opacity-50"
+               disabled={!isAdmin && projects.length <= 1}
+             >
+               {isAdmin && (
+                 <option value="ALL_PROJECTS">🌐 All Projects</option>
+               )}
                {projects.length > 0 ? (
                  projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
                ) : (
                  <option value="">No Projects Found</option>
                )}
-               <option disabled>──────────</option>
-               <option value="NEW">+ Create New Project</option>
+               {isAdmin && (
+                 <>
+                   <option disabled>──────────</option>
+                   <option value="NEW">+ Create New Project</option>
+                 </>
+               )}
              </select>
           </div>
         </div>
@@ -153,9 +168,9 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           {showEnclosures && <NavItem to="/enclosures" icon={Box} label={enclosureLabel} active={path.startsWith('/enclosures')} />}
           {showPlantMap && <NavItem to="/plant-map" icon={Map} label={t('plantMap')} active={path === '/plant-map'} />}
           {showBreeding && <NavItem to="/breeding" icon={HeartHandshake} label={t('breeding')} active={path.startsWith('/breeding')} />}
-          <div className="pt-4 mt-4 border-t border-slate-100">
+          <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
              <NavItem to="/network" icon={Globe2} label={t('networkMap')} active={path === '/network'} />
-             <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />
+             {isAdmin && <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />}
              {isSuper && <NavItem to="/super-admin" icon={Shield} label={t('superAdmin')} active={path === '/super-admin'} />}
           </div>
         </nav>
@@ -210,49 +225,29 @@ const App: React.FC = () => {
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
 
-  // Initial setup: Get stored data and fetch public config
   useEffect(() => {
     const initializeApp = async () => {
-       // 1. Initialize High-Capacity Storage (IndexedDB)
        await initHighCapacityStorage();
-
-       // 2. Setup Languages
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
-       
        const session = getSession();
        if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
        else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
-
-       // 3. Fetch public configuration
        try {
           const res = await fetchPublicConfig();
           if (res.success) {
              if (res.settings) {
                 const currentLocal = getSystemSettings();
-                const merged = {
-                   ...currentLocal,
-                   ...res.settings,
-                   landingPageConfig: {
-                      ...currentLocal.landingPageConfig,
-                      ...(res.settings.landingPageConfig || {})
-                   }
-                };
+                const merged = { ...currentLocal, ...res.settings, landingPageConfig: { ...currentLocal.landingPageConfig, ...(res.settings.landingPageConfig || {}) } };
                 saveSystemSettings(merged, true); 
                 setSystemSettings(merged);
              }
-             if (res.languages) {
-                saveLanguages(res.languages, true);
-                setLanguages(res.languages);
-             }
+             if (res.languages) { saveLanguages(res.languages, true); setLanguages(res.languages); }
           }
        } catch (e) { console.warn("Public config failed."); }
-
-       // 4. Load session data if it exists
        if (session) await loadData(session);
        else setIsLoading(false);
     };
-
     initializeApp();
   }, []);
 
@@ -280,21 +275,22 @@ const App: React.FC = () => {
   }, [systemSettings]);
 
   const calculateFeatureVisibility = (pid: string) => {
-     if (!pid) return;
+     const isAll = pid === 'ALL_PROJECTS';
      const org = getOrg();
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
-     const projectSpecies = allSpecies.filter(s => s.projectId === pid);
      
-     setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
-     setShowEnclosures(!!org.enableEnclosures);
-     
-     const hasMappedPlants = allInds.some(i => 
-        i.projectId === pid && 
-        i.latitude !== undefined && 
-        allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant'
-     );
-     setShowPlantMap(hasMappedPlants);
+     if (isAll) {
+       setShowBreeding(org.focus === 'Animals' || allSpecies.some(s => s.type === 'Animal'));
+       setShowEnclosures(!!org.enableEnclosures);
+       setShowPlantMap(allInds.some(i => i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant'));
+     } else {
+       const projectSpecies = allSpecies.filter(s => s.projectId === pid);
+       setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+       setShowEnclosures(!!org.enableEnclosures);
+       const hasMappedPlants = allInds.some(i => i.projectId === pid && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
+       setShowPlantMap(hasMappedPlants);
+     }
   };
 
   const performSync = async () => {
@@ -304,17 +300,13 @@ const App: React.FC = () => {
         const result = await fetchRemoteData();
         if (result.success && result.data) {
            const { data } = result;
-           
            const localSpecies = getSpecies();
            const localInds = getIndividuals();
            const localProjects = getProjects();
            const localUsers = getUsers();
-           
            const serverIsEmpty = (data.species || []).length === 0 && (data.individuals || []).length === 0;
            const localHasData = localSpecies.length > 0 || localInds.length > 0;
-
            if (serverIsEmpty && localHasData) {
-              console.log("Sync: Server is empty but Client has data. Attempting backup push...");
               try {
                   await syncPushOrg(getOrg());
                   await syncPushUsers(localUsers);
@@ -326,29 +318,15 @@ const App: React.FC = () => {
                   await syncPushBreedingLoans(getBreedingLoans());
                   await syncPushPartnerships(getPartnerships());
                   await syncPushLanguages(getLanguages());
-                  console.log("Sync: Initial backup push successful.");
-              } catch (pushErr: any) {
-                  console.error("Sync: Initial backup push failed. Overwrite prevented.", pushErr);
-                  setSyncError(`Backup Push Failed: ${pushErr.message}. Local data preserved.`);
-                  return;
-              }
+              } catch (pushErr: any) { setSyncError(`Backup Push Failed: ${pushErr.message}`); return; }
            } else {
               if (data.org) saveOrg(data.org, true);
-              
               if (data.settings && Object.keys(data.settings).length > 2) { 
                  const currentLocal = getSystemSettings();
-                 const merged = {
-                    ...currentLocal,
-                    ...data.settings,
-                    landingPageConfig: {
-                       ...currentLocal.landingPageConfig,
-                       ...(data.settings.landingPageConfig || {})
-                    }
-                 };
+                 const merged = { ...currentLocal, ...data.settings, landingPageConfig: { ...currentLocal.landingPageConfig, ...(data.settings.landingPageConfig || {}) } };
                  saveSystemSettings(merged, true); 
                  setSystemSettings(merged); 
               }
-              
               if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);
@@ -360,54 +338,46 @@ const App: React.FC = () => {
               if (data.partnerships) savePartnerships(data.partnerships, true);
               if (data.partners) saveNetworkPartners(data.partners); 
            }
-           
            const activeOrg = getOrg();
            setCurrentOrg(activeOrg);
            const pjs = getProjects().filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
            setProjects(pjs);
-           
            if (pjs.length > 0) {
               const currentId = getCurrentProjectId();
               calculateFeatureVisibility(currentId || pjs[0].id);
            }
         } else if (!result.success) {
            setSyncError(result.message || "Unknown sync error");
-           if (result.message.includes('Unexpected response (404)') || result.message.includes('Failed to fetch')) setShowBackendSetup(true);
+           if (result.message.includes('404') || result.message.includes('fetch')) setShowBackendSetup(true);
         }
-     } catch (e: any) { 
-        console.error("Sync Exception:", e);
-        setSyncError(e.message || "Sync Exception"); 
-     } finally { setIsSyncing(false); }
+     } catch (e: any) { setSyncError(e.message || "Sync Exception"); } finally { setIsSyncing(false); }
   };
 
   const loadData = async (session: User) => {
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
-    
-    const isSuper = session.role === UserRole.SUPER_ADMIN || (user?.role as string) === 'Super Admin';
+    const isSuper = session.role === UserRole.SUPER_ADMIN || (session.role as string) === 'Super Admin';
     const isImpersonatingSession = isImpersonating();
     setImpersonating(isSuper ? false : isImpersonatingSession);
-    
     let activeOrg = getOrg();
     if (!isImpersonatingSession && activeOrg.id !== session.orgId) {
        const allPartners = getNetworkPartners();
        const matchedOrg = allPartners.find(p => p.id === session.orgId);
-       if (matchedOrg) {
-          saveOrg(matchedOrg as any, true);
-          activeOrg = matchedOrg as any;
-       }
+       if (matchedOrg) { saveOrg(matchedOrg as any, true); activeOrg = matchedOrg as any; }
     }
     setCurrentOrg(activeOrg);
-    
     const allProjects = getProjects();
-    let availableProjects = allProjects.filter(p => {
-       const projectOrgId = p.orgId || (p as any).org_id;
-       return projectOrgId === activeOrg.id;
-    });
+    
+    // Scoping check
+    let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
+    if (session.allowedProjectIds && session.allowedProjectIds.length > 0) {
+       availableProjects = availableProjects.filter(p => session.allowedProjectIds!.includes(p.id));
+    }
 
     let savedPid = getCurrentProjectId();
-    if (!availableProjects.some(p => p.id === savedPid)) {
+    // Validate current selection
+    if (savedPid !== 'ALL_PROJECTS' && !availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
     }
@@ -421,41 +391,34 @@ const App: React.FC = () => {
 
   const handleLogin = (u: User) => loadData(u);
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
-  
-  const handleProjectChange = (id: string) => { 
-     setCurrentProjectIdState(id); 
-     saveCurrentProjectId(id); 
-     calculateFeatureVisibility(id); 
-  };
+  const handleProjectChange = (id: string) => { setCurrentProjectIdState(id); saveCurrentProjectId(id); calculateFeatureVisibility(id); };
 
+  // Fix: Added missing handleCreateProject
   const handleCreateProject = () => {
     if (!newProjectName) return;
     const orgId = currentOrg?.id || getOrg().id;
     const newProject: Project = { id: `p-${Date.now()}`, name: newProjectName, description: newProjectDesc || '', orgId: orgId };
     const allProjects = [...getProjects(), newProject];
     saveProjects(allProjects);
-    
-    const filtered = allProjects.filter(p => (p.orgId || (p as any).org_id) === orgId);
-    setProjects(filtered);
-    
+    setProjects(allProjects.filter(p => (p.orgId || (p as any).org_id) === orgId));
     handleProjectChange(newProject.id);
     setShowAddProjectModal(false);
     setNewProjectName(''); setNewProjectDesc('');
     showToast("Project created successfully!", "success");
   };
 
+  // Fix: Added missing openProfileModal
   const openProfileModal = () => {
      if (!user) return;
      setProfileForm({ name: user.name, email: user.email, avatarUrl: user.avatarUrl || '', newPassword: '', confirmPassword: '' });
      setPendingEmail(''); setIsVerifyingEmail(false); setVerifyCode(''); setShowProfileModal(true);
   };
 
+  // Fix: Added missing handleSaveProfile
   const handleSaveProfile = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!user) return;
-     if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) {
-        showToast("Passwords do not match.", "error"); return;
-     }
+     if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) { showToast("Passwords do not match.", "error"); return; }
      let updatedUser = { ...user, name: profileForm.name, email: profileForm.email, avatarUrl: profileForm.avatarUrl };
      if (profileForm.newPassword) updatedUser.password = profileForm.newPassword;
      const updatedList = getUsers().map(u => u.id === user.id ? updatedUser : u);
@@ -464,39 +427,7 @@ const App: React.FC = () => {
      setShowProfileModal(false); showToast("Profile updated successfully.", "success");
   };
 
-  if (isLoading) {
-    return (
-      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[9999]">
-        <div className="flex flex-col items-center space-y-6 animate-in fade-in duration-500">
-           <div className="relative">
-              <div className="w-24 h-24 rounded-3xl bg-emerald-600 flex items-center justify-center text-white shadow-2xl shadow-emerald-200 animate-pulse">
-                 <PawPrint size={48} />
-              </div>
-              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg border border-slate-100">
-                 <RefreshCw size={16} className="text-emerald-600 animate-spin" />
-              </div>
-           </div>
-           <div className="text-center space-y-2">
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">OpenStudbook</h1>
-              <div className="flex items-center justify-center gap-3">
-                 <div className="h-1 w-32 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 animate-[loading_2s_ease-in-out_infinite]"></div>
-                 </div>
-              </div>
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Synchronizing Database</p>
-           </div>
-        </div>
-        <style>{`
-          @keyframes loading {
-            0% { transform: translateX(-100%); }
-            50% { transform: translateX(0%); }
-            100% { transform: translateX(100%); }
-          }
-        `}</style>
-      </div>
-    );
-  }
-
+  if (isLoading) return null;
   if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
 
   return (
@@ -505,19 +436,16 @@ const App: React.FC = () => {
         <div className="min-h-screen bg-slate-50 flex">
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
-            {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organisation: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
-            {(currentOrg?.id === 'org-1' && (user.role as string) !== 'Super Admin') && <div className="bg-indigo-600 text-white p-3 px-6 flex flex-col sm:flex-row justify-between items-center sticky top-0 z-20 shadow-md gap-3"><div className="flex items-center gap-2 text-sm"><Info size={20} className="shrink-0" /><span>You are exploring the <strong>Demo Organisation</strong>. Features are read-only.</span></div><button onClick={() => { setInitialLandingView('register'); handleLogout(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-2 whitespace-nowrap"><Plus size={16} /> Create Your Own Organisation</button></div>}
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
                  <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
-                 <div className="hidden sm:flex items-center gap-2">{syncError && <div onClick={() => setShowBackendSetup(true)} className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-1 rounded-full text-xs border border-red-200 animate-pulse cursor-pointer hover:bg-red-100" title={syncError}><AlertCircle size={12} /><span>Sync Error</span></div>}<button onClick={performSync} className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full transition-colors ${isSyncing ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 hover:text-slate-600'}`} title="Sync Status"><RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />{isSyncing ? 'Syncing...' : 'Synced'}</button></div>
                  <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1"><Menu size={24} /></button>
               </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} /><Route path="/enclosures" element={<EnclosureManager />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
+              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} /><Route path="/enclosures" element={<EnclosureManager currentProjectId={currentProjectId} />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
             </div>
           </main>
         </div>
@@ -527,7 +455,6 @@ const App: React.FC = () => {
                   <input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} />
                   <input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} />
                 </div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
-        {showBackendSetup && <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col"><div className="p-6 border-b border-red-100 bg-red-50 flex justify-between items-center rounded-t-xl"><div className="flex items-center gap-3 text-red-800"><Server size={24} /><h3 className="text-xl font-bold">Backend Service Unavailable</h3></div><button onClick={() => setShowBackendSetup(false)} className="text-red-600 hover:text-red-800 bg-white/50 p-1 rounded-full"><X size={24}/></button></div><div className="p-6 space-y-4"><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4"><p className="text-sm text-yellow-800 font-bold">Sync Error: {syncError || "The backend service is not responding."}</p></div><h4 className="font-bold text-slate-900">How to Fix:</h4><ol className="list-decimal list-inside text-sm text-slate-700 space-y-2"><li>Ensure your Node.js backend is running (typically on port 3001).</li><li>Check the backend console for any database connection errors.</li><li>If you just started the app, wait a few moments and click retry.</li></ol></div><div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-xl"><button onClick={() => { setShowBackendSetup(false); performSync(); }} className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Retry Sync</button></div></div></div>}
       </HashRouter>
     </LanguageContext.Provider>
   );
