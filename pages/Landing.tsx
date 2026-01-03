@@ -2,7 +2,7 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { registerOrganization, confirmRegistration, login, forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, regenerateDemoData, checkInviteToken, acceptInvite } from '../services/storage';
+import { registerOrganization, login, forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { fetchRemoteData } from '../services/syncService'; 
 import { User, OrganizationFocus, LandingFeature, Organization } from '../types';
@@ -25,12 +25,10 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const langRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<any>(null);
   
-  // Accept Invite State
   const [inviteToken, setInviteToken] = useState('');
   const [inviteData, setInviteData] = useState<{name: string, email: string, orgName: string} | null>(null);
   const [invitePassword, setInvitePassword] = useState({ password: '', confirm: '' });
 
-  // Handle click outside for language dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (langRef.current && !langRef.current.contains(event.target as Node)) {
@@ -41,7 +39,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Token Detection & Hash Management
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
@@ -57,7 +54,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
          setViewMode(prev => prev === 'accept_invite' ? prev : initialView);
       }
     };
-
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -107,18 +103,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const recaptchaRef = useRef<HTMLDivElement>(null);
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
 
-  // Improved ReCAPTCHA logic to prevent observer errors
   useEffect(() => {
     let isMounted = true;
     let pollTimer: any = null;
-
     const renderCaptcha = () => {
       if (!isMounted || !recaptchaRef.current) return;
-      
       const grecaptcha = (window as any).grecaptcha;
       if (grecaptcha && grecaptcha.render) {
          try {
-            // Re-check container existence and verify it's still the correct element in the DOM
             if (recaptchaRef.current && document.body.contains(recaptchaRef.current) && recaptchaRef.current.innerHTML === '') {
                widgetIdRef.current = grecaptcha.render(recaptchaRef.current, {
                  'sitekey': settings.recaptchaSiteKey,
@@ -126,30 +118,16 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                  'expired-callback': () => { if(isMounted) setRecaptchaToken(null); }
                });
             }
-         } catch (e) {
-            console.warn('ReCAPTCHA init suppressed during transition:', e);
-         }
-      } else {
-         pollTimer = setTimeout(renderCaptcha, 500);
-      }
+         } catch (e) { console.warn('ReCAPTCHA init suppressed during transition:', e); }
+      } else { pollTimer = setTimeout(renderCaptcha, 500); }
     };
-
-    if ((viewMode === 'login' || viewMode === 'register') && settings.recaptchaSiteKey) {
-       renderCaptcha();
-    }
-
+    if ((viewMode === 'login' || viewMode === 'register') && settings.recaptchaSiteKey) { renderCaptcha(); }
     return () => {
       isMounted = false;
       if (pollTimer) clearTimeout(pollTimer);
       setRecaptchaToken(null);
     };
   }, [viewMode, settings.recaptchaSiteKey]);
-
-  useEffect(() => {
-    if (viewMode === 'register' && !isRegistrationEnabled) {
-       setViewMode('landing');
-    }
-  }, [viewMode, isRegistrationEnabled]);
 
   useEffect(() => {
     if (viewMode === 'register' && navigator.geolocation && locationStatus === 'idle') {
@@ -161,9 +139,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             const resolvedLocation = await reverseGeocode(latitude, longitude);
             setRegData(prev => ({ ...prev, latitude, longitude, location: resolvedLocation }));
             setLocationStatus('ready');
-          } catch (err) {
-            setLocationStatus('idle');
-          }
+          } catch (err) { setLocationStatus('idle'); }
         },
         () => setLocationStatus('idle'),
         { enableHighAccuracy: true, timeout: 5000 }
@@ -175,13 +151,11 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
-       // Attempt direct server login for demo Sarah
        const loginResp = await fetch('/api/login', {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ email: 'sarah@wild.org', password: 'password' })
        });
-
        if (loginResp.ok) {
           const { token, user } = await loginResp.json();
           localStorage.setItem('os_token', token);
@@ -190,14 +164,10 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           onLogin(user);
        } else {
           const err = await loginResp.json();
-          setError(`Demo Service Error: ${err.error || 'Server unreachable'}`);
+          setError(`Demo Login Failed: ${err.error || 'Check server status.'}`);
           setIsLoading(false);
        }
-    } catch (e: any) {
-       console.error("Demo Login Exception", e);
-       setError("Failed to connect to backend for demo.");
-       setIsLoading(false);
-    }
+    } catch (e: any) { setError("Failed to connect to backend."); setIsLoading(false); }
   };
   
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -212,60 +182,46 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: loginData.email.toLowerCase().trim(), password: loginData.password })
         });
-        
         const data = await response.json();
+        if (!response.ok) { setError(data.error || "Invalid credentials."); setIsLoading(false); return; }
 
-        if (!response.ok) {
-            setError(data.error || "Invalid email or password.");
+        localStorage.setItem('os_token', data.token);
+        const isMfaRequired = settings.enableMfa || data.organization?.enableMfa;
+        if (isMfaRequired && !isMfaTrustedDevice(data.user.id)) {
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            setMfaData({ code: '', generatedCode: code, pendingUser: data.user });
+            sendMfaCode(data.user.email, code);
+            setViewMode('mfa');
             setIsLoading(false);
-            return;
-        }
-
-        const { token, user, organization } = data;
-        localStorage.setItem('os_token', token);
-        
-        const userOrg = organization as Organization;
-        const isMfaRequired = settings.enableMfa || userOrg?.enableMfa;
-
-        if (isMfaRequired) {
-            if (isMfaTrustedDevice(user.id)) {
-                saveSession(user);
-                onLogin(user);
-            } else {
-                const code = Math.floor(100000 + Math.random() * 900000).toString();
-                setMfaData({ code: '', generatedCode: code, pendingUser: user });
-                sendMfaCode(user.email, code);
-                setViewMode('mfa');
-                setIsLoading(false);
-            }
         } else {
-            saveSession(user);
-            onLogin(user);
+            saveSession(data.user);
+            onLogin(data.user);
         }
-    } catch (err: any) {
-        setError("Network error. Ensure the backend is running.");
-        setIsLoading(false);
-    }
+    } catch (err: any) { setError("Network error. Ensure the backend is running."); setIsLoading(false); }
   };
 
-  const handleAcceptInviteSubmit = async (e: React.FormEvent) => {
-     e.preventDefault();
-     if (invitePassword.password !== invitePassword.confirm) {
-        setError("Passwords do not match."); return;
-     }
-     if (invitePassword.password.length < 6) {
-        setError("Password must be at least 6 characters."); return;
-     }
-     setIsLoading(true);
-     setError(null);
-     try {
-        const data = await acceptInvite(inviteToken, invitePassword.password);
-        onLogin(data.user);
-     } catch (err: any) {
-        setError(err.message || "Could complete registration.");
-     } finally {
-        setIsLoading(false);
-     }
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    if (!isRegistrationEnabled) { setError("Registration disabled."); setIsLoading(false); return; }
+    if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
+    if (regData.password !== regData.confirmPassword) { setError("Passwords do not match."); setIsLoading(false); return; }
+    
+    try {
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...regData, email: regData.email.toLowerCase().trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Registration failed");
+
+      localStorage.setItem('os_token', data.token);
+      saveSession(data.user);
+      saveOrg(data.organization, true);
+      onLogin(data.user);
+    } catch(e: any) { setError(e.message); setIsLoading(false); }
   };
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
@@ -274,8 +230,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setError(null);
     try {
        const res = await forgotPassword(forgotEmail);
-       if (res.success) { setSuccess(res.message); setViewMode('reset_password'); } 
-       else { setError(res.error || "Could not process request."); }
+       if (res.success) { setSuccess(res.message || "Code sent."); setViewMode('reset_password'); } 
+       else { setError(res.error || "Request failed."); }
     } catch(e: any) { setError(e.message); }
     finally { setIsLoading(false); }
   };
@@ -287,11 +243,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
      setError(null);
      try {
         const res = await resetPassword(forgotEmail, resetData.code, resetData.newPassword);
-        if (res.success) { 
-           setSuccess("Password changed successfully. You can now sign in."); 
-           setLoginData({...loginData, email: forgotEmail});
-           setViewMode('login'); 
-        } 
+        if (res.success) { setSuccess("Success! You can now sign in."); setLoginData({...loginData, email: forgotEmail}); setViewMode('login'); } 
         else { setError(res.error || "Invalid code."); }
      } catch(e: any) { setError(e.message); }
      finally { setIsLoading(false); }
@@ -304,41 +256,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       saveSession(mfaData.pendingUser);
       onLogin(mfaData.pendingUser);
     } else { setError("Invalid code."); }
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    if (!isRegistrationEnabled) { setError("Registration is currently disabled."); setIsLoading(false); return; }
-    if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
-    if (regData.password !== regData.confirmPassword) { setError("Passwords do not match."); setIsLoading(false); return; }
-    try {
-      const res = await registerOrganization(
-        regData.orgName, 
-        regData.userName, 
-        regData.email, 
-        regData.focus, 
-        regData.password, 
-        language,
-        regData.latitude,
-        regData.longitude,
-        regData.location
-      );
-      if (res.needsVerification) setViewMode('verify_registration');
-    } catch(e: any) { setError(e.message); }
-    finally { setIsLoading(false); }
-  };
-
-  const handleVerifyRegistration = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const user = await confirmRegistration(regData.email, regCode);
-      onLogin(user);
-    } catch(e: any) { setError(e.message); } 
-    finally { setIsLoading(false); }
   };
 
   const getFeatureIcon = (iconName: string) => (LucideIcons as any)[iconName] || LucideIcons.HelpCircle;
@@ -360,32 +277,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         <div className="flex items-center space-x-2 text-emerald-700 font-bold text-xl cursor-pointer" onClick={() => setViewMode('landing')}>{settings.appLogoUrl ? <img src={settings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={28} />}<span>OpenStudbook</span></div>
         <div className="flex items-center space-x-4">
           <div className="relative" ref={langRef}>
-             <button 
-                onClick={() => setIsLangOpen(!isLangOpen)}
-                className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors"
-             >
-                <Globe size={16} /> 
-                {availableLanguages.find(l => l.code === language)?.name || 'Language'}
-                <ChevronDown size={14} className={`transition-transform duration-200 ${isLangOpen ? 'rotate-180' : ''}`} />
-             </button>
+             <button onClick={() => setIsLangOpen(!isLangOpen)} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors"><Globe size={16} /> {availableLanguages.find(l => l.code === language)?.name || 'Language'}<ChevronDown size={14} className={`transition-transform duration-200 ${isLangOpen ? 'rotate-180' : ''}`} /></button>
              {isLangOpen && (
-                <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 shadow-xl rounded-xl overflow-hidden z-50 w-48 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="py-2">
-                        {availableLanguages.map(l => (
-                           <button 
-                             key={l.code} 
-                             onClick={() => {
-                                setLanguage(l.code);
-                                setIsLangOpen(false);
-                             }} 
-                             className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${language === l.code ? 'font-bold text-emerald-700 bg-emerald-50/50' : 'text-slate-600'}`}
-                           >
-                              <span>{l.name}</span>
-                              {language === l.code && <CheckCircle2 size={14} />}
-                           </button>
-                        ))}
-                    </div>
-                </div>
+                <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 shadow-xl rounded-xl overflow-hidden z-50 w-48 animate-in fade-in slide-in-from-top-2 duration-200"><div className="py-2">{availableLanguages.map(l => (<button key={l.code} onClick={() => { setLanguage(l.code); setIsLangOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${language === l.code ? 'font-bold text-emerald-700 bg-emerald-50/50' : 'text-slate-600'}`}><span>{l.name}</span>{language === l.code && <CheckCircle2 size={14} />}</button>))}</div></div>
              )}
           </div>
           <button onClick={handleDemoLogin} className="text-slate-600 hover:text-emerald-700 font-medium text-sm disabled:opacity-50" disabled={isLoading}>{t('demoLogin')}</button>
@@ -400,31 +294,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 tracking-tight">{landingConfig?.heroTitle || t('landingTitle')}</h1>
             <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{landingConfig?.heroSubtitle || t('landingSubtitle')}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              {isRegistrationEnabled && (
-                <button onClick={() => setViewMode('register')} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold text-lg hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>
-              )}
+              {isRegistrationEnabled && (<button onClick={() => setViewMode('register')} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold text-lg hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
               <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
             </div>
-          </div>
-        )}
-
-        {viewMode === 'accept_invite' && inviteData && (
-          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
-             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
-                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600 mb-4"><UserCheck size={24} /></div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">Join {inviteData.orgName}</h2>
-                <p className="text-slate-500 mb-6 text-sm">Hello <strong>{inviteData.name}</strong>, please choose a password to complete your account setup.</p>
-                {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold animate-in shake-in duration-300"><AlertTriangle size={16} /> {error}</div>}
-                <form onSubmit={handleAcceptInviteSubmit} className="space-y-4">
-                   <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
-                      <div className="flex items-center gap-3 mb-2"><Building2 size={18} className="text-slate-400"/><span className="text-sm font-bold text-slate-700">{inviteData.orgName}</span></div>
-                      <div className="flex items-center gap-3"><Mail size={18} className="text-slate-400"/><span className="text-sm text-slate-600">{inviteData.email}</span></div>
-                   </div>
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Set Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div></div>
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div></div>
-                   <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Join Organization</button></div>
-                </form>
-             </div>
           </div>
         )}
 
@@ -434,7 +306,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome Back</h2>
               <p className="text-slate-500 mb-6 text-sm">Sign in to your organisation.</p>
-              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold"><Shield size={16} /> {error}</div>}
               {success && <div className="mb-4 p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2 font-bold"><CheckCircle2 size={16} /> {success}</div>}
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={loginData.email} onChange={e => setLoginData({...loginData, email: e.target.value})} required /></div></div>
@@ -442,9 +314,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div className="text-right"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('forgot_password'); }} className="text-xs text-slate-500 hover:text-emerald-600">Forgot Password?</button></div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Sign In</button></div>
-                {isRegistrationEnabled && (
-                  <div className="text-center pt-2"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('register'); }} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>
-                )}
+                {isRegistrationEnabled && (<div className="text-center pt-2"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('register'); }} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>)}
               </form>
             </div>
           </div>
@@ -471,21 +341,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           </div>
         )}
 
-        {viewMode === 'verify_registration' && (
-          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
-             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
-                <p className="text-slate-500 mb-6 text-sm">We've sent a verification code to <strong>{regData.email}</strong>.</p>
-                {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
-                <form onSubmit={handleVerifyRegistration} className="space-y-4">
-                   <div><label className="block text-sm font-medium text-slate-700 mb-1">Verification Code</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 text-center text-2xl font-mono tracking-[1em]" placeholder="000000" value={regCode} onChange={e => setRegCode(e.target.value.replace(/\D/g,'').substring(0,6))} required /></div>
-                   <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors" disabled={isLoading}>Verify & Sign In</button></div>
-                   <p className="text-center text-xs text-slate-400 mt-4">Didn't receive a code? <button type="button" onClick={handleRegister} className="text-emerald-600 hover:underline">Resend</button></p>
-                </form>
-             </div>
-          </div>
-        )}
-
         {viewMode === 'mfa' && (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
              <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
@@ -496,7 +351,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <form onSubmit={handleMfaSubmit} className="space-y-4">
                    <div><label className="block text-sm font-medium text-slate-700 mb-1">Security Code</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 text-center text-2xl font-mono tracking-[1em]" placeholder="000000" value={mfaData.code} onChange={e => setMfaData({...mfaData, code: e.target.value.replace(/\D/g,'').substring(0,6)})} required /></div>
                    <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Confirm Sign In</button></div>
-                   <p className="text-center text-xs text-slate-400 mt-4">Problems with the code? <button type="button" onClick={() => setViewMode('login')} className="text-emerald-600 hover:underline">Try again</button></p>
                 </form>
              </div>
           </div>
@@ -508,7 +362,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <button onClick={() => setViewMode('login')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Reset Password</h2>
               <p className="text-slate-500 mb-6 text-sm">Enter your email and we'll send you a recovery code.</p>
-              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold"><Shield size={16} /> {error}</div>}
               {success && <div className="mb-4 p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2 font-bold"><CheckCircle2 size={16} /> {success}</div>}
               <form onSubmit={handleForgotSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required /></div></div>
@@ -523,7 +377,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
               <h2 className="text-2xl font-bold text-slate-900 mb-2">New Password</h2>
               <p className="text-slate-500 mb-6 text-sm">Enter the code sent to your email and your new password.</p>
-              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold"><Shield size={16} /> {error}</div>}
               <form onSubmit={handleResetSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Reset Code</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-mono text-center tracking-widest" value={resetData.code} onChange={e => setResetData({...resetData, code: e.target.value})} required /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" name="new-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.newPassword} onChange={e => setResetData({...resetData, newPassword: e.target.value})} required /></div>
@@ -566,7 +420,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 );
               })}
             </div>
-            
             {landingConfig?.customContentHtml && (
                <div className="mt-20 prose prose-slate max-w-none text-left" dangerouslySetInnerHTML={{ __html: landingConfig.customContentHtml }} />
             )}

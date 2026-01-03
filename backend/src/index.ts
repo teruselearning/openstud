@@ -136,10 +136,10 @@ const initDatabase = async () => {
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
         
-        // --- SEEDING: Demo User & Org (Check specifically for Sarah) ---
+        // --- SEEDING: Demo User & Org (Ensure Sarah is present) ---
         const [sarahRows]: any = await db.execute('SELECT id FROM users WHERE email = ?', ['sarah@wild.org']);
         if (sarahRows.length === 0) {
-           console.log("[SEED] Sarah Keeper not found. Re-provisioning demo environment...");
+           console.log("[SEED] Provisioning demo environment for Sarah Keeper...");
            const orgId = 'org-1';
            await db.execute(`INSERT IGNORE INTO organizations (id, name, location, focus) VALUES (?, ?, ?, ?)`, [orgId, 'Wilderness Trust', 'Global Sanctuary', 'Animals']);
            await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES (?, ?, ?, ?)`, ['p-1', orgId, 'General Collection', 'Initial project for demo.']);
@@ -161,16 +161,10 @@ const initDatabase = async () => {
  */
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
-      console.warn(`[AUTH] Protected request to ${req.path} denied: No Authorization header.`);
-      return res.status(401).json({ error: "Unauthorized: No token provided" });
-  }
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized: No token provided" });
 
   const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-      console.warn(`[AUTH] Protected request to ${req.path} denied: Malformed header.`);
-      return res.status(401).json({ error: "Unauthorized: Malformed token" });
-  }
+  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: "Unauthorized: Malformed token" });
 
   const token = parts[1];
   try {
@@ -178,7 +172,6 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
     (req as any).user = decoded;
     next();
   } catch (e: any) {
-    console.error(`[AUTH] Protected request to ${req.path} denied: Invalid/Expired JWT.`);
     return res.status(401).json({ error: "Session expired. Please log in again." });
   }
 };
@@ -187,47 +180,49 @@ const authenticate = (req: any, res: any, next: express.NextFunction) => {
 
 app.post('/api/login', async (req: any, res: any) => {
     const { email, password } = req.body;
-    console.log(`[AUTH] Received login attempt for: ${email}`);
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
     
-    if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required." });
-    }
-
+    const normalizedEmail = email.toLowerCase().trim();
     const db = getDb();
+    
     try {
-        const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+        const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
         const user = rows[0];
         
         if (!user) {
-           console.warn(`[AUTH] Login failed for ${email}: Account not found in database.`);
+           console.warn(`[AUTH] Login failed for ${normalizedEmail}: Account not found.`);
            return res.status(401).json({ error: "Account not found." });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password).catch(() => {
-            console.log(`[AUTH] Bcrypt failed for ${email}, falling back to plain text check.`);
-            return user.password === password;
-        });
-
+        const isMatch = await bcrypt.compare(password, user.password).catch(() => user.password === password);
         if (!isMatch) {
-           console.warn(`[AUTH] Login failed for ${email}: Invalid credentials.`);
+           console.warn(`[AUTH] Login failed for ${normalizedEmail}: Password mismatch.`);
            return res.status(401).json({ error: "Invalid password." });
         }
 
         const [orgRows]: any = await db.execute('SELECT * FROM organizations WHERE id = ? LIMIT 1', [user.org_id]);
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
-        console.log(`[AUTH] Login successful for: ${email}`);
+        console.log(`[AUTH] Login successful for: ${normalizedEmail}`);
         res.json({ token, user, organization: orgRows[0] });
     } catch (e: any) { 
-        console.error(`[AUTH ERROR] Critical exception during login for ${email}:`, e);
+        console.error(`[AUTH ERROR]`, e);
         res.status(500).json({ error: "Server error during login." }); 
     }
 });
 
 app.post('/api/register', async (req: any, res: any) => {
-    const { orgName, userName, email, focus, password, language, latitude, longitude, location } = req.body;
+    const { orgName, userName, email, focus, password, latitude, longitude, location } = req.body;
+    if (!orgName || !userName || !email || !password) return res.status(400).json({ error: "Missing required fields." });
+
+    const normalizedEmail = email.toLowerCase().trim();
     const db = getDb();
+    
     try {
+        // Check for existing user
+        const [existing]: any = await db.execute('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+        if (existing.length > 0) return res.status(400).json({ error: "Email already in use." });
+
         const orgId = `org-${Date.now()}`;
         const userId = `u-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -240,7 +235,7 @@ app.post('/api/register', async (req: any, res: any) => {
 
         await db.execute(
             `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,
-            [userId, orgId, userName, email, hashedPassword]
+            [userId, orgId, userName, normalizedEmail, hashedPassword]
         );
 
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
@@ -290,14 +285,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/email/test', authenticate, (req: any, res: any) => {
-    res.json({ success: true, message: "Mock SMTP test successful." });
-});
-
-app.post('/api/email/send', authenticate, (req: any, res: any) => {
-    res.json({ success: true, message: "Mock Email sent." });
-});
-
+app.post('/api/email/test', authenticate, (req: any, res: any) => res.json({ success: true, message: "Mock SMTP test successful." }));
+app.post('/api/email/send', authenticate, (req: any, res: any) => res.json({ success: true, message: "Mock Email sent." }));
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
