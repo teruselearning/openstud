@@ -55,6 +55,22 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setOrg(getOrg());
   }, []);
 
+  // Handle Edit Redirection from Detail Page
+  useEffect(() => {
+    if (location.state?.editId && allIndividuals.length > 0) {
+      const indToEdit = allIndividuals.find(i => i.id === location.state.editId);
+      if (indToEdit) {
+        setEditingId(indToEdit.id);
+        setFormData({ ...indToEdit });
+        const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
+        setSpeciesSearchQuery(sp?.commonName || '');
+        setShowForm(true);
+        // Clear history state to avoid re-opening on refresh
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [location.state, allIndividuals, allSpecies]);
+
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, { maxZoom: 22 }).setView([org?.latitude || 0, org?.longitude || 0], 15);
