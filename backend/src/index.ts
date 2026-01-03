@@ -62,15 +62,20 @@ app.use(morgan('dev'));
  */
 const sendMail = async (to: string, subject: string, html: string) => {
     const db = getDb();
+    
+    // Log the content to console regardless so the user can always find their code
+    console.log(`\n--- OUTGOING EMAIL TO: ${to} ---`);
+    console.log(`SUBJECT: ${subject}`);
+    console.log(`CONTENT: ${html.replace(/<[^>]*>/g, ' ').trim()}`);
+    console.log(`-------------------------------------\n`);
+
     try {
         const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
         let settings = rows[0]?.settings;
         if (typeof settings === 'string') settings = JSON.parse(settings);
         
         if (!settings || !settings.smtpHost) {
-            console.warn(`[MAILER] SMTP not configured. Code for ${to} is logged only.`);
-            console.log(`[MAILER] SUBJECT: ${subject}`);
-            console.log(`[MAILER] CONTENT: ${html.replace(/<[^>]*>/g, '')}`); // Log text version
+            console.warn(`[MAILER] SMTP not configured. See code logged above.`);
             return { success: false, error: "SMTP not configured" };
         }
 
@@ -91,7 +96,7 @@ const sendMail = async (to: string, subject: string, html: string) => {
             html,
         });
 
-        console.log(`[MAILER] Email successfully sent to ${to}`);
+        console.log(`[MAILER] Email successfully delivered to ${to}`);
         return { success: true };
     } catch (e: any) {
         console.error(`[MAILER ERROR] Failed to send to ${to}:`, e.message);
@@ -168,7 +173,7 @@ const initDatabase = async () => {
             )
         `);
 
-        // Other tables
+        // Other tables...
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, CONSTRAINT fk_project_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50), CONSTRAINT fk_species_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes LONGTEXT, source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON, CONSTRAINT fk_ind_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE, CONSTRAINT fk_ind_species FOREIGN KEY (species_id) REFERENCES species(id) ON DELETE CASCADE)`);
@@ -313,7 +318,6 @@ app.post('/api/forgot-password', async (req: any, res: any) => {
 
         await db.execute('UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?', [code, expires, normalizedEmail]);
         
-        // Attempt real mail
         await sendMail(normalizedEmail, "Password Reset Code", `Hello ${rows[0].name}, your reset code is: ${code}`);
 
         console.log(`[AUTH] Password reset code for ${normalizedEmail}: ${code}`);
@@ -348,7 +352,6 @@ app.post('/api/email/send', async (req: any, res: any) => {
     const { to, templateKey, placeholders, subject, html } = req.body;
     const db = getDb();
     try {
-        // Fetch templates from DB to apply placeholders if requested via templateKey
         let finalSubject = subject;
         let finalHtml = html;
 
@@ -359,25 +362,29 @@ app.post('/api/email/send', async (req: any, res: any) => {
             
             const template = settings?.emailTemplates?.[templateKey];
             if (template && template.enabled) {
-                finalSubject = template.subject;
-                finalHtml = template.bodyHtml;
-                // Replace placeholders
-                if (placeholders) {
-                    Object.entries(placeholders).forEach(([k, v]) => {
-                        finalSubject = finalSubject.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
-                        finalHtml = finalHtml.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
-                    });
-                }
+                finalSubject = template.subject || subject;
+                finalHtml = template.bodyHtml || html;
             }
+        }
+        
+        // Always apply placeholders to final content
+        if (placeholders) {
+            Object.entries(placeholders).forEach(([k, v]) => {
+                const regex = new RegExp(`{{${k}}}`, 'g');
+                finalSubject = finalSubject.replace(regex, String(v));
+                finalHtml = finalHtml.replace(regex, String(v));
+            });
+        }
+
+        // Special case for MFA logging
+        if (templateKey === 'mfa' && placeholders?.code) {
+           console.log(`[MFA] SECURITY CODE FOR ${to}: ${placeholders.code}`);
         }
 
         const mailResult = await sendMail(to, finalSubject, finalHtml);
-        if (mailResult.success) {
-            res.json({ success: true, message: "Email sent." });
-        } else {
-            res.status(500).json({ error: mailResult.error });
-        }
+        res.json({ success: mailResult.success, message: mailResult.success ? "Email sent." : "Email logged to console.", error: mailResult.error });
     } catch (e: any) {
+        console.error(`[/api/email/send ERROR]`, e);
         res.status(500).json({ error: e.message });
     }
 });
