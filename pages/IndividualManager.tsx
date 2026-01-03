@@ -398,7 +398,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       )}
                    </div>
                    <button 
-                     onClick={() => navigate('/enclosures')}
+                     onClick={() => navigate('/enclosures', { state: { editId: activeEnclosureFromMap.id } })}
                      className="w-full text-center py-2 bg-slate-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
                    >
                      Manage {org?.focus === 'Plants' ? 'Area' : 'Enclosure'} <ChevronDown size={14} className="-rotate-90" />

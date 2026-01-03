@@ -1,14 +1,17 @@
 
 import React, { useState, useEffect, useContext, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals } from '../services/storage';
 import { Enclosure, Species, Individual, EnclosurePoint, Sex } from '../types';
-import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle } from 'lucide-react';
+// Added AlertCircle to imports
+import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle, AlertCircle, ArrowRightLeft, Move } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
 
 const EnclosureManager: React.FC = () => {
   const { t } = useContext(LanguageContext);
+  const location = useLocation();
   const org = getOrg();
   const currentProjectId = getCurrentProjectId();
   const isPlantOrg = org.focus === 'Plants';
@@ -25,7 +28,13 @@ const EnclosureManager: React.FC = () => {
   const [selectedEnclosure, setSelectedEnclosure] = useState<Enclosure | null>(null);
   const [enclosureToDelete, setEnclosureToDelete] = useState<Enclosure | null>(null);
   
-  // Selection step
+  // Batch Move State
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveSourceId, setMoveSourceId] = useState('');
+  const [moveDestId, setMoveDestId] = useState('');
+  const [selectedIndsForMove, setSelectedIndsForMove] = useState<Set<string>>(new Set());
+
+  // Selection step in Form
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
 
   const [formData, setFormData] = useState<Partial<Enclosure>>({
@@ -45,10 +54,23 @@ const EnclosureManager: React.FC = () => {
   const pickerMarkers = useRef<any[]>([]);
 
   useEffect(() => {
-    setEnclosures(getEnclosures());
+    const encls = getEnclosures();
+    setEnclosures(encls);
     setAllSpecies(getSpecies());
     setAllIndividuals(getIndividuals());
-  }, []);
+
+    // Handle incoming navigation for editing a specific enclosure
+    if (location.state?.editId) {
+      const found = encls.find(e => e.id === location.state.editId);
+      if (found) {
+        setEditingId(found.id);
+        setFormData(found);
+        setShowForm(true);
+        // Clear history state
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [location.state]);
 
   // Main Map View Effect
   useEffect(() => {
@@ -59,7 +81,7 @@ const EnclosureManager: React.FC = () => {
       const map = L.map(mapContainerRef.current, { 
         maxZoom: 22,
         zoomControl: false 
-      }).setView([initialLat, initialLng], 15);
+      }).setView([initialLat, initialLng], 16);
       
       L.control.zoom({ position: 'topright' }).addTo(map);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22 }).addTo(map);
@@ -72,7 +94,7 @@ const EnclosureManager: React.FC = () => {
     }
 
     return () => {
-       if (mapInstanceRef.current) {
+       if (mapInstanceRef.current && viewMode !== 'map') {
           mapInstanceRef.current.remove();
           mapInstanceRef.current = null;
        }
@@ -201,6 +223,43 @@ const EnclosureManager: React.FC = () => {
     setShowForm(true);
   };
 
+  const handleBatchMove = () => {
+     if (!moveDestId) return;
+     
+     const movingIds = Array.from(selectedIndsForMove);
+     let updatedInds = [...allIndividuals];
+     let updatedEncls = [...enclosures];
+
+     // 1. Update Individuals
+     updatedInds = updatedInds.map(ind => {
+        if (movingIds.includes(ind.id)) {
+           return { ...ind, enclosureId: moveDestId === 'NONE' ? undefined : moveDestId };
+        }
+        return ind;
+     });
+
+     // 2. Update Enclosures (IndividualIds arrays)
+     updatedEncls = updatedEncls.map(enc => {
+        // Remove from everywhere they currently are
+        let newIds = enc.individualIds.filter(id => !movingIds.includes(id));
+        // Add to destination if this IS the destination
+        if (enc.id === moveDestId) {
+           newIds = Array.from(new Set([...newIds, ...movingIds]));
+        }
+        return { ...enc, individualIds: newIds };
+     });
+
+     setAllIndividuals(updatedInds);
+     setEnclosures(updatedEncls);
+     saveIndividuals(updatedInds);
+     saveEnclosures(updatedEncls);
+     
+     setShowMoveModal(false);
+     setMoveSourceId('');
+     setMoveDestId('');
+     setSelectedIndsForMove(new Set());
+  };
+
   const confirmDelete = () => {
     if (!enclosureToDelete) return;
     const id = enclosureToDelete.id;
@@ -244,19 +303,28 @@ const EnclosureManager: React.FC = () => {
      return Object.values(grouped);
   };
 
+  const moveSourceIndividuals = allIndividuals.filter(i => {
+     if (moveSourceId === 'UNASSIGNED') return !i.enclosureId && i.projectId === currentProjectId;
+     return i.enclosureId === moveSourceId;
+  });
+
   return (
     <div className="space-y-6 h-full flex flex-col">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{labelsPlural}</h2>
-          <p className="text-slate-500">Define physical {labelsPlural.toLowerCase()} and manage the individuals within them.</p>
+          <p className="text-slate-500">Physical management of {labelsPlural.toLowerCase()} and animal locations.</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
+          <button onClick={() => setShowMoveModal(true)} className="flex items-center justify-center space-x-2 bg-purple-50 text-purple-700 border border-purple-200 px-4 py-2 rounded-lg font-medium hover:bg-purple-100 transition-all">
+            <ArrowRightLeft size={18}/>
+            <span className="hidden sm:inline">Batch Transfer</span>
+          </button>
           <div className="flex bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
             <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><MapIcon size={18} /></button>
           </div>
-          <button onClick={() => setShowForm(true)} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all">
+          <button onClick={() => { setEditingId(null); setFormData({name: '', description: '', individualIds: [], boundary: []}); setShowForm(true); }} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all">
             <Plus size={18} />
             <span>Add {label}</span>
           </button>
@@ -392,6 +460,93 @@ const EnclosureManager: React.FC = () => {
                 </div>
              </div>
           )}
+        </div>
+      )}
+
+      {/* Move Animals Modal */}
+      {showMoveModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2500] flex items-center justify-center p-4">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-purple-50">
+                 <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 text-purple-700 rounded-lg"><Move size={20}/></div>
+                    <h3 className="text-xl font-bold text-purple-900">Batch Transfer Animals</h3>
+                 </div>
+                 <button onClick={() => setShowMoveModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={24}/></button>
+              </div>
+              
+              <div className="flex-1 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                 {/* Step 1: Source */}
+                 <div className="flex-1 p-6 space-y-4 overflow-y-auto">
+                    <div className="space-y-1">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Select Source Location</label>
+                       <select className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-purple-200" value={moveSourceId} onChange={e => { setMoveSourceId(e.target.value); setSelectedIndsForMove(new Set()); }}>
+                          <option value="">Choose source...</option>
+                          <option value="UNASSIGNED">Unassigned Individuals</option>
+                          {enclosures.map(e => <option key={e.id} value={e.id}>{e.name} ({e.individualIds.length} inds)</option>)}
+                       </select>
+                    </div>
+                    
+                    {moveSourceId && (
+                       <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Select Animals to Move</label>
+                             <button onClick={() => { if(selectedIndsForMove.size === moveSourceIndividuals.length) setSelectedIndsForMove(new Set()); else setSelectedIndsForMove(new Set(moveSourceIndividuals.map(i=>i.id))); }} className="text-[10px] font-bold text-purple-600 hover:underline">Toggle All</button>
+                          </div>
+                          <div className="border border-slate-200 rounded-xl bg-slate-50 divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                             {moveSourceIndividuals.length === 0 ? (
+                                <p className="p-8 text-center text-xs text-slate-400 italic">No animals found in this location.</p>
+                             ) : (
+                                moveSourceIndividuals.map(ind => (
+                                   <label key={ind.id} className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-white transition-colors ${selectedIndsForMove.has(ind.id) ? 'bg-purple-50/50' : ''}`}>
+                                      <input type="checkbox" checked={selectedIndsForMove.has(ind.id)} onChange={() => { const s = new Set(selectedIndsForMove); if(s.has(ind.id)) s.delete(ind.id); else s.add(ind.id); setSelectedIndsForMove(s); }} className="rounded text-purple-600" />
+                                      <div className="flex-1 overflow-hidden">
+                                         <p className="text-sm font-bold text-slate-800 truncate">{ind.name}</p>
+                                         <p className="text-[10px] text-slate-400 font-mono">{ind.studbookId} • {allSpecies.find(s=>s.id===ind.speciesId)?.commonName}</p>
+                                      </div>
+                                   </label>
+                                ))
+                             )}
+                          </div>
+                       </div>
+                    )}
+                 </div>
+
+                 {/* Step 2: Destination */}
+                 <div className="md:w-80 p-6 bg-slate-50/50 flex flex-col justify-between">
+                    <div className="space-y-6">
+                       <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">3. Target Destination</label>
+                          <select className="w-full p-3 border-2 border-purple-500 rounded-xl text-sm font-bold bg-white shadow-md outline-none focus:ring-4 focus:ring-purple-100" value={moveDestId} onChange={e => setMoveDestId(e.target.value)}>
+                             <option value="">Select target...</option>
+                             <option value="NONE">Unassign from Enclosure</option>
+                             {enclosures.filter(e => e.id !== moveSourceId).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                          </select>
+                       </div>
+                       
+                       {selectedIndsForMove.size > 0 && moveDestId && (
+                          <div className="bg-white p-4 rounded-xl border border-purple-200 shadow-sm animate-in slide-in-from-right-2">
+                             <h4 className="text-xs font-bold text-slate-800 mb-3 uppercase tracking-wider border-b border-slate-50 pb-2">Movement Summary</h4>
+                             <p className="text-xs text-slate-600 leading-relaxed">
+                                You are moving <strong className="text-purple-700">{selectedIndsForMove.size}</strong> individuals to <strong>{moveDestId === 'NONE' ? 'Unassigned' : enclosures.find(e=>e.id===moveDestId)?.name}</strong>.
+                             </p>
+                             <div className="mt-4 p-3 bg-amber-50 rounded-lg text-[10px] text-amber-800 font-medium border border-amber-100 flex gap-2">
+                                <AlertCircle size={14} className="shrink-0"/>
+                                This will update the enclosure IDs on all selected individual records automatically.
+                             </div>
+                          </div>
+                       )}
+                    </div>
+
+                    <div className="pt-6">
+                       <button onClick={handleBatchMove} disabled={selectedIndsForMove.size === 0 || !moveDestId} className="w-full bg-purple-600 hover:bg-purple-700 text-white py-4 rounded-xl font-bold shadow-lg shadow-purple-200 transition-all flex items-center justify-center gap-2 transform active:scale-95 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed">
+                          <Move size={20}/>
+                          Confirm Movement
+                       </button>
+                    </div>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
 
