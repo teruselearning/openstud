@@ -366,10 +366,14 @@ export const redeemPartnerInvite = (code: string): {success: boolean, message: s
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[]) => {
   const org = getOrg();
   const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds };
+  
+  // Persist locally and sync to DB first
   saveUsers([...getUsers(), newUser]);
 
   const s = getSystemSettings();
   const t = s.emailTemplates?.invite;
+  
+  // Construct Invite URL for HashRouter
   const inviteUrl = `${window.location.origin}/#/accept-invite?token=${newUser.id}`;
   
   await sendSystemEmail(

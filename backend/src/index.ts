@@ -176,7 +176,7 @@ app.post('/api/login', async (req: any, res: any) => {
         }
         
         let isMatch = false;
-        if (user.password.startsWith('$2')) {
+        if (user.password && user.password.startsWith('$2')) {
             isMatch = await bcrypt.compare(password, user.password);
         } else {
             isMatch = user.password === password;
@@ -327,26 +327,27 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     let finalHtml = html;
     let finalSubject = subject;
 
-    // Optional: Pull from DB templates if templateKey is provided
+    const db = getDb();
+    const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+    let settings = rows[0]?.settings;
+    if (typeof settings === 'string') settings = JSON.parse(settings);
+
+    // 1. Pull from DB templates if templateKey is provided AND enabled
     if (templateKey) {
-       const db = getDb();
-       const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-       let settings = rows[0]?.settings;
-       if (typeof settings === 'string') settings = JSON.parse(settings);
-       
        const template = settings?.emailTemplates?.[templateKey];
        if (template && template.enabled) {
           finalHtml = template.bodyHtml;
           finalSubject = template.subject;
-          
-          if (placeholders) {
-             Object.entries(placeholders).forEach(([k, v]) => {
-                const regex = new RegExp(`{{${k}}}`, 'g');
-                finalHtml = finalHtml.replace(regex, String(v));
-                finalSubject = finalSubject.replace(regex, String(v));
-             });
-          }
        }
+    }
+
+    // 2. Perform placeholder replacement on the content (whether fallback or custom)
+    if (placeholders) {
+       Object.entries(placeholders).forEach(([k, v]) => {
+          const regex = new RegExp(`{{${k}}}`, 'g');
+          finalHtml = finalHtml.replace(regex, String(v));
+          finalSubject = finalSubject.replace(regex, String(v));
+       });
     }
 
     const result = await sendMail(to, finalSubject, finalHtml, !!templateKey);
