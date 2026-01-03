@@ -57,6 +57,49 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
 /**
+ * EMAIL UTILITY
+ * Fetches SMTP config from DB and sends email
+ */
+const sendMail = async (to: string, subject: string, html: string) => {
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        let settings = rows[0]?.settings;
+        if (typeof settings === 'string') settings = JSON.parse(settings);
+        
+        if (!settings || !settings.smtpHost) {
+            console.warn(`[MAILER] SMTP not configured. Code for ${to} is logged only.`);
+            console.log(`[MAILER] SUBJECT: ${subject}`);
+            console.log(`[MAILER] CONTENT: ${html.replace(/<[^>]*>/g, '')}`); // Log text version
+            return { success: false, error: "SMTP not configured" };
+        }
+
+        const transporter = nodemailer.createTransport({
+            host: settings.smtpHost,
+            port: settings.smtpPort || 587,
+            secure: !!settings.smtpSecure,
+            auth: {
+                user: settings.smtpUser,
+                pass: settings.smtpPass,
+            },
+        });
+
+        await transporter.sendMail({
+            from: `"OpenStudbook" <${settings.smtpUser}>`,
+            to,
+            subject,
+            html,
+        });
+
+        console.log(`[MAILER] Email successfully sent to ${to}`);
+        return { success: true };
+    } catch (e: any) {
+        console.error(`[MAILER ERROR] Failed to send to ${to}:`, e.message);
+        return { success: false, error: e.message };
+    }
+};
+
+/**
  * AUTO-INITIALIZE DATABASE & MIGRATE COLUMNS
  */
 const initDatabase = async () => {
@@ -202,7 +245,6 @@ app.post('/api/login', async (req: any, res: any) => {
            return res.status(401).json({ error: "Account not found." });
         }
 
-        // Handle both hashed and plain (fallback) passwords
         const isMatch = await bcrypt.compare(password, user.password).catch(() => user.password === password);
         if (!isMatch) {
            console.warn(`[AUTH] Login failed for ${normalizedEmail}: Password mismatch.`);
@@ -228,7 +270,6 @@ app.post('/api/register', async (req: any, res: any) => {
     const db = getDb();
     
     try {
-        // Check for existing user
         const [existing]: any = await db.execute('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
         if (existing.length > 0) return res.status(400).json({ error: "Email already in use." });
 
@@ -260,10 +301,11 @@ app.post('/api/register', async (req: any, res: any) => {
 
 app.post('/api/forgot-password', async (req: any, res: any) => {
     const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required." });
     const normalizedEmail = email.toLowerCase().trim();
     const db = getDb();
     try {
-        const [rows]: any = await db.execute('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+        const [rows]: any = await db.execute('SELECT id, name FROM users WHERE email = ?', [normalizedEmail]);
         if (rows.length === 0) return res.json({ success: true, message: "If account exists, code sent." });
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -271,6 +313,9 @@ app.post('/api/forgot-password', async (req: any, res: any) => {
 
         await db.execute('UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?', [code, expires, normalizedEmail]);
         
+        // Attempt real mail
+        await sendMail(normalizedEmail, "Password Reset Code", `Hello ${rows[0].name}, your reset code is: ${code}`);
+
         console.log(`[AUTH] Password reset code for ${normalizedEmail}: ${code}`);
         res.json({ success: true, message: "Reset code sent." });
     } catch (e: any) {
@@ -297,6 +342,51 @@ app.post('/api/reset-password', async (req: any, res: any) => {
     } catch (e: any) {
         res.status(500).json({ error: "Failed to reset password." });
     }
+});
+
+app.post('/api/email/send', async (req: any, res: any) => {
+    const { to, templateKey, placeholders, subject, html } = req.body;
+    const db = getDb();
+    try {
+        // Fetch templates from DB to apply placeholders if requested via templateKey
+        let finalSubject = subject;
+        let finalHtml = html;
+
+        if (templateKey) {
+            const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+            let settings = rows[0]?.settings;
+            if (typeof settings === 'string') settings = JSON.parse(settings);
+            
+            const template = settings?.emailTemplates?.[templateKey];
+            if (template && template.enabled) {
+                finalSubject = template.subject;
+                finalHtml = template.bodyHtml;
+                // Replace placeholders
+                if (placeholders) {
+                    Object.entries(placeholders).forEach(([k, v]) => {
+                        finalSubject = finalSubject.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+                        finalHtml = finalHtml.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+                    });
+                }
+            }
+        }
+
+        const mailResult = await sendMail(to, finalSubject, finalHtml);
+        if (mailResult.success) {
+            res.json({ success: true, message: "Email sent." });
+        } else {
+            res.status(500).json({ error: mailResult.error });
+        }
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const { to } = req.body;
+    const result = await sendMail(to, "SMTP Test Connection", "<p>Your OpenStudbook SMTP configuration is working correctly!</p>");
+    if (result.success) res.json({ success: true, message: "Test email sent." });
+    else res.status(500).json({ error: result.error });
 });
 
 app.get('/api/config', async (req: any, res: any) => {
@@ -335,8 +425,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/email/test', authenticate, (req: any, res: any) => res.json({ success: true, message: "Mock SMTP test successful." }));
-app.post('/api/email/send', authenticate, (req: any, res: any) => res.json({ success: true, message: "Mock Email sent." }));
 app.get('/api/health', (req: any, res: any) => res.json({ status: 'ok' }));
 
 app.use(express.static(path.join(__dirname, '../../dist')));
