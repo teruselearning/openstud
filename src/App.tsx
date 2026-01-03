@@ -480,7 +480,7 @@ const App: React.FC = () => {
                   <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} />
                   <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} />
                   <Route path="/individuals/:id" element={<IndividualDetail />} />
-                  <Route path="/enclosures" element={<EnclosureManager />} />
+                  <Route path="/enclosures" element={<EnclosureManager currentProjectId={currentProjectId} />} />
                   {showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}
                   {showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}
                   <Route path="/notifications" element={<Notifications />} />

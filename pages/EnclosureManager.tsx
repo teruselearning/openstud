@@ -61,7 +61,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
         window.history.replaceState({}, document.title);
       }
     }
-  }, [location.state]);
+  }, [location.state, currentProjectId]);
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const filteredEnclosures = enclosures.filter(e => {
@@ -200,7 +200,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
              <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400">
                 <Box size={48} className="mb-4 opacity-20" />
                 <p className="text-lg font-bold">No {labelsPlural.toLowerCase()} found.</p>
-                <p className="text-sm">Try selecting 'All Projects' or create a new ${label.toLowerCase()}.</p>
+                <p className="text-sm">Try selecting 'All Projects' or create a new {label.toLowerCase()}.</p>
              </div>
           )}
         </div>
