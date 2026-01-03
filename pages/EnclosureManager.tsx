@@ -53,8 +53,8 @@ const EnclosureManager: React.FC = () => {
   // Main Map View Effect
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
-      const initialLat = org.latitude || 0;
-      const initialLng = org.longitude || 0;
+      const initialLat = typeof org.latitude === 'number' ? org.latitude : 0;
+      const initialLng = typeof org.longitude === 'number' ? org.longitude : 0;
       
       const map = L.map(mapContainerRef.current, { 
         maxZoom: 22,
@@ -87,10 +87,9 @@ const EnclosureManager: React.FC = () => {
       
       enclosures.forEach(enc => {
         if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
-          // Safety filter for null or corrupted points
           const validPoints = enc.boundary.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number');
           
-          if (validPoints.length >= 2) {
+          if (validPoints.length >= 3) {
             const isSelected = selectedEnclosure?.id === enc.id;
             const poly = L.polygon(validPoints.map(p => [p.lat, p.lng]), {
               color: isSelected ? '#3b82f6' : '#9333ea',
@@ -121,8 +120,8 @@ const EnclosureManager: React.FC = () => {
   // Picker Map Effect (Polygon Drawing)
   useEffect(() => {
     if (showMapPicker && pickerMapRef.current && !pickerInstance.current) {
-       const initialLat = (formData.boundary && formData.boundary[0]?.lat) || org.latitude || 0;
-       const initialLng = (formData.boundary && formData.boundary[0]?.lng) || org.longitude || 0;
+       const initialLat = (formData.boundary && typeof formData.boundary[0]?.lat === 'number') ? formData.boundary[0].lat : (typeof org.latitude === 'number' ? org.latitude : 0);
+       const initialLng = (formData.boundary && typeof formData.boundary[0]?.lng === 'number') ? formData.boundary[0].lng : (typeof org.longitude === 'number' ? org.longitude : 0);
        
        const map = L.map(pickerMapRef.current).setView([initialLat, initialLng], 18);
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22, maxNativeZoom: 19 }).addTo(map);
@@ -139,7 +138,6 @@ const EnclosureManager: React.FC = () => {
          }
        };
 
-       // Load existing boundary if editing
        if (formData.boundary && Array.isArray(formData.boundary) && formData.boundary.length > 0) {
           formData.boundary.forEach(p => {
              if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {

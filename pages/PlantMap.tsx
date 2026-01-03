@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getIndividuals, getSpecies, getOrg } from '../services/storage';
@@ -26,8 +27,8 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
   useEffect(() => {
     if (mapContainerRef.current && !mapInstanceRef.current) {
        const currentOrg = getOrg();
-       const initialLat = (typeof currentOrg.latitude === 'number') ? currentOrg.latitude : 0;
-       const initialLng = (typeof currentOrg.longitude === 'number') ? currentOrg.longitude : 0;
+       const initialLat = typeof currentOrg.latitude === 'number' ? currentOrg.latitude : 0;
+       const initialLng = typeof currentOrg.longitude === 'number' ? currentOrg.longitude : 0;
        const initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
 
        const map = L.map(mapContainerRef.current, {
@@ -48,7 +49,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
 
        setTimeout(() => map.invalidateSize(), 200);
 
-       // Start watching user location
        if (navigator.geolocation) {
          navigator.geolocation.watchPosition(
            (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -67,7 +67,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
     };
   }, []);
 
-  // 2. Separate User Marker Effect (No zooming/panning here)
+  // 2. Separate User Marker Effect
   useEffect(() => {
     if (!mapInstanceRef.current || !userCoords) return;
     const map = mapInstanceRef.current;
@@ -156,7 +156,6 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        leafletMarkers.push(marker);
     });
 
-    // Fit bounds only once on initial data load
     if (leafletMarkers.length > 0 && !hasInitialFit.current) {
        try {
           const group = L.featureGroup(leafletMarkers);

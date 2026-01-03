@@ -59,7 +59,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setOrg(getOrg());
   }, []);
 
-  // Handle Edit Redirection from Detail Page
   useEffect(() => {
     if (location.state?.editId && allIndividuals.length > 0) {
       const indToEdit = allIndividuals.find(i => i.id === location.state.editId);
@@ -70,7 +69,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
         setSpeciesSearchQuery(sp?.commonName || '');
         setShowForm(true);
-        // Clear history state to avoid re-opening on refresh
         window.history.replaceState({}, document.title);
       }
     }
@@ -79,8 +77,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   // Main Map Controller
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
-      const initialLat = org?.latitude || 0;
-      const initialLng = org?.longitude || 0;
+      const initialLat = typeof org?.latitude === 'number' ? org.latitude : 0;
+      const initialLng = typeof org?.longitude === 'number' ? org.longitude : 0;
       
       const map = L.map(mapContainerRef.current, { 
         maxZoom: 22,
@@ -107,7 +105,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     };
   }, [viewMode, org]);
 
-  // Project data filtering
   const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
   const filtered = projectIndividuals.filter(ind => {
     const matchesSearch = ind.name.toLowerCase().includes(searchTerm.toLowerCase()) || ind.studbookId.toLowerCase().includes(searchTerm.toLowerCase());
@@ -129,9 +126,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       if (markersLayer) markersLayer.clearLayers();
       if (enclosuresLayer) enclosuresLayer.clearLayers();
 
-      // Draw Individuals
+      // Draw Individuals - STRICT TYPE CHECKING FOR COORDS
       filtered.forEach(ind => {
-        if (ind.latitude !== undefined && ind.longitude !== undefined) {
+        if (typeof ind.latitude === 'number' && typeof ind.longitude === 'number') {
           const icon = L.divIcon({
             html: `<div class="w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${ind.sex === Sex.MALE ? '#3b82f6' : ind.sex === Sex.FEMALE ? '#ec4899' : '#64748b'}"></div>`,
             className: '',
@@ -149,14 +146,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         }
       });
 
-      // Draw Enclosures with safety filter for null points
+      // Draw Enclosures - STRICT TYPE CHECKING FOR COORDS
       if (showEnclosuresOnMap && enclosuresLayer) {
         allEnclosures.forEach(enc => {
           if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
-            // CRITICAL FIX: Filter out null/undefined points before mapping to [lat, lng]
             const validPoints = enc.boundary.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number');
             
-            if (validPoints.length >= 2) {
+            if (validPoints.length >= 3) { // Polygons need at least 3 points
                const poly = L.polygon(validPoints.map(p => [p.lat, p.lng]), {
                  color: '#9333ea',
                  fillColor: '#9333ea',
@@ -197,8 +193,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       source: 'Bred in house', 
       notes: '', 
       imageUrl: '',
-      latitude: org?.latitude,
-      longitude: org?.longitude
+      latitude: typeof org?.latitude === 'number' ? org.latitude : undefined,
+      longitude: typeof org?.longitude === 'number' ? org.longitude : undefined
     });
     setSpeciesSearchQuery('');
     setShowForm(true);
@@ -215,9 +211,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const handleCloseForm = () => {
     setShowForm(false);
-    if (returnToId) {
-      navigate(`/individuals/${returnToId}`);
-    }
+    if (returnToId) navigate(`/individuals/${returnToId}`);
     setEditingId(null);
     setReturnToId(null);
   };
@@ -239,21 +233,18 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     saveIndividuals(updated);
     setIsSubmitting(false);
     
-    if (returnToId) {
-      navigate(`/individuals/${returnToId}`);
-    } else {
-      setShowForm(false);
-    }
+    if (returnToId) navigate(`/individuals/${returnToId}`);
+    else setShowForm(false);
+    
     setEditingId(null);
     setReturnToId(null);
   };
 
-  // Filters for parentage selection
   const potentialParents = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.id !== editingId && !i.isDeceased);
   const potentialSires = potentialParents.filter(i => i.sex === Sex.MALE || i.sex === Sex.UNKNOWN);
   const potentialDams = potentialParents.filter(i => i.sex === Sex.FEMALE || i.sex === Sex.UNKNOWN);
 
-  const hasMappedIndividuals = filtered.some(ind => ind.latitude !== undefined && ind.longitude !== undefined);
+  const hasMappedIndividuals = filtered.some(ind => typeof ind.latitude === 'number' && typeof ind.longitude === 'number');
 
   const getResidentsOfEnclosure = (enc: Enclosure) => {
      const residents = allIndividuals.filter(i => enc.individualIds.includes(i.id) && !i.isDeceased);
@@ -496,11 +487,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">Latitude</label>
-                        <input type="number" step="any" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.latitude || ''} onChange={e => setFormData({...formData, latitude: parseFloat(e.target.value)})} placeholder="e.g. 45.123" />
+                        <input type="number" step="any" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.latitude ?? ''} onChange={e => setFormData({...formData, latitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} placeholder="e.g. 45.123" />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">Longitude</label>
-                        <input type="number" step="any" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.longitude || ''} onChange={e => setFormData({...formData, longitude: parseFloat(e.target.value)})} placeholder="e.g. -122.456" />
+                        <input type="number" step="any" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.longitude ?? ''} onChange={e => setFormData({...formData, longitude: e.target.value === '' ? undefined : parseFloat(e.target.value)})} placeholder="e.g. -122.456" />
                     </div>
                   </div>
                 </div>
