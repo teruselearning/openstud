@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals } from '../services/storage';
 import { Enclosure, Species, Individual, EnclosurePoint, Sex } from '../types';
@@ -76,7 +77,7 @@ const EnclosureManager: React.FC = () => {
           mapInstanceRef.current = null;
        }
     };
-  }, [viewMode]);
+  }, [viewMode, org]);
 
   useEffect(() => {
     if (viewMode === 'map' && mapInstanceRef.current && markersLayerRef.current) {
@@ -85,27 +86,32 @@ const EnclosureManager: React.FC = () => {
       layer.clearLayers();
       
       enclosures.forEach(enc => {
-        if (enc.boundary && enc.boundary.length > 0) {
-          const isSelected = selectedEnclosure?.id === enc.id;
-          const poly = L.polygon(enc.boundary.map(p => [p.lat, p.lng]), {
-            color: isSelected ? '#3b82f6' : '#9333ea',
-            fillColor: isSelected ? '#3b82f6' : '#9333ea',
-            fillOpacity: isSelected ? 0.4 : 0.2,
-            weight: isSelected ? 3 : 2
-          }).addTo(layer);
+        if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
+          // Safety filter for null or corrupted points
+          const validPoints = enc.boundary.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number');
           
-          poly.on('click', (e: any) => {
-             L.DomEvent.stopPropagation(e);
-             setSelectedEnclosure(enc);
-             map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
-          });
-
-          if (!isSelected) {
-            poly.bindTooltip(enc.name, {
-              permanent: true,
-              direction: 'center',
-              className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer'
+          if (validPoints.length >= 2) {
+            const isSelected = selectedEnclosure?.id === enc.id;
+            const poly = L.polygon(validPoints.map(p => [p.lat, p.lng]), {
+              color: isSelected ? '#3b82f6' : '#9333ea',
+              fillColor: isSelected ? '#3b82f6' : '#9333ea',
+              fillOpacity: isSelected ? 0.4 : 0.2,
+              weight: isSelected ? 3 : 2
+            }).addTo(layer);
+            
+            poly.on('click', (e: any) => {
+               L.DomEvent.stopPropagation(e);
+               setSelectedEnclosure(enc);
+               map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
             });
+
+            if (!isSelected) {
+              poly.bindTooltip(enc.name, {
+                permanent: true,
+                direction: 'center',
+                className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer'
+              });
+            }
           }
         }
       });
@@ -115,8 +121,8 @@ const EnclosureManager: React.FC = () => {
   // Picker Map Effect (Polygon Drawing)
   useEffect(() => {
     if (showMapPicker && pickerMapRef.current && !pickerInstance.current) {
-       const initialLat = (formData.boundary?.[0]?.lat) || org.latitude || 0;
-       const initialLng = (formData.boundary?.[0]?.lng) || org.longitude || 0;
+       const initialLat = (formData.boundary && formData.boundary[0]?.lat) || org.latitude || 0;
+       const initialLng = (formData.boundary && formData.boundary[0]?.lng) || org.longitude || 0;
        
        const map = L.map(pickerMapRef.current).setView([initialLat, initialLng], 18);
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22, maxNativeZoom: 19 }).addTo(map);
@@ -134,11 +140,13 @@ const EnclosureManager: React.FC = () => {
        };
 
        // Load existing boundary if editing
-       if (formData.boundary && formData.boundary.length > 0) {
+       if (formData.boundary && Array.isArray(formData.boundary) && formData.boundary.length > 0) {
           formData.boundary.forEach(p => {
-             const marker = L.marker([p.lat, p.lng], { draggable: true }).addTo(map);
-             marker.on('drag', updatePolygon);
-             pickerMarkers.current.push(marker);
+             if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
+                const marker = L.marker([p.lat, p.lng], { draggable: true }).addTo(map);
+                marker.on('drag', updatePolygon);
+                pickerMarkers.current.push(marker);
+             }
           });
           updatePolygon();
        }
@@ -152,7 +160,7 @@ const EnclosureManager: React.FC = () => {
 
        setTimeout(() => map.invalidateSize(), 200);
     }
-  }, [showMapPicker]);
+  }, [showMapPicker, org, formData.boundary]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -420,7 +428,7 @@ const EnclosureManager: React.FC = () => {
                        <button type="button" onClick={() => setShowMapPicker(true)} className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"><Pencil size={12}/> {formData.boundary?.length ? 'Edit Polygon' : 'Draw Boundary'}</button>
                     </div>
                     <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 min-h-[100px] flex flex-col items-center justify-center text-center">
-                       {formData.boundary && formData.boundary.length > 0 ? (
+                       {formData.boundary && Array.isArray(formData.boundary) && formData.boundary.length > 0 ? (
                           <div className="w-full">
                             <p className="text-xs font-bold text-purple-700 mb-2">{formData.boundary.length} Coordinate Points Defined</p>
                             <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
@@ -568,9 +576,11 @@ const EnclosureManager: React.FC = () => {
                      <button 
                         type="button" 
                         onClick={() => {
-                           pickerMarkers.current.forEach(m => pickerInstance.current.removeLayer(m));
+                           if (pickerInstance.current) {
+                              pickerMarkers.current.forEach(m => pickerInstance.current.removeLayer(m));
+                           }
                            pickerMarkers.current = [];
-                           if (pickerPolygon.current) {
+                           if (pickerPolygon.current && pickerInstance.current) {
                               pickerInstance.current.removeLayer(pickerPolygon.current);
                               pickerPolygon.current = null;
                            }
@@ -592,10 +602,6 @@ const EnclosureManager: React.FC = () => {
                            const ll = m.getLatLng();
                            return { lat: ll.lat, lng: ll.lng };
                         });
-                        if (points.length > 0 && points.length < 3) {
-                           // No direct alert, just visual feedback would be better but keeping it simple
-                           return;
-                        }
                         setFormData({...formData, boundary: points});
                         setShowMapPicker(false);
                      }} className="bg-purple-600 text-white px-8 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 transition-all">Confirm Boundary</button>
@@ -608,7 +614,7 @@ const EnclosureManager: React.FC = () => {
       {/* Confirmation Modal for Deletion */}
       {enclosureToDelete && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
-           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in duration-200">
+           <div className="bg-white rounded-2xl shadow-2xl max-md w-full overflow-hidden animate-in zoom-in duration-200">
               <div className="p-6 border-b border-red-50 bg-red-50 flex items-center gap-3 text-red-800">
                  <div className="p-2 bg-white rounded-lg shadow-sm">
                     <AlertTriangle size={24} className="text-red-600" />

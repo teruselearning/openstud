@@ -79,13 +79,21 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   // Main Map Controller
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, { maxZoom: 22, zoomControl: false }).setView([org?.latitude || 0, org?.longitude || 0], 15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      const initialLat = org?.latitude || 0;
+      const initialLng = org?.longitude || 0;
+      
+      const map = L.map(mapContainerRef.current, { 
+        maxZoom: 22,
+        zoomControl: false 
+      }).setView([initialLat, initialLng], 15);
+      
       L.control.zoom({ position: 'topright' }).addTo(map);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22 }).addTo(map);
       
       markersLayerRef.current = L.layerGroup().addTo(map);
       enclosuresLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
+      
       setTimeout(() => map.invalidateSize(), 200);
     }
 
@@ -93,9 +101,23 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
        if (mapInstanceRef.current && viewMode !== 'map') {
           mapInstanceRef.current.remove();
           mapInstanceRef.current = null;
+          markersLayerRef.current = null;
+          enclosuresLayerRef.current = null;
        }
     };
   }, [viewMode, org]);
+
+  // Project data filtering
+  const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
+  const filtered = projectIndividuals.filter(ind => {
+    const matchesSearch = ind.name.toLowerCase().includes(searchTerm.toLowerCase()) || ind.studbookId.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
+    const matchesStatus = filterStatus === 'all' || (filterStatus === 'deceased' ? ind.isDeceased : !ind.isDeceased);
+    return matchesSearch && matchesSpecies && matchesStatus;
+  });
+
+  const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
+  const speciesSearchResults = projectSpecies.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
 
   // Map Data Updater
   useEffect(() => {
@@ -104,13 +126,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       const markersLayer = markersLayerRef.current;
       const enclosuresLayer = enclosuresLayerRef.current;
       
-      markersLayer.clearLayers();
-      enclosuresLayer.clearLayers();
+      if (markersLayer) markersLayer.clearLayers();
+      if (enclosuresLayer) enclosuresLayer.clearLayers();
 
       // Draw Individuals
       filtered.forEach(ind => {
         if (ind.latitude !== undefined && ind.longitude !== undefined) {
-          const sp = allSpecies.find(s => s.id === ind.speciesId);
           const icon = L.divIcon({
             html: `<div class="w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${ind.sex === Sex.MALE ? '#3b82f6' : ind.sex === Sex.FEMALE ? '#ec4899' : '#64748b'}"></div>`,
             className: '',
@@ -128,34 +149,39 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         }
       });
 
-      // Draw Enclosures
-      if (showEnclosuresOnMap) {
+      // Draw Enclosures with safety filter for null points
+      if (showEnclosuresOnMap && enclosuresLayer) {
         allEnclosures.forEach(enc => {
-          if (enc.boundary && enc.boundary.length > 0) {
-            const poly = L.polygon(enc.boundary.map(p => [p.lat, p.lng]), {
-              color: '#9333ea',
-              fillColor: '#9333ea',
-              fillOpacity: 0.15,
-              weight: 2,
-              dashArray: '5, 5'
-            }).addTo(enclosuresLayer);
+          if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
+            // CRITICAL FIX: Filter out null/undefined points before mapping to [lat, lng]
+            const validPoints = enc.boundary.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number');
+            
+            if (validPoints.length >= 2) {
+               const poly = L.polygon(validPoints.map(p => [p.lat, p.lng]), {
+                 color: '#9333ea',
+                 fillColor: '#9333ea',
+                 fillOpacity: 0.15,
+                 weight: 2,
+                 dashArray: '5, 5'
+               }).addTo(enclosuresLayer);
 
-            poly.on('click', (e: any) => {
-               L.DomEvent.stopPropagation(e);
-               setActiveEnclosureFromMap(enc);
-               map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
-            });
+               poly.on('click', (e: any) => {
+                  L.DomEvent.stopPropagation(e);
+                  setActiveEnclosureFromMap(enc);
+                  map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
+               });
 
-            poly.bindTooltip(enc.name, {
-              permanent: false,
-              direction: 'center',
-              className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
-            });
+               poly.bindTooltip(enc.name, {
+                 permanent: false,
+                 direction: 'center',
+                 className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
+               });
+            }
           }
         });
       }
     }
-  }, [viewMode, allIndividuals, allEnclosures, showEnclosuresOnMap, filterSpeciesId, filterStatus, searchTerm]);
+  }, [viewMode, filtered, allEnclosures, showEnclosuresOnMap]);
 
   const handleOpenNewForm = () => {
     setEditingId(null);
@@ -222,17 +248,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setReturnToId(null);
   };
 
-  const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
-  const filtered = projectIndividuals.filter(ind => {
-    const matchesSearch = ind.name.toLowerCase().includes(searchTerm.toLowerCase()) || ind.studbookId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
-    const matchesStatus = filterStatus === 'all' || (filterStatus === 'deceased' ? ind.isDeceased : !ind.isDeceased);
-    return matchesSearch && matchesSpecies && matchesStatus;
-  });
-
-  const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
-  const speciesSearchResults = projectSpecies.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
-
   // Filters for parentage selection
   const potentialParents = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.id !== editingId && !i.isDeceased);
   const potentialSires = potentialParents.filter(i => i.sex === Sex.MALE || i.sex === Sex.UNKNOWN);
@@ -258,7 +273,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
-          <p className="text-slate-500">{t('indivSubtitleAnimal')}</p>
+          <p className="text-slate-500">{org?.focus === 'Plants' ? t('indivSubtitlePlant') : t('indivSubtitleAnimal')}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
