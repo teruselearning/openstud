@@ -20,7 +20,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const [loadingImage, setLoadingImage] = useState(false);
   const [imageStatus, setImageStatus] = useState<string>(''); 
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'commonName' | 'scientificName'>('commonName');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');

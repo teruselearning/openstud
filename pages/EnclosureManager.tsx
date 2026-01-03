@@ -3,7 +3,7 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals, getProjects } from '../services/storage';
 import { Enclosure, Species, Individual, EnclosurePoint, Sex, Project } from '../types';
-import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle, AlertCircle, ArrowRightLeft, Move, Navigation, Loader2, Layers, FolderOpen } from 'lucide-react';
+import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle, AlertCircle, ArrowRightLeft, Move, Navigation, Loader2, Layers, FolderOpen, Crosshair } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -30,6 +30,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedEnclosure, setSelectedEnclosure] = useState<Enclosure | null>(null);
   const [enclosureToDelete, setEnclosureToDelete] = useState<Enclosure | null>(null);
+  const [isLocatingGps, setIsLocatingGps] = useState(false);
   
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
 
@@ -164,7 +165,8 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isAll && !formData.projectId) {
+    const targetProjectId = isAll ? formData.projectId : currentProjectId;
+    if (!targetProjectId) {
       alert("Please select a project for this " + label.toLowerCase());
       return;
     }
@@ -174,7 +176,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
       id: editingId || `enc-${Date.now()}`,
       orgId: org.id,
       individualIds: formData.individualIds || [],
-      projectId: isAll ? formData.projectId : currentProjectId
+      projectId: targetProjectId
     };
     const updated = editingId ? enclosures.map(enc => enc.id === editingId ? newEnc : enc) : [...enclosures, newEnc];
     setEnclosures(updated);
@@ -185,6 +187,33 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   };
 
   const clearBoundary = () => setFormData(prev => ({ ...prev, boundary: [] }));
+
+  const addPointViaGps = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    setIsLocatingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const newPoint = { lat: latitude, lng: longitude };
+        setFormData(prev => ({
+          ...prev,
+          boundary: [...(prev.boundary || []), newPoint]
+        }));
+        if (formMapInstanceRef.current) {
+          formMapInstanceRef.current.flyTo([latitude, longitude], 19);
+        }
+        setIsLocatingGps(false);
+      },
+      (error) => {
+        alert("Unable to retrieve location: " + error.message);
+        setIsLocatingGps(false);
+      },
+      { enableHighAccuracy: true }
+    );
+  };
 
   const toggleIndividual = (id: string) => {
     const current = formData.individualIds || [];
@@ -309,9 +338,15 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><MapPin size={14}/> Define Boundary</label>
-                      <button type="button" onClick={clearBoundary} className="text-[10px] font-bold text-red-600 uppercase hover:underline">Clear Map</button>
+                      <div className="flex gap-3">
+                        <button type="button" onClick={addPointViaGps} className="text-[10px] font-bold text-emerald-600 uppercase hover:underline flex items-center gap-1">
+                          {isLocatingGps ? <Loader2 size={12} className="animate-spin"/> : <Crosshair size={12}/>}
+                          Add Point via GPS
+                        </button>
+                        <button type="button" onClick={clearBoundary} className="text-[10px] font-bold text-red-600 uppercase hover:underline">Clear Map</button>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-slate-400 italic">Click on the map to define the polygon vertices for this {label.toLowerCase()}.</p>
+                    <p className="text-[10px] text-slate-400 italic">Click on the map or use GPS to define the polygon vertices for this {label.toLowerCase()}.</p>
                     <div className="h-64 rounded-xl border border-slate-200 overflow-hidden bg-slate-100">
                       <div ref={formMapRef} className="h-full w-full" />
                     </div>
@@ -365,18 +400,10 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
       {enclosureToDelete && (
          <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8 text-center animate-in zoom-in duration-200">
-               <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32}/></div>
+               <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={40}/></div>
                <h3 className="text-xl font-bold text-slate-900 mb-2">Delete {label}?</h3>
                <p className="text-slate-500 mb-8">Are you sure you want to remove <strong>{enclosureToDelete.name}</strong>? Individuals will remain but their location assignment will be cleared.</p>
-               <div className="flex gap-3">
-                  <button onClick={() => setEnclosureToDelete(null)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
-                  <button onClick={() => {
-                     const updated = enclosures.filter(e => e.id !== enclosureToDelete.id);
-                     setEnclosures(updated);
-                     saveEnclosures(updated);
-                     setEnclosureToDelete(null);
-                  }} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md">Delete</button>
-               </div>
+               <div className="flex gap-3"><button onClick={() => setEnclosureToDelete(null)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button><button onClick={() => { const updated = enclosures.filter(e => e.id !== enclosureToDelete.id); setEnclosures(updated); saveEnclosures(updated); setEnclosureToDelete(null); }} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md">Delete</button></div>
             </div>
          </div>
       )}

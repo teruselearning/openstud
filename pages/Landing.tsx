@@ -1,6 +1,6 @@
 
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { registerOrganization, login, forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
@@ -29,6 +29,11 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   const [inviteData, setInviteData] = useState<{name: string, email: string, orgName: string} | null>(null);
   const [invitePassword, setInvitePassword] = useState({ password: '', confirm: '' });
 
+  const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
+  const settings = getSystemSettings();
+  const landingConfig = settings.landingPageConfig;
+  const isRegistrationEnabled = settings.enableRegistration !== false;
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (langRef.current && !langRef.current.contains(event.target as Node)) {
@@ -51,7 +56,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             handleCheckInvite(token);
          }
       } else {
-         setViewMode(prev => prev === 'accept_invite' ? prev : initialView);
+         // Reset view if hash changes away from invite, unless manually set
+         if (viewMode === 'accept_invite') setViewMode('landing');
       }
     };
     handleHashChange();
@@ -64,7 +70,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
      setError(null);
      try {
         const res = await checkInviteToken(token);
-        if (res.success) {
+        if (res.success && res.data) {
            setInviteData(res.data);
            setViewMode('accept_invite');
         } else {
@@ -78,30 +84,18 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
      }
   };
 
-  const settings = getSystemSettings();
-  const landingConfig = settings.landingPageConfig;
-  const isRegistrationEnabled = settings.enableRegistration !== false;
-
   const [regData, setRegData] = useState({ 
-    orgName: '', 
-    userName: '', 
-    email: '',
-    focus: 'Animals' as OrganizationFocus,
-    password: '',
-    confirmPassword: '',
-    latitude: undefined as number | undefined,
-    longitude: undefined as number | undefined,
-    location: ''
+    orgName: '', userName: '', email: '', focus: 'Animals' as OrganizationFocus,
+    password: '', confirmPassword: '', latitude: undefined as number | undefined,
+    longitude: undefined as number | undefined, location: ''
   });
 
-  const [regCode, setRegCode] = useState('');
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [forgotEmail, setForgotEmail] = useState('');
   const [resetData, setResetData] = useState({ code: '', newPassword: '', confirmPassword: '' });
   const [mfaData, setMfaData] = useState({ code: '', generatedCode: '', pendingUser: null as User | null });
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const recaptchaRef = useRef<HTMLDivElement>(null);
-  const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
 
   useEffect(() => {
     let isMounted = true;
@@ -224,6 +218,23 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     } catch(e: any) { setError(e.message); setIsLoading(false); }
   };
 
+  const handleAcceptInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (invitePassword.password !== invitePassword.confirm) { setError("Passwords do not match."); return; }
+    setIsLoading(true);
+    setError(null);
+    try {
+       await acceptInvite(inviteToken, invitePassword.password);
+       setSuccess("Your account is now active! You can sign in below.");
+       setLoginData({ ...loginData, email: inviteData?.email || '' });
+       setViewMode('login');
+    } catch (e: any) {
+       setError(e.message);
+    } finally {
+       setIsLoading(false);
+    }
+  };
+
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -268,7 +279,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   return (
     <div className="min-h-screen bg-white flex flex-col relative">
       {isLoading && (
-        <div className="fixed inset-0 bg-white/90 z-50 flex flex-col items-center justify-center space-y-4 backdrop-blur-sm">
+        <div className="fixed inset-0 bg-white/90 z-[60] flex flex-col items-center justify-center space-y-4 backdrop-blur-sm">
           <Loader2 size={48} className="text-emerald-600 animate-spin" />
           <div className="text-center"><p className="text-xl font-bold text-slate-800">Processing...</p><p className="text-sm text-slate-500 mt-1">Updating system</p></div>
         </div>
@@ -315,6 +326,23 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Sign In</button></div>
                 {isRegistrationEnabled && (<div className="text-center pt-2"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('register'); }} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>)}
+              </form>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'accept_invite' && inviteData && (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
+              <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 mb-4"><UserCheck size={24} /></div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Join {inviteData.orgName}</h2>
+              <p className="text-slate-500 mb-6 text-sm">Hello <strong>{inviteData.name}</strong>, please set your account password to gain access to the system.</p>
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold animate-in shake-in duration-300"><AlertTriangle size={16} /> {error}</div>}
+              <form onSubmit={handleAcceptInviteSubmit} className="space-y-4">
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg bg-slate-50 text-slate-500 outline-none" value={inviteData.email} readOnly /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Set Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div></div>
+                <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-lg flex items-center justify-center gap-2" disabled={isLoading}><Save size={18}/> Set Password & Join</button></div>
               </form>
             </div>
           </div>
