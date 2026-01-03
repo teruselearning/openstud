@@ -1,4 +1,3 @@
-
 import { getSystemSettings } from './storage';
 
 // API Configuration
@@ -16,6 +15,7 @@ export const sendSystemEmail = async (
   fallbackSubject: string,
   fallbackBody: string
 ) => {
+  console.log(`[EMAIL SERVICE] Attempting to dispatch ${templateType} email to ${to}...`);
   // Use session token for auth
   const token = localStorage.getItem('os_token');
   

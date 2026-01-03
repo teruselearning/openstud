@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -351,6 +350,12 @@ app.post('/api/reset-password', async (req: any, res: any) => {
 app.post('/api/email/send', async (req: any, res: any) => {
     const { to, templateKey, placeholders, subject, html } = req.body;
     const db = getDb();
+    
+    // LOG CODE IMMEDIATELY ON BACKEND FOR MFA DEBUGGING
+    if (templateKey === 'mfa' && placeholders?.code) {
+        console.log(`\n[MFA DEBUG] SECURITY CODE FOR ${to}: ${placeholders.code}\n`);
+    }
+
     try {
         let finalSubject = subject;
         let finalHtml = html;
@@ -374,11 +379,6 @@ app.post('/api/email/send', async (req: any, res: any) => {
                 finalSubject = finalSubject.replace(regex, String(v));
                 finalHtml = finalHtml.replace(regex, String(v));
             });
-        }
-
-        // Special case for MFA logging
-        if (templateKey === 'mfa' && placeholders?.code) {
-           console.log(`[MFA] SECURITY CODE FOR ${to}: ${placeholders.code}`);
         }
 
         const mailResult = await sendMail(to, finalSubject, finalHtml);

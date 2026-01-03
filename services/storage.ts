@@ -1,4 +1,3 @@
-
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures } from './syncService';
@@ -282,11 +281,17 @@ export const trustDevice = (userId: string) => {
 export const sendMfaCode = async (email: string, code: string) => {
   const s = getSystemSettings();
   const t = s.emailTemplates?.mfa;
-  if (t?.enabled) await sendSystemEmail(email, 'mfa', { code }, t.subject, t.bodyHtml);
+  // REMOVED THE IF(T?.ENABLED) GUARD - ALWAYS TRY TO SEND MFA FOR SECURITY
+  await sendSystemEmail(
+    email, 
+    'mfa', 
+    { code }, 
+    t?.subject || "Your Security Code", 
+    t?.bodyHtml || `<p>Your verification code is: <b>${code}</b></p>`
+  );
 };
 
 export const login = async (email: string, pass: string): Promise<User | null> => {
-  // Frontend handles /api/login directly in Landing.tsx, this is a fallback for legacy local logic
   return null;
 };
 
