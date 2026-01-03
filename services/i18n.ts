@@ -374,6 +374,16 @@ export const BASE_TRANSLATIONS = {
     inviteMember: "Invite Member",
     allProjects: "All Projects",
     selectedProjects: "Selected Projects",
+    
+    // Bulk Invite
+    bulkInvite: "Bulk Invite (CSV)",
+    bulkInviteDesc: "Invite multiple members at once using a CSV file.",
+    csvFormatTitle: "CSV Format Instructions",
+    csvFormatDesc: "Your CSV should have columns for: name, email, role. Optional: projects (comma-separated project names or IDs). Roles must match: Admin, Keeper, Researcher, or Veterinarian.",
+    uploadCsv: "Upload CSV File",
+    processingBulk: "Processing bulk invitations...",
+    bulkSuccess: "Bulk invitations sent successfully!",
+    bulkError: "Some invitations could not be sent. Please check the CSV format.",
 
     // Email Templates Localized - Styled
     emailVerifySubject: "Verify your OpenStudbook account",

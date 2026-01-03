@@ -1,8 +1,7 @@
-
-import React, { useState, useEffect, useRef, useContext } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { getUsers, getProjects, inviteUser, deleteUser, getSession, saveUsers } from '../services/storage';
 import { User, UserRole, UserStatus, Project } from '../types';
-import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock, ShieldAlert, Upload, FileSpreadsheet, Download } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 const ROLE_KEY = [
@@ -19,6 +18,7 @@ const UserManager: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [showRoleKey, setShowRoleKey] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -32,7 +32,7 @@ const UserManager: React.FC = () => {
     allowedProjectIds: []
   });
 
-  const [projectAccessType, setProjectAccessType] = useState<'all' | 'selected'>('all');
+  const [projectAccessType, setProjectAccessType] = useState<'global' | 'selected'>('global');
 
   useEffect(() => {
     setUsers(getUsers());
@@ -46,7 +46,7 @@ const UserManager: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const allowedProjects = projectAccessType === 'all' ? [] : formData.allowedProjectIds || [];
+      const allowedProjects = projectAccessType === 'global' ? [] : formData.allowedProjectIds || [];
       await inviteUser(formData.name, formData.email, formData.role as UserRole, allowedProjects);
       
       setToast({ message: "Invitation sent successfully!", type: 'success' });
@@ -58,6 +58,69 @@ const UserManager: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleBulkInvite = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsSubmitting(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        const startIndex = (lines[0].toLowerCase().includes('email') || lines[0].toLowerCase().includes('name')) ? 1 : 0;
+        
+        let successCount = 0;
+        for (let i = startIndex; i < lines.length; i++) {
+          const [name, email, roleStr, projectStr] = lines[i].split(',').map(s => s.trim());
+          if (!email || !name) continue;
+          
+          let role = UserRole.KEEPER;
+          const rLower = roleStr?.toLowerCase() || '';
+          if (rLower.includes('admin')) role = UserRole.ADMIN;
+          else if (rLower.includes('vet')) role = UserRole.VET;
+          else if (rLower.includes('research')) role = UserRole.RESEARCHER;
+          
+          const allowedPids: string[] = [];
+          if (projectStr) {
+             const names = projectStr.split(';').map(n => n.trim().toLowerCase());
+             projects.forEach(p => {
+                if (names.includes(p.name.toLowerCase()) || names.includes(p.id.toLowerCase())) {
+                   allowedPids.push(p.id);
+                }
+             });
+          }
+
+          try {
+             await inviteUser(name, email, role, allowedPids);
+             successCount++;
+          } catch (err) { console.error(`Failed to invite ${email}`, err); }
+        }
+        
+        setToast({ message: `${successCount} bulk invitations dispatched!`, type: 'success' });
+        setUsers(getUsers());
+        setShowBulkModal(false);
+      } catch (err) {
+        setToast({ message: "Failed to process CSV file.", type: 'error' });
+      } finally {
+        setIsSubmitting(false);
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadCsvTemplate = () => {
+    const csv = "name,email,role,projects\nJohn Doe,john@example.com,Keeper,Forest Sanctuary;Mountain Trail\nJane Smith,jane@example.com,Admin,";
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'openstudbook_bulk_invite_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const handleDelete = async () => {
@@ -90,10 +153,14 @@ const UserManager: React.FC = () => {
            <h3 className="text-lg font-bold text-slate-900">{t('teamMembers')}</h3>
            <p className="text-slate-500 text-sm">{t('teamSubtitle')}</p>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button onClick={() => setShowRoleKey(!showRoleKey)} className="flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-200 shadow-sm">
             <Info size={16} />
             <span>Role Key</span>
+          </button>
+          <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold border border-slate-300 shadow-sm transition-all">
+            <Upload size={16} className="text-emerald-600" />
+            <span>{t('bulkInvite')}</span>
           </button>
           <button onClick={() => setShowForm(true)} className="flex-1 sm:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
             <Plus size={16} />
@@ -101,20 +168,6 @@ const UserManager: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {showRoleKey && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-300 relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-2"><button onClick={() => setShowRoleKey(false)} className="text-slate-400 hover:text-slate-600"><X size={14}/></button></div>
-           {ROLE_KEY.map(rk => (
-             <div key={rk.role} className="space-y-1">
-                <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${rk.bg} ${rk.color} uppercase tracking-wider`}>
-                   <Shield size={10}/> {rk.role}
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">{rk.desc}</p>
-             </div>
-           ))}
-        </div>
-      )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <table className="w-full text-left">
@@ -149,10 +202,10 @@ const UserManager: React.FC = () => {
                 </td>
                 <td className="px-6 py-4">
                    <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                      {user.role === UserRole.ADMIN || (user.role as string) === 'Super Admin' ? (
-                        <span className="flex items-center gap-1 text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-tight"><Eye size={12}/> Global View</span>
+                      {user.role === UserRole.ADMIN || (user.role as string) === 'Super Admin' || !user.allowedProjectIds || user.allowedProjectIds.length === 0 ? (
+                        <span className="flex items-center gap-1 text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-tight"><Eye size={12}/> Global Access</span>
                       ) : (
-                        <span className="flex items-center gap-1"><Briefcase size={12}/> {user.allowedProjectIds?.length || 0} Projects</span>
+                        <span className="flex items-center gap-1 font-bold text-slate-600"><Briefcase size={12} className="text-slate-400"/> {user.allowedProjectIds?.length || 0} Projects</span>
                       )}
                    </div>
                 </td>
@@ -174,6 +227,36 @@ const UserManager: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Bulk Invite Modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-8 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> {t('bulkInvite')}</h3>
+              <button onClick={() => setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+            </div>
+            <div className="space-y-6">
+              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
+                <h4 className="text-sm font-bold text-emerald-800 mb-2">{t('csvFormatTitle')}</h4>
+                <p className="text-xs text-emerald-700 leading-relaxed mb-4">{t('csvFormatDesc')}</p>
+                <button onClick={downloadCsvTemplate} className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
+              </div>
+              
+              <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 bg-slate-50 hover:bg-white transition-all group relative">
+                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 mb-4 group-hover:text-emerald-600 transition-colors"><Upload size={32} /></div>
+                <p className="font-bold text-slate-800 mb-1">Click to Upload CSV</p>
+                <p className="text-xs text-slate-400">or drag and drop file here</p>
+                <input type="file" accept=".csv" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleBulkInvite} disabled={isSubmitting} />
+              </div>
+              
+              {isSubmitting && (
+                <div className="flex items-center justify-center gap-3 text-emerald-600 font-bold animate-pulse"><Loader2 size={20} className="animate-spin" /> {t('processingBulk')}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -214,12 +297,12 @@ const UserManager: React.FC = () => {
                   <label className="text-sm font-medium text-slate-700 mb-1 block">Project Access</label>
                   <div className="flex gap-4 mb-2">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="radio" name="access" checked={projectAccessType === 'all'} onChange={() => setProjectAccessType('all')} />
-                      All Current Projects
+                      <input type="radio" name="access" checked={projectAccessType === 'global'} onChange={() => setProjectAccessType('global')} />
+                      Global (All Present & Future)
                     </label>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="radio" name="access" checked={projectAccessType === 'selected'} onChange={() => setProjectAccessType('selected')} />
-                      Specific Projects
+                      Restricted (Select Specific)
                     </label>
                   </div>
                   {projectAccessType === 'selected' && (
@@ -235,11 +318,11 @@ const UserManager: React.FC = () => {
                 </div>
               )}
 
-              {formData.role === UserRole.ADMIN && (
+              {(formData.role === UserRole.ADMIN || projectAccessType === 'global') && (
                 <div className="bg-indigo-50 p-4 rounded-lg flex items-start gap-3 border border-indigo-100">
                   <Lock size={18} className="text-indigo-600 mt-0.5"/>
                   <p className="text-xs text-indigo-700 leading-relaxed font-medium">
-                    Administrators have access to all projects by default and can switch between them using the "All Projects" consolidated view.
+                    This user will have access to all projects by default and can switch between them using the project navigator.
                   </p>
                 </div>
               )}

@@ -35,7 +35,8 @@ import {
   Users as UsersIcon,
   Box,
   Map as MapIcon,
-  Grid
+  Grid,
+  Layers
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -65,10 +66,12 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
+// Fix: Explicitly use React.Component to ensure props and state are correctly typed in class components
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
-  constructor(props: ErrorBoundaryProps) { super(props); }
+  
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
+  
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
   render() {
@@ -129,6 +132,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
+  const hasGlobalAccess = isAdmin || !user.allowedProjectIds || user.allowedProjectIds.length === 0;
 
   return (
     <>
@@ -147,6 +151,9 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
                className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium disabled:opacity-50"
                disabled={!isAdmin && projects.length <= 1}
              >
+               {hasGlobalAccess && (
+                 <option value="ALL_PROJECTS">🌐 All Projects</option>
+               )}
                {projects.length > 0 ? (
                  projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
                ) : (
@@ -406,7 +413,7 @@ const App: React.FC = () => {
     const allProjects = getProjects();
     let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
     let savedPid = getCurrentProjectId();
-    if (!availableProjects.some(p => p.id === savedPid)) {
+    if (savedPid !== 'ALL_PROJECTS' && !availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
     }

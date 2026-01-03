@@ -33,7 +33,8 @@ import {
   Check,
   Server,
   Box,
-  Layers
+  Layers,
+  Eye
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -46,8 +47,8 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import EnclosureManager from './pages/EnclosureManager'; 
-import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures, syncPushSettings } from './services/storage';
+import EnclosureManager from './pages/EnclosureManager';
+import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
 import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
@@ -63,9 +64,9 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
+// Fix: Explicitly use React.Component to ensure props and state are correctly typed in class components
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
-  constructor(props: ErrorBoundaryProps) { super(props); }
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
@@ -121,11 +122,14 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   const location = useLocation();
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
-  const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
-  const isAdmin = user.role === UserRole.ADMIN || isSuper;
   const org = getOrg();
   const enclosureLabel = org.focus === 'Plants' ? 'Areas' : 'Enclosures';
   
+  const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
+  const isAdmin = user.role === UserRole.ADMIN || isSuper;
+  // Global Access = Admin OR no specific project IDs assigned
+  const hasGlobalAccess = isAdmin || !user.allowedProjectIds || user.allowedProjectIds.length === 0;
+
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} />}
@@ -143,7 +147,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
                className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium disabled:opacity-50"
                disabled={!isAdmin && projects.length <= 1}
              >
-               {isAdmin && (
+               {hasGlobalAccess && (
                  <option value="ALL_PROJECTS">🌐 All Projects</option>
                )}
                {projects.length > 0 ? (
@@ -167,6 +171,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           {showEnclosures && <NavItem to="/enclosures" icon={Box} label={enclosureLabel} active={path.startsWith('/enclosures')} />}
           {showPlantMap && <NavItem to="/plant-map" icon={Map} label={t('plantMap')} active={path === '/plant-map'} />}
           {showBreeding && <NavItem to="/breeding" icon={HeartHandshake} label={t('breeding')} active={path.startsWith('/breeding')} />}
+          
           <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
              <NavItem to="/network" icon={Globe2} label={t('networkMap')} active={path === '/network'} />
              {isAdmin && <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />}
@@ -214,7 +219,7 @@ const App: React.FC = () => {
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [showBreeding, setShowBreeding] = useState(true);
   const [showPlantMap, setShowPlantMap] = useState(false);
-  const [showEnclosures, setShowEnclosures] = useState(false); 
+  const [showEnclosures, setShowEnclosures] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [pendingEmail, setPendingEmail] = useState('');
@@ -230,8 +235,11 @@ const App: React.FC = () => {
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
        const session = getSession();
+       const token = localStorage.getItem('os_token');
+
        if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
        else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
+       
        try {
           const res = await fetchPublicConfig();
           if (res.success) {
@@ -241,11 +249,14 @@ const App: React.FC = () => {
                 saveSystemSettings(merged, true); 
                 setSystemSettings(merged);
              }
-             if (res.languages) { saveLanguages(res.languages, true); setLanguages(res.languages); }
+             if (res.languages && res.languages.length > 0) { saveLanguages(res.languages, true); setLanguages(res.languages); }
           }
        } catch (e) { console.warn("Public config failed."); }
-       if (session) await loadData(session);
-       else setIsLoading(false);
+       
+       if (session && token) {
+          try { await loadData(session); } catch (e) { logout(); setUser(null); }
+       }
+       setIsLoading(false);
     };
     initializeApp();
   }, []);
@@ -278,18 +289,11 @@ const App: React.FC = () => {
      const org = getOrg();
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
-     
-     if (pid === 'ALL_PROJECTS') {
-       setShowBreeding(org.focus === 'Animals' || allSpecies.some(s => s.type === 'Animal'));
-       setShowEnclosures(!!org.enableEnclosures);
-       setShowPlantMap(allInds.some(i => i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant'));
-     } else {
-       const projectSpecies = allSpecies.filter(s => s.projectId === pid);
-       setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
-       setShowEnclosures(!!org.enableEnclosures);
-       const hasMappedPlants = allInds.some(i => i.projectId === pid && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
-       setShowPlantMap(hasMappedPlants);
-     }
+     const projectSpecies = pid === 'ALL_PROJECTS' ? allSpecies : allSpecies.filter(s => s.projectId === pid);
+     setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     setShowEnclosures(!!org.enableEnclosures);
+     const hasMappedPlants = allInds.some(i => (pid === 'ALL_PROJECTS' || i.projectId === pid) && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
+     setShowPlantMap(hasMappedPlants);
   };
 
   const performSync = async () => {
@@ -299,45 +303,19 @@ const App: React.FC = () => {
         const result = await fetchRemoteData();
         if (result.success && result.data) {
            const { data } = result;
-           const localSpecies = getSpecies();
-           const localInds = getIndividuals();
-           const localProjects = getProjects();
-           const localUsers = getUsers();
-           const serverIsEmpty = (data.species || []).length === 0 && (data.individuals || []).length === 0;
-           const localHasData = localSpecies.length > 0 || localInds.length > 0;
-           if (serverIsEmpty && localHasData) {
-              try {
-                  await syncPushOrg(getOrg());
-                  await syncPushUsers(localUsers);
-                  await syncPushProjects(localProjects);
-                  await syncPushSpecies(localSpecies);
-                  await syncPushIndividuals(localInds);
-                  await syncPushEnclosures(getEnclosures());
-                  await syncPushBreedingEvents(getBreedingEvents());
-                  await syncPushBreedingLoans(getBreedingLoans());
-                  await syncPushPartnerships(getPartnerships());
-                  await syncPushLanguages(getLanguages());
-                  await syncPushSettings(getSystemSettings());
-              } catch (pushErr: any) { setSyncError(`Backup Push Failed: ${pushErr.message}`); return; }
-           } else {
-              if (data.org) saveOrg(data.org, true);
-              if (data.settings && Object.keys(data.settings).length > 2) { 
-                 const currentLocal = getSystemSettings();
-                 const merged = { ...currentLocal, ...data.settings, landingPageConfig: { ...currentLocal.landingPageConfig, ...(data.settings.landingPageConfig || {}) } };
-                 saveSystemSettings(merged, true); 
-                 setSystemSettings(merged); 
-              }
-              if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
-              if (data.projects) saveProjects(data.projects, true);
-              if (data.users) saveUsers(data.users, true);
-              if (data.species) saveSpecies(data.species, true);
-              if (data.individuals) saveIndividuals(data.individuals, true);
-              if (data.enclosures) saveEnclosures(data.enclosures, true);
-              if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
-              if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
-              if (data.partnerships) savePartnerships(data.partnerships, true);
-              if (data.partners) saveNetworkPartners(data.partners); 
+           if (data.org) saveOrg(data.org, true);
+           if (data.settings) { 
+              const merged = { ...getSystemSettings(), ...data.settings };
+              saveSystemSettings(merged, true); 
+              setSystemSettings(merged); 
            }
+           if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
+           if (data.projects) saveProjects(data.projects, true);
+           if (data.users) saveUsers(data.users, true);
+           if (data.species) saveSpecies(data.species, true);
+           if (data.individuals) saveIndividuals(data.individuals, true);
+           if (data.enclosures) saveEnclosures(data.enclosures, true);
+
            const activeOrg = getOrg();
            setCurrentOrg(activeOrg);
            const pjs = getProjects().filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
@@ -346,29 +324,21 @@ const App: React.FC = () => {
               const currentId = getCurrentProjectId();
               calculateFeatureVisibility(currentId || pjs[0].id);
            }
-        } else if (!result.success) {
-           setSyncError(result.message || "Unknown sync error");
-           if (result.message.includes('404') || result.message.includes('fetch')) setShowBackendSetup(true);
         }
-     } catch (e: any) { setSyncError(e.message || "Sync Exception"); } finally { setIsSyncing(false); }
+     } catch (e: any) { setSyncError(e.message); } finally { setIsSyncing(false); }
   };
 
   const loadData = async (session: User) => {
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
-    const isSuper = session.role === UserRole.SUPER_ADMIN || (session.role as string) === 'Super Admin';
     const isImpersonatingSession = isImpersonating();
-    setImpersonating(isSuper ? false : isImpersonatingSession);
-    let activeOrg = getOrg();
-    if (!isImpersonatingSession && activeOrg.id !== session.orgId) {
-       const allPartners = getNetworkPartners();
-       const matchedOrg = allPartners.find(p => p.id === session.orgId);
-       if (matchedOrg) { saveOrg(matchedOrg as any, true); activeOrg = matchedOrg as any; }
-    }
-    setCurrentOrg(activeOrg);
-    const allProjects = getProjects();
+    setImpersonating(isImpersonatingSession);
     
+    let activeOrg = getOrg();
+    setCurrentOrg(activeOrg);
+    
+    const allProjects = getProjects();
     let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
     if (session.allowedProjectIds && session.allowedProjectIds.length > 0) {
        availableProjects = availableProjects.filter(p => session.allowedProjectIds!.includes(p.id));
@@ -379,12 +349,10 @@ const App: React.FC = () => {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
     }
-    
     setProjects(availableProjects);
     setCurrentProjectIdState(savedPid);
     calculateFeatureVisibility(savedPid);
     setUnreadCount(getNotifications().filter(n => n.recipientId === session.id && !n.isRead).length);
-    setIsLoading(false);
   };
 
   const handleLogin = (u: User) => loadData(u);
@@ -416,9 +384,8 @@ const App: React.FC = () => {
      if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) { showToast("Passwords do not match.", "error"); return; }
      let updatedUser = { ...user, name: profileForm.name, email: profileForm.email, avatarUrl: profileForm.avatarUrl };
      if (profileForm.newPassword) updatedUser.password = profileForm.newPassword;
-     const updatedList = getUsers().map(u => u.id === user.id ? updatedUser : u);
-     saveUsers(updatedList); saveSession(updatedUser); setUser(updatedUser);
-     syncPushUsers([updatedUser]);
+     saveUsers(getUsers().map(u => u.id === user.id ? updatedUser : u));
+     saveSession(updatedUser); setUser(updatedUser);
      setShowProfileModal(false); showToast("Profile updated successfully.", "success");
   };
 
@@ -443,16 +410,28 @@ const App: React.FC = () => {
               </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
-              <ErrorBoundary><Routes><Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} /><Route path="/network" element={<Network />} /><Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} /><Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} /><Route path="/individuals/:id" element={<IndividualDetail />} /><Route path="/enclosures" element={<EnclosureManager currentProjectId={currentProjectId} />} />{showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}{showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}<Route path="/settings" element={<OrgSettings />} /><Route path="/notifications" element={<Notifications />} /><Route path="/super-admin" element={(user.role as string) === 'Super Admin' ? <SuperAdminPage /> : <Navigate to="/" replace />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></ErrorBoundary>
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/" element={<Dashboard currentProjectId={currentProjectId} />} />
+                  <Route path="/network" element={<Network />} />
+                  <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} />} />
+                  <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} />} />
+                  <Route path="/individuals/:id" element={<IndividualDetail />} />
+                  <Route path="/enclosures" element={<EnclosureManager currentProjectId={currentProjectId} />} />
+                  {showPlantMap && <Route path="/plant-map" element={<PlantMap currentProjectId={currentProjectId} />} />}
+                  {showBreeding && <Route path="/breeding" element={<BreedingManager currentProjectId={currentProjectId} />} />}
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/settings" element={isAdmin ? <OrgSettings /> : <Navigate to="/" replace />} />
+                  <Route path="/super-admin" element={isSuper ? <SuperAdminPage /> : <Navigate to="/" replace />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </ErrorBoundary>
             </div>
           </main>
         </div>
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-        {showAddProjectModal && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
-        {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UserIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div className="flex flex-col items-center mb-4"><div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden mb-2 relative group">{profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt="Avatar" className="w-full h-full object-cover" /> : <UserIcon size={32} className="text-slate-400" />}<div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Camera size={20} className="text-white"/></div></div><input className="text-xs text-center border border-slate-200 rounded px-2 py-1 w-full bg-white text-slate-900" placeholder="Avatar URL" value={profileForm.avatarUrl} onChange={e => setProfileForm({...profileForm, avatarUrl: e.target.value})} /></div><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly title="To change email, use the verification flow below." />{!isVerifyingEmail ? <div className="flex gap-2"><input className="flex-1 px-3 py-1.5 border border-slate-300 rounded text-sm outline-none focus:ring-1 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Email Address" value={pendingEmail} onChange={e => setPendingEmail(e.target.value)} /><button type="button" onClick={() => { if (!pendingEmail?.includes('@')) return; const code = Math.floor(100000 + Math.random() * 900000).toString(); setGeneratedCode(code); sendMfaCode(pendingEmail, code); setIsVerifyingEmail(true); }} disabled={!pendingEmail || !pendingEmail.includes('@')} className="bg-slate-800 text-white px-3 py-1.5 rounded text-sm hover:bg-slate-700 disabled:opacity-50">Verify</button></div> : <div className="bg-emerald-50 p-3 rounded border border-emerald-100"><p className="text-xs text-emerald-800 mb-2 font-medium">Enter code sent to {pendingEmail}:</p><div className="flex gap-2"><input className="w-24 px-2 py-1 border border-emerald-300 rounded text-center tracking-widest font-mono bg-white text-slate-900" placeholder="000000" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} /><button type="button" onClick={() => { if (verifyCode === generatedCode) { setProfileForm({ ...profileForm, email: pendingEmail }); setIsVerifyingEmail(false); setPendingEmail(''); showToast("Email verified.", "success"); } else showToast("Invalid code.", "error"); }} className="text-xs bg-emerald-600 text-white px-3 py-1 rounded font-bold hover:bg-emerald-700">Confirm</button><button type="button" onClick={() => setIsVerifyingEmail(false)} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button></div></div>}</div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3">
-                  <input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} />
-                  <input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} />
-                </div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
+        {showAddProjectModal && isAdmin && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
+        {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UserIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly /></div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3"><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} /><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} /></div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
       </HashRouter>
     </LanguageContext.Provider>
   );
