@@ -310,8 +310,35 @@ export const confirmRegistration = async (email: string, code: string): Promise<
    throw new Error("Verification handled by login flow.");
 };
 
-export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => ({ success: true, message: "Reset code sent." });
-export const resetPassword = async (email: string, code: string, pass: string): Promise<{ success: boolean; error?: string }> => ({ success: true });
+export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+  try {
+    const response = await fetch('/api/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await response.json();
+    if (!response.ok) return { success: false, error: data.error };
+    return { success: true, message: data.message };
+  } catch (e: any) {
+    return { success: false, error: "Network error." };
+  }
+};
+
+export const resetPassword = async (email: string, code: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code, newPassword: pass })
+    });
+    const data = await response.json();
+    if (!response.ok) return { success: false, error: data.error };
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: "Network error." };
+  }
+};
 
 export const regenerateDemoData = async () => {};
 

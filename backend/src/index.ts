@@ -119,6 +119,8 @@ const initDatabase = async () => {
                 password VARCHAR(255),
                 avatar_url LONGTEXT,
                 allowed_project_ids JSON,
+                reset_code VARCHAR(10),
+                reset_expires BIGINT,
                 CONSTRAINT fk_user_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         `);
@@ -136,6 +138,12 @@ const initDatabase = async () => {
 
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
         
+        // --- Migration: Ensure reset columns exist if table was already created ---
+        try {
+            await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(10)`);
+            await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires BIGINT`);
+        } catch(e) {}
+
         // --- SEEDING: Demo User & Org (Ensure Sarah is present) ---
         const [sarahRows]: any = await db.execute('SELECT id FROM users WHERE email = ?', ['sarah@wild.org']);
         if (sarahRows.length === 0) {
@@ -194,6 +202,7 @@ app.post('/api/login', async (req: any, res: any) => {
            return res.status(401).json({ error: "Account not found." });
         }
 
+        // Handle both hashed and plain (fallback) passwords
         const isMatch = await bcrypt.compare(password, user.password).catch(() => user.password === password);
         if (!isMatch) {
            console.warn(`[AUTH] Login failed for ${normalizedEmail}: Password mismatch.`);
@@ -246,6 +255,47 @@ app.post('/api/register', async (req: any, res: any) => {
     } catch (e: any) {
         console.error(`[REGISTER ERROR]`, e);
         res.status(500).json({ error: e.message || "Registration failed." });
+    }
+});
+
+app.post('/api/forgot-password', async (req: any, res: any) => {
+    const { email } = req.body;
+    const normalizedEmail = email.toLowerCase().trim();
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+        if (rows.length === 0) return res.json({ success: true, message: "If account exists, code sent." });
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = Date.now() + (30 * 60 * 1000); // 30 mins
+
+        await db.execute('UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?', [code, expires, normalizedEmail]);
+        
+        console.log(`[AUTH] Password reset code for ${normalizedEmail}: ${code}`);
+        res.json({ success: true, message: "Reset code sent." });
+    } catch (e: any) {
+        res.status(500).json({ error: "Failed to process forgot password request." });
+    }
+});
+
+app.post('/api/reset-password', async (req: any, res: any) => {
+    const { email, code, newPassword } = req.body;
+    const normalizedEmail = email.toLowerCase().trim();
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute('SELECT reset_code, reset_expires FROM users WHERE email = ?', [normalizedEmail]);
+        const user = rows[0];
+
+        if (!user || user.reset_code !== code || Date.now() > user.reset_expires) {
+            return res.status(400).json({ error: "Invalid or expired reset code." });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.execute('UPDATE users SET password = ?, reset_code = NULL, reset_expires = NULL WHERE email = ?', [hashedPassword, normalizedEmail]);
+
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: "Failed to reset password." });
     }
 });
 
