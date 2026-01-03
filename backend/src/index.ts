@@ -59,7 +59,13 @@ const sendMail = async (to: string, subject: string, html: string) => {
         let settings = rows[0]?.settings;
         if (typeof settings === 'string') settings = JSON.parse(settings);
         if (!settings || !settings.smtpHost) return { success: false, error: "SMTP not configured" };
-        const transporter = nodemailer.createTransport({ host: settings.smtpHost, port: settings.smtpPort || 587, secure: !!settings.smtpSecure, auth: { user: settings.smtpUser, pass: settings.smtpPass } });
+        const transporter = nodemailer.createTransport({ 
+          host: settings.smtpHost, 
+          port: settings.smtpPort || 587, 
+          secure: !!settings.smtpSecure, 
+          auth: { user: settings.smtpUser, pass: settings.smtpPass },
+          tls: { rejectUnauthorized: false }
+        });
         await transporter.sendMail({ from: `"OpenStudbook" <${settings.smtpUser}>`, to, subject, html });
         return { success: true };
     } catch (e: any) { return { success: false, error: e.message }; }
@@ -86,7 +92,22 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS app_config (id VARCHAR(255) PRIMARY KEY, settings JSON)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
-    } catch (e: any) { process.exit(1); }
+
+        // Seed Demo User if database is empty
+        const [users]: any = await db.execute('SELECT id FROM users LIMIT 1');
+        if (users.length === 0) {
+            console.log("Seeding Demo User...");
+            const orgId = 'org-1';
+            const userId = 'u-1';
+            const hashedPassword = await bcrypt.hash('password', 10);
+            await db.execute(`INSERT IGNORE INTO organizations (id, name, location, focus, is_org_public, is_species_public) VALUES (?, 'Wild Foundation', 'Portland, OR', 'Animals', 1, 1)`, [orgId]);
+            await db.execute(`INSERT IGNORE INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, 'Sarah Jenkins', 'sarah@wild.org', 'Admin', 'Active', ?)`, [userId, orgId, hashedPassword]);
+            await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES ('p-1', ?, 'Global Conservation', 'Primary research project')`, [orgId]);
+        }
+    } catch (e: any) { 
+        console.error("Database Init Failed:", e);
+        process.exit(1); 
+    }
 };
 
 const authenticate = (req: any, res: any, next: express.NextFunction) => {
@@ -119,6 +140,44 @@ restRouter.post('/:table', async (req: any, res: any) => {
 });
 app.use('/rest/v1', restRouter);
 
+// Email Endpoints
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, templateKey, placeholders, subject, html } = req.body;
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        let settings = rows[0]?.settings;
+        if (typeof settings === 'string') settings = JSON.parse(settings);
+        
+        let finalSubject = subject;
+        let finalHtml = html;
+
+        if (templateKey && settings.emailTemplates?.[templateKey]) {
+            const tpl = settings.emailTemplates[templateKey];
+            finalSubject = tpl.subject;
+            finalHtml = tpl.bodyHtml;
+            // Replace placeholders {{key}}
+            if (placeholders) {
+                Object.entries(placeholders).forEach(([key, val]) => {
+                    const regex = new RegExp(`{{${key}}}`, 'g');
+                    finalSubject = finalSubject.replace(regex, String(val));
+                    finalHtml = finalHtml.replace(regex, String(val));
+                });
+            }
+        }
+
+        const result = await sendMail(to, finalSubject, finalHtml);
+        if (result.success) res.json({ success: true });
+        else res.status(500).json({ error: result.error });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const result = await sendMail(req.body.to, "OpenStudbook SMTP Test", "<p>Your SMTP configuration is working correctly!</p>");
+    if (result.success) res.json({ success: true });
+    else res.status(500).json({ error: result.error });
+});
+
 app.post('/api/login', async (req: any, res: any) => {
     const normalizedEmail = req.body.email.toLowerCase().trim();
     const db = getDb();
@@ -126,8 +185,17 @@ app.post('/api/login', async (req: any, res: any) => {
         const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
         const user = rows[0];
         if (!user) return res.status(401).json({ error: "Account not found." });
-        const isMatch = await bcrypt.compare(req.body.password, user.password).catch(() => user.password === req.body.password);
+        
+        // Handle both hashed and plain text (for initial seeding transition)
+        let isMatch = false;
+        try {
+            isMatch = await bcrypt.compare(req.body.password, user.password);
+        } catch (e) {
+            isMatch = user.password === req.body.password;
+        }
+        
         if (!isMatch) return res.status(401).json({ error: "Invalid password." });
+        
         const [orgRows]: any = await db.execute('SELECT * FROM organizations WHERE id = ? LIMIT 1', [user.org_id]);
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
         res.json({ token, user, organization: orgRows[0] });

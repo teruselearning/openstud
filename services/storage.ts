@@ -395,19 +395,23 @@ export const deleteUser = async (userId: string) => {
   const s = getSystemSettings();
   const t = s.emailTemplates?.removal;
   
-  // Send removal email to either invited or active users
+  const isInvitedOnly = user.status === UserStatus.INVITED;
+  
+  // Refined Email Notification based on status
   await sendSystemEmail(
     user.email,
     'notification',
     {
       orgName: org.name,
-      message: user.status === UserStatus.INVITED 
-        ? "Your invitation to join the management team has been cancelled."
-        : "Your access to the organisation has been removed by an administrator.",
+      message: isInvitedOnly 
+        ? `The invitation to join ${org.name} has been cancelled by an administrator.`
+        : `Your access to the organisation ${org.name} has been removed by an administrator.`,
       year: new Date().getFullYear().toString()
     },
-    t?.subject || "Account Update",
-    t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been updated.</p>`
+    isInvitedOnly ? "Invitation Revoked" : (t?.subject || "Account Removed"),
+    isInvitedOnly 
+      ? `<p>The invitation for you to join <b>${org.name}</b> has been revoked. You will no longer be able to accept the invite.</p>`
+      : (t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been removed by an administrator.</p>`)
   );
 
   saveUsers(allUsers.filter(u => u.id !== userId));
