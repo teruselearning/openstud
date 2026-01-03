@@ -222,6 +222,7 @@ export interface HealthRecord {
   type: 'Checkup' | 'Vaccination' | 'Injury' | 'Treatment' | 'Other';
   description: string;
   performedBy?: string;
+  imageUrl?: string;
 }
 
 export type LoanStatus = 'None' | 'Loaned Out' | 'On Loan';

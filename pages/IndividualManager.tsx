@@ -4,7 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -27,10 +27,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [showForm, setShowForm] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
-  // Map References
+  // Map State
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
+  const enclosuresLayerRef = useRef<any>(null);
+  const [showEnclosuresOnMap, setShowEnclosuresOnMap] = useState(true);
+  const [activeEnclosureFromMap, setActiveEnclosureFromMap] = useState<Enclosure | null>(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -73,15 +76,86 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     }
   }, [location.state, allIndividuals, allSpecies]);
 
+  // Main Map Controller
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, { maxZoom: 22 }).setView([org?.latitude || 0, org?.longitude || 0], 15);
+      const map = L.map(mapContainerRef.current, { maxZoom: 22, zoomControl: false }).setView([org?.latitude || 0, org?.longitude || 0], 15);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      L.control.zoom({ position: 'topright' }).addTo(map);
+      
       markersLayerRef.current = L.layerGroup().addTo(map);
+      enclosuresLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
       setTimeout(() => map.invalidateSize(), 200);
     }
+
+    return () => {
+       if (mapInstanceRef.current && viewMode !== 'map') {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+       }
+    };
   }, [viewMode, org]);
+
+  // Map Data Updater
+  useEffect(() => {
+    if (viewMode === 'map' && mapInstanceRef.current) {
+      const map = mapInstanceRef.current;
+      const markersLayer = markersLayerRef.current;
+      const enclosuresLayer = enclosuresLayerRef.current;
+      
+      markersLayer.clearLayers();
+      enclosuresLayer.clearLayers();
+
+      // Draw Individuals
+      filtered.forEach(ind => {
+        if (ind.latitude !== undefined && ind.longitude !== undefined) {
+          const sp = allSpecies.find(s => s.id === ind.speciesId);
+          const icon = L.divIcon({
+            html: `<div class="w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${ind.sex === Sex.MALE ? '#3b82f6' : ind.sex === Sex.FEMALE ? '#ec4899' : '#64748b'}"></div>`,
+            className: '',
+            iconSize: [16, 16]
+          });
+          
+          const marker = L.marker([ind.latitude, ind.longitude], { icon }).addTo(markersLayer);
+          marker.bindPopup(`
+            <div class="p-1">
+              <h4 class="font-bold text-sm m-0">${ind.name}</h4>
+              <p class="text-[10px] text-slate-500 m-0 uppercase font-mono">${ind.studbookId}</p>
+              <button onclick="window.location.hash='#/individuals/${ind.id}'" class="mt-2 w-full text-[10px] bg-emerald-600 text-white py-1 rounded font-bold uppercase tracking-widest">View Profile</button>
+            </div>
+          `);
+        }
+      });
+
+      // Draw Enclosures
+      if (showEnclosuresOnMap) {
+        allEnclosures.forEach(enc => {
+          if (enc.boundary && enc.boundary.length > 0) {
+            const poly = L.polygon(enc.boundary.map(p => [p.lat, p.lng]), {
+              color: '#9333ea',
+              fillColor: '#9333ea',
+              fillOpacity: 0.15,
+              weight: 2,
+              dashArray: '5, 5'
+            }).addTo(enclosuresLayer);
+
+            poly.on('click', (e: any) => {
+               L.DomEvent.stopPropagation(e);
+               setActiveEnclosureFromMap(enc);
+               map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
+            });
+
+            poly.bindTooltip(enc.name, {
+              permanent: false,
+              direction: 'center',
+              className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
+            });
+          }
+        });
+      }
+    }
+  }, [viewMode, allIndividuals, allEnclosures, showEnclosuresOnMap, filterSpeciesId, filterStatus, searchTerm]);
 
   const handleOpenNewForm = () => {
     setEditingId(null);
@@ -166,6 +240,19 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const hasMappedIndividuals = filtered.some(ind => ind.latitude !== undefined && ind.longitude !== undefined);
 
+  const getResidentsOfEnclosure = (enc: Enclosure) => {
+     const residents = allIndividuals.filter(i => enc.individualIds.includes(i.id) && !i.isDeceased);
+     const grouped: Record<string, { species: Species, count: number }> = {};
+     residents.forEach(res => {
+        const sp = allSpecies.find(s => s.id === res.speciesId);
+        if (sp) {
+           if (!grouped[sp.id]) grouped[sp.id] = { species: sp, count: 0 };
+           grouped[sp.id].count++;
+        }
+     });
+     return { residents, grouped: Object.values(grouped) };
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -175,9 +262,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
-            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md ${viewMode === 'grid' ? 'bg-slate-100' : ''}`}><LayoutGrid size={18} /></button>
-            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md ${viewMode === 'list' ? 'bg-slate-100' : ''}`}><List size={18} /></button>
-            <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md ${viewMode === 'map' ? 'bg-slate-100' : ''}`}><MapIcon size={18} /></button>
+            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid size={18} /></button>
+            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
+            <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><MapIcon size={18} /></button>
           </div>
           <button onClick={handleOpenNewForm} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm">
             <Plus size={18} /><span>{t('add')}</span>
@@ -228,7 +315,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       )}
 
       {viewMode === 'list' && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
@@ -264,14 +351,60 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       )}
 
       {viewMode === 'map' && (
-        <div className="relative">
-          <div ref={mapContainerRef} className={`h-[600px] w-full rounded-xl border border-slate-200 ${!hasMappedIndividuals ? 'opacity-30 pointer-events-none' : ''}`} />
+        <div className="relative flex-1 min-h-[600px] rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          <div ref={mapContainerRef} className={`w-full h-[600px] ${!hasMappedIndividuals ? 'opacity-30' : ''}`} />
+          
+          <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+             <button 
+                onClick={() => setShowEnclosuresOnMap(!showEnclosuresOnMap)} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold shadow-lg transition-all border ${showEnclosuresOnMap ? 'bg-purple-600 text-white border-purple-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+             >
+                {showEnclosuresOnMap ? <Eye size={16}/> : <EyeOff size={16}/>}
+                {t('showEnclosuresToggle')}
+             </button>
+          </div>
+
+          {activeEnclosureFromMap && (
+             <div className="absolute left-4 bottom-4 z-[1000] w-72 bg-white rounded-xl shadow-2xl border border-slate-200 animate-in slide-in-from-left-4 duration-300 overflow-hidden">
+                <div className="p-4 bg-purple-50 border-b border-purple-100 flex justify-between items-center">
+                   <div className="flex items-center gap-2">
+                      <Box size={16} className="text-purple-600"/>
+                      <h4 className="font-bold text-slate-900 truncate">{activeEnclosureFromMap.name}</h4>
+                   </div>
+                   <button onClick={() => setActiveEnclosureFromMap(null)} className="text-slate-400 hover:text-slate-600"><XIcon size={18}/></button>
+                </div>
+                <div className="p-4 space-y-4">
+                   <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resident Species</p>
+                      {getResidentsOfEnclosure(activeEnclosureFromMap).grouped.length > 0 ? (
+                         <div className="space-y-1.5">
+                            {getResidentsOfEnclosure(activeEnclosureFromMap).grouped.map(({ species, count }) => (
+                               <div key={species.id} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                                  <span className="text-xs font-bold text-slate-700">{species.commonName}</span>
+                                  <span className="text-[10px] font-bold bg-white text-purple-600 px-1.5 py-0.5 rounded shadow-sm border border-purple-100">x{count}</span>
+                               </div>
+                            ))}
+                         </div>
+                      ) : (
+                         <p className="text-xs text-slate-400 italic">No current residents recorded.</p>
+                      )}
+                   </div>
+                   <button 
+                     onClick={() => navigate('/enclosures')}
+                     className="w-full text-center py-2 bg-slate-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                   >
+                     Manage {org?.focus === 'Plants' ? 'Area' : 'Enclosure'} <ChevronDown size={14} className="-rotate-90" />
+                   </button>
+                </div>
+             </div>
+          )}
+
           {!hasMappedIndividuals && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
-               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mb-4">
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center pointer-events-none">
+               <div className="w-16 h-16 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-400 mb-4 shadow-xl border border-slate-100">
                   <MapPin size={32} />
                </div>
-               <p className="text-slate-600 font-medium max-w-xs leading-relaxed">
+               <p className="text-slate-700 bg-white/90 backdrop-blur-sm px-6 py-2 rounded-full font-bold shadow-lg border border-slate-100">
                   {t('noLocationDataMessage')}
                </p>
             </div>

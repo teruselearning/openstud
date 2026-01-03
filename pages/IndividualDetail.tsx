@@ -3,8 +3,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg, getEnclosures } from '../services/storage';
 import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, BreedingEvent, ExternalPartner, Partnership, Enclosure, Sex } from '../types';
-// Added Loader2 and Upload to imports
-import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode, Box, Trash2, Loader2, Upload } from 'lucide-react';
+import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode, Box, Trash2, Loader2, Upload, ImageIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { LanguageContext } from '../App';
 
@@ -30,6 +29,9 @@ const IndividualDetail: React.FC = () => {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState<number>(-1);
+
+  // Form Media State
+  const [pendingLogImage, setPendingLogImage] = useState<string>('');
 
   useEffect(() => {
     if (!id) return;
@@ -64,6 +66,15 @@ const IndividualDetail: React.FC = () => {
     }
   }, [activeTab, individual]);
 
+  const handleLogPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPendingLogImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleAddWeight = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!individual) return;
@@ -72,13 +83,22 @@ const IndividualDetail: React.FC = () => {
       id: `w-${Date.now()}`,
       date: formData.get('date') as string,
       weightKg: Number(formData.get('weight')),
-      note: formData.get('note') as string
+      note: formData.get('note') as string,
+      imageUrl: pendingLogImage || undefined
     };
-    const updatedInd = { ...individual, weightHistory: [newRecord, ...(individual.weightHistory || [])] };
+
+    // Auto-update profile image if a photo was provided in the log
+    const updatedInd = { 
+       ...individual, 
+       imageUrl: pendingLogImage || individual.imageUrl,
+       weightHistory: [newRecord, ...(individual.weightHistory || [])] 
+    };
+    
     const allInds = getIndividuals().map(i => i.id === individual.id ? updatedInd : i);
     saveIndividuals(allInds);
     setIndividual(updatedInd);
     setShowWeightModal(false);
+    setPendingLogImage('');
   };
 
   const getDisplayImage = () => {
@@ -165,7 +185,7 @@ const IndividualDetail: React.FC = () => {
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-6">
                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" /> Growth Trend</h3>
-                   <button onClick={() => setShowWeightModal(true)} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> Log {isPlant ? 'Height' : 'Weight'}</button>
+                   <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> Log {isPlant ? 'Height' : 'Weight'}</button>
                 </div>
                 <div className="h-64">
                    {weightData.length > 1 ? (
@@ -217,20 +237,26 @@ const IndividualDetail: React.FC = () => {
            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                  <h3 className="font-bold text-slate-800">Medical & Health Logs</h3>
-                 <button onClick={() => setShowHealthModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ New Log</button>
+                 <button onClick={() => { setShowHealthModal(true); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ New Log</button>
               </div>
               <div className="divide-y divide-slate-100">
                  {(individual.healthHistory || []).length > 0 ? (
                     individual.healthHistory?.map(log => (
-                       <div key={log.id} className="p-6 hover:bg-slate-50 transition-colors flex gap-4">
-                          <div className="p-2 bg-blue-50 text-blue-600 rounded-lg h-fit"><Stethoscope size={20}/></div>
-                          <div className="flex-1">
+                       <div key={log.id} className="p-6 hover:bg-slate-50 transition-colors flex gap-6">
+                          <div className="p-2 bg-blue-50 text-blue-600 rounded-lg h-fit flex-shrink-0"><Stethoscope size={20}/></div>
+                          <div className="flex-1 min-w-0">
                              <div className="flex justify-between items-start mb-1">
                                 <h4 className="font-bold text-slate-900">{log.type}</h4>
                                 <span className="text-xs font-bold text-slate-400">{log.date}</span>
                              </div>
-                             <p className="text-sm text-slate-600">{log.description}</p>
-                             {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mt-2">Performed by: {log.performedBy}</p>}
+                             <p className="text-sm text-slate-600 leading-relaxed mb-3">{log.description}</p>
+                             {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">Performed by: {log.performedBy}</p>}
+                             
+                             {log.imageUrl && (
+                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setGalleryIndex(999)}>
+                                  <img src={log.imageUrl} className="w-full h-full object-cover" />
+                               </div>
+                             )}
                           </div>
                        </div>
                     ))
@@ -300,6 +326,27 @@ const IndividualDetail: React.FC = () => {
                     <label className="text-xs font-bold text-slate-500 uppercase">Note</label>
                     <input type="text" name="note" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" placeholder="e.g. Regular checkup" />
                  </div>
+                 
+                 <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Attach Observation Photo</label>
+                    <div className="flex items-center gap-3">
+                       <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
+                          {pendingLogImage ? (
+                             <img src={pendingLogImage} className="h-16 w-16 object-cover rounded shadow-sm" />
+                          ) : (
+                             <>
+                                <Camera size={24} className="text-slate-300 mb-1" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Click to Upload</span>
+                             </>
+                          )}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
+                       </label>
+                       {pendingLogImage && (
+                          <button type="button" onClick={() => setPendingLogImage('')} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
+                       )}
+                    </div>
+                 </div>
+
                  <div className="pt-4 flex gap-2">
                     <button type="button" onClick={() => setShowWeightModal(false)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
                     <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">Save Log</button>
@@ -312,7 +359,7 @@ const IndividualDetail: React.FC = () => {
       {/* Health Modal */}
       {showHealthModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-           <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
+           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                  <h3 className="font-bold">New Medical Record</h3>
                  <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
@@ -326,13 +373,21 @@ const IndividualDetail: React.FC = () => {
                     date: fd.get('date') as string,
                     type: fd.get('type') as any,
                     description: fd.get('desc') as string,
-                    performedBy: fd.get('who') as string
+                    performedBy: fd.get('who') as string,
+                    imageUrl: pendingLogImage || undefined
                  };
-                 const updated = {...individual, healthHistory: [log, ...(individual.healthHistory || [])]};
+
+                 const updated = {
+                    ...individual, 
+                    imageUrl: pendingLogImage || individual.imageUrl,
+                    healthHistory: [log, ...(individual.healthHistory || [])]
+                 };
+                 
                  const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
                  saveIndividuals(all);
                  setIndividual(updated);
                  setShowHealthModal(false);
+                 setPendingLogImage('');
               }} className="p-6 space-y-4">
                  <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -358,6 +413,27 @@ const IndividualDetail: React.FC = () => {
                     <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
                     <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." required />
                  </div>
+                 
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Attach Medical Photo</label>
+                    <div className="flex items-center gap-3">
+                       <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
+                          {pendingLogImage ? (
+                             <img src={pendingLogImage} className="h-20 w-20 object-cover rounded shadow-sm" />
+                          ) : (
+                             <>
+                                <ImageIcon size={24} className="text-slate-300 mb-1" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Capture Observation</span>
+                             </>
+                          )}
+                          <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
+                       </label>
+                       {pendingLogImage && (
+                          <button type="button" onClick={() => setPendingLogImage('')} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
+                       )}
+                    </div>
+                 </div>
+
                  <div className="pt-4 flex gap-2">
                     <button type="button" onClick={() => setShowHealthModal(false)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
                     <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">Save Record</button>

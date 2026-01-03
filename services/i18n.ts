@@ -196,6 +196,7 @@ export const BASE_TRANSLATIONS = {
     createFirstEvent: "Record your first breeding event",
     startFirstLoan: "Propose a breeding loan",
     noLocationDataMessage: "Add location data to individuals for them to appear in map view",
+    showEnclosuresToggle: "Show Enclosures",
 
     // Section Titles
     classificationTitle: "Classification",
