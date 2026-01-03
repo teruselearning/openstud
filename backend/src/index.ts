@@ -73,13 +73,22 @@ const sendMail = async (to: string, subject: string, html: string) => {
 
 const initDatabase = async () => {
     try {
-        const connection = await mysql.createConnection({ host: dbConfig.host, user: dbConfig.user, password: dbConfig.password, port: dbConfig.port });
+        // Step 1: Create Database if not exists
+        const connection = await mysql.createConnection({ 
+            host: dbConfig.host, 
+            user: dbConfig.user, 
+            password: dbConfig.password, 
+            port: dbConfig.port 
+        });
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
         await connection.end();
-    } catch (e: any) {}
+    } catch (e: any) {
+        console.warn("Manual database creation skipped or failed. Ensure database exists:", e.message);
+    }
 
     const db = getDb();
     try {
+        // Step 2: Create Tables
         await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 0, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(255), enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE, role VARCHAR(50) NOT NULL, status VARCHAR(50) NOT NULL, password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, reset_code VARCHAR(10), reset_expires BIGINT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
@@ -93,8 +102,8 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
 
-        // Seed Demo User if database is empty
-        const [users]: any = await db.execute('SELECT id FROM users LIMIT 1');
+        // Step 3: Seed Demo User
+        const [users]: any = await db.execute('SELECT id FROM users WHERE email = ?', ['sarah@wild.org']);
         if (users.length === 0) {
             console.log("Seeding Demo User...");
             const orgId = 'org-1';
@@ -179,31 +188,49 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
 });
 
 app.post('/api/login', async (req: any, res: any) => {
-    const normalizedEmail = req.body.email.toLowerCase().trim();
+    const normalizedEmail = (req.body.email || '').toLowerCase().trim();
     const db = getDb();
     try {
         const [rows]: any = await db.execute('SELECT * FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
         const user = rows[0];
-        if (!user) return res.status(401).json({ error: "Account not found." });
         
-        // Handle both hashed and plain text (for initial seeding transition)
+        if (!user) {
+            console.log(`Login failed: User ${normalizedEmail} not found`);
+            return res.status(401).json({ error: "Account not found." });
+        }
+        
+        // Robust password check: try bcrypt, fallback to plain text if not a hash
         let isMatch = false;
         try {
-            isMatch = await bcrypt.compare(req.body.password, user.password);
+            // Only try bcrypt if the stored password looks like a hash (starts with $2)
+            if (user.password && user.password.startsWith('$2')) {
+                isMatch = await bcrypt.compare(req.body.password, user.password);
+            } else {
+                isMatch = user.password === req.body.password;
+            }
         } catch (e) {
+            // Final fallback
             isMatch = user.password === req.body.password;
         }
         
-        if (!isMatch) return res.status(401).json({ error: "Invalid password." });
+        if (!isMatch) {
+            console.log(`Login failed: Incorrect password for ${normalizedEmail}`);
+            return res.status(401).json({ error: "Invalid password." });
+        }
         
         const [orgRows]: any = await db.execute('SELECT * FROM organizations WHERE id = ? LIMIT 1', [user.org_id]);
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        
+        console.log(`Login successful: ${normalizedEmail}`);
         res.json({ token, user, organization: orgRows[0] });
-    } catch (e) { res.status(500).json({ error: "Login error." }); }
+    } catch (e: any) { 
+        console.error("Login route error:", e);
+        res.status(500).json({ error: "Internal server error during login." }); 
+    }
 });
 
 app.post('/api/register', async (req: any, res: any) => {
-    const normalizedEmail = req.body.email.toLowerCase().trim();
+    const normalizedEmail = (req.body.email || '').toLowerCase().trim();
     const db = getDb();
     try {
         const [existing]: any = await db.execute('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
