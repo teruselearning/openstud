@@ -372,10 +372,16 @@ app.post('/api/email/send', async (req: any, res: any) => {
             }
         }
         
-        // Always apply placeholders to final content
-        if (placeholders) {
-            Object.entries(placeholders).forEach(([k, v]) => {
-                const regex = new RegExp(`{{${k}}}`, 'g');
+        // CASE-INSENSITIVE PLACEHOLDER REPLACEMENT
+        const combinedPlaceholders = {
+            year: new Date().getFullYear().toString(),
+            ...(placeholders || {})
+        };
+
+        if (combinedPlaceholders) {
+            Object.entries(combinedPlaceholders).forEach(([k, v]) => {
+                // Use 'gi' for global case-insensitive replacement
+                const regex = new RegExp(`{{${k}}}`, 'gi');
                 finalSubject = finalSubject.replace(regex, String(v));
                 finalHtml = finalHtml.replace(regex, String(v));
             });

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -33,7 +32,7 @@ import {
   Loader2,
   Check,
   Server,
-  Box // Added Box icon for enclosures
+  Box 
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import SpeciesManager from './pages/SpeciesManager';
@@ -46,8 +45,7 @@ import Landing, { ViewMode } from './pages/Landing';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
-import EnclosureManager from './pages/EnclosureManager'; // Added EnclosureManager import
-// Fix: Added missing getNotifications, sendMfaCode, and syncPushEnclosures to the storage imports
+import EnclosureManager from './pages/EnclosureManager'; 
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
 import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
@@ -118,7 +116,6 @@ const NavItem = ({ to, icon: Icon, label, active, badge }: { to: string, icon: a
   </Link>
 );
 
-// Fix: Added showEnclosures to Sidebar props and used it to render the Enclosures/Areas NavItem
 const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, showEnclosures, logoUrl, projects, currentProjectId, onChangeProject, onAddProject, onEditProfile }: { isOpen: boolean, onClose: () => void, user: User, onLogout: () => void, showBreeding: boolean, showPlantMap: boolean, showEnclosures: boolean, logoUrl?: string, projects: Project[], currentProjectId: string, onChangeProject: (id: string) => void, onAddProject: () => void, onEditProfile: () => void }) => {
   const location = useLocation();
   const path = location.pathname;
@@ -203,7 +200,7 @@ const App: React.FC = () => {
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [showBreeding, setShowBreeding] = useState(true);
   const [showPlantMap, setShowPlantMap] = useState(false);
-  const [showEnclosures, setShowEnclosures] = useState(false); // Added missing state
+  const [showEnclosures, setShowEnclosures] = useState(false); 
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [pendingEmail, setPendingEmail] = useState('');
@@ -282,7 +279,6 @@ const App: React.FC = () => {
     `;
   }, [systemSettings]);
 
-  // Fix: Added showEnclosures logic to calculateFeatureVisibility
   const calculateFeatureVisibility = (pid: string) => {
      if (!pid) return;
      const org = getOrg();
@@ -359,7 +355,6 @@ const App: React.FC = () => {
               if (data.species) saveSpecies(data.species, true);
               if (data.individuals) saveIndividuals(data.individuals, true);
               if (data.enclosures) saveEnclosures(data.enclosures, true);
-              // Fix: Corrected data property names to match camelCase keys in fetchRemoteData response
               if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
               if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
               if (data.partnerships) savePartnerships(data.partnerships, true);
@@ -469,7 +464,39 @@ const App: React.FC = () => {
      setShowProfileModal(false); showToast("Profile updated successfully.", "success");
   };
 
-  if (isLoading) return null;
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-[9999]">
+        <div className="flex flex-col items-center space-y-6 animate-in fade-in duration-500">
+           <div className="relative">
+              <div className="w-24 h-24 rounded-3xl bg-emerald-600 flex items-center justify-center text-white shadow-2xl shadow-emerald-200 animate-pulse">
+                 <PawPrint size={48} />
+              </div>
+              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg border border-slate-100">
+                 <RefreshCw size={16} className="text-emerald-600 animate-spin" />
+              </div>
+           </div>
+           <div className="text-center space-y-2">
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">OpenStudbook</h1>
+              <div className="flex items-center justify-center gap-3">
+                 <div className="h-1 w-32 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 animate-[loading_2s_ease-in-out_infinite]"></div>
+                 </div>
+              </div>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Synchronizing Database</p>
+           </div>
+        </div>
+        <style>{`
+          @keyframes loading {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(0%); }
+            100% { transform: translateX(100%); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
 
   return (

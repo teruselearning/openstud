@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { getEnclosures, saveEnclosures, getSpecies, getIndividuals, getOrg, getCurrentProjectId, saveIndividuals } from '../services/storage';
 import { Enclosure, Species, Individual, EnclosurePoint, Sex } from '../types';
-import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink } from 'lucide-react';
+import { Plus, Search, MapPin, Box, Trash2, Pencil, X, Map as MapIcon, List, Eye, Info, Save, ChevronRight, Dna, Activity, LocateFixed, Trash, MousePointer2, Users, CheckCircle, ArrowRight, ExternalLink, AlertTriangle } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -23,6 +22,7 @@ const EnclosureManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedEnclosure, setSelectedEnclosure] = useState<Enclosure | null>(null);
+  const [enclosureToDelete, setEnclosureToDelete] = useState<Enclosure | null>(null);
   
   // Selection step
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
@@ -67,13 +67,6 @@ const EnclosureManager: React.FC = () => {
       markersLayerRef.current = layer;
       mapInstanceRef.current = map;
       
-      // Close side panel on map click
-      map.on('click', () => {
-         // Only deselect if not clicking a polygon (polygons have their own handlers)
-         // but Leaflet doesn't always propagate this easily. 
-         // For now, click deselect is handled by the close button in the side panel mostly.
-      });
-
       setTimeout(() => map.invalidateSize(), 200);
     }
 
@@ -192,7 +185,7 @@ const EnclosureManager: React.FC = () => {
 
     setShowForm(false);
     setEditingId(null);
-    setSelectedEnclosure(null); // Close panel if editing from map
+    setSelectedEnclosure(null); 
     setFormData({ name: '', description: '', individualIds: [], boundary: [] });
   };
 
@@ -202,17 +195,19 @@ const EnclosureManager: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm(`Are you sure you want to delete this ${label.toLowerCase()}?`)) {
-      const updated = enclosures.filter(e => e.id !== id);
-      setEnclosures(updated);
-      saveEnclosures(updated);
-      
-      const updatedInds = allIndividuals.map(ind => ind.enclosureId === id ? { ...ind, enclosureId: undefined } : ind);
-      setAllIndividuals(updatedInds);
-      saveIndividuals(updatedInds);
-      setSelectedEnclosure(null);
-    }
+  const confirmDelete = () => {
+    if (!enclosureToDelete) return;
+    const id = enclosureToDelete.id;
+    const updated = enclosures.filter(e => e.id !== id);
+    setEnclosures(updated);
+    saveEnclosures(updated);
+    
+    const updatedInds = allIndividuals.map(ind => ind.enclosureId === id ? { ...ind, enclosureId: undefined } : ind);
+    setAllIndividuals(updatedInds);
+    saveIndividuals(updatedInds);
+    
+    setSelectedEnclosure(null);
+    setEnclosureToDelete(null);
   };
 
   const toggleIndividual = (id: string) => {
@@ -225,7 +220,6 @@ const EnclosureManager: React.FC = () => {
   const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
   const speciesIndividuals = allIndividuals.filter(i => i.speciesId === selectedSpeciesId && i.projectId === currentProjectId);
 
-  // Group individuals by species for the breakdown panel
   const getGroupedOccupants = (enclosure: Enclosure) => {
      const occupantIds = enclosure.individualIds || [];
      const grouped: Record<string, { species: Species, inds: Individual[] }> = {};
@@ -279,7 +273,7 @@ const EnclosureManager: React.FC = () => {
                     </div>
                     <div className="flex gap-2">
                        <button onClick={() => handleEdit(enc)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Pencil size={16} /></button>
-                       <button onClick={() => handleDelete(enc.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                       <button onClick={() => setEnclosureToDelete(enc)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
                     </div>
                   </div>
                   <h3 className="text-lg font-bold text-slate-900 mb-1">{enc.name}</h3>
@@ -387,7 +381,7 @@ const EnclosureManager: React.FC = () => {
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50 grid grid-cols-2 gap-3">
-                   <button onClick={() => handleDelete(selectedEnclosure.id)} className="flex items-center justify-center gap-2 px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl font-bold text-sm transition-all"><Trash size={18}/> Delete</button>
+                   <button onClick={() => setEnclosureToDelete(selectedEnclosure)} className="flex items-center justify-center gap-2 px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl font-bold text-sm transition-all"><Trash size={18}/> Delete</button>
                    <button onClick={() => handleEdit(selectedEnclosure)} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white hover:bg-slate-800 rounded-xl font-bold text-sm shadow-lg transition-all"><Pencil size={18}/> Edit {label}</button>
                 </div>
              </div>
@@ -408,7 +402,6 @@ const EnclosureManager: React.FC = () => {
             
             <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-8 space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Left Side: Metadata & Boundaries */}
                 <div className="space-y-6">
                   <div className="space-y-4">
                     <div>
@@ -446,12 +439,10 @@ const EnclosureManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Side: Step-by-Step Individual Selection */}
                 <div className="space-y-6">
                    <div>
                       <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4"><Users size={18} className="text-blue-600"/> Occupants</h4>
                       <div className="space-y-4">
-                         {/* Step 1: Select Species */}
                          <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">1. Filter Occupants by Species</label>
                             <select 
@@ -466,7 +457,6 @@ const EnclosureManager: React.FC = () => {
                             </select>
                          </div>
 
-                         {/* Step 2: Select Individuals */}
                          <div className="space-y-2">
                             <div className="flex justify-between items-center">
                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">2. Assign Individuals</label>
@@ -602,8 +592,8 @@ const EnclosureManager: React.FC = () => {
                            const ll = m.getLatLng();
                            return { lat: ll.lat, lng: ll.lng };
                         });
-                        if (points.length < 3) {
-                           alert("A boundary needs at least 3 points to form a shape.");
+                        if (points.length > 0 && points.length < 3) {
+                           // No direct alert, just visual feedback would be better but keeping it simple
                            return;
                         }
                         setFormData({...formData, boundary: points});
@@ -613,6 +603,33 @@ const EnclosureManager: React.FC = () => {
                </div>
             </div>
          </div>
+      )}
+
+      {/* Confirmation Modal for Deletion */}
+      {enclosureToDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
+           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in duration-200">
+              <div className="p-6 border-b border-red-50 bg-red-50 flex items-center gap-3 text-red-800">
+                 <div className="p-2 bg-white rounded-lg shadow-sm">
+                    <AlertTriangle size={24} className="text-red-600" />
+                 </div>
+                 <h3 className="text-xl font-bold">Delete {label}?</h3>
+              </div>
+              <div className="p-6 space-y-4">
+                 <p className="text-slate-600 leading-relaxed">
+                    Are you sure you want to delete <span className="font-bold text-slate-900">{enclosureToDelete.name}</span>? 
+                    This action will unassign all {enclosureToDelete.individualIds.length} current occupants.
+                 </p>
+                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 text-xs text-amber-800 font-medium">
+                    Note: This only deletes the {label.toLowerCase()} definition. All individual animal or plant records will be preserved but marked as unassigned.
+                 </div>
+              </div>
+              <div className="p-4 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-3">
+                 <button onClick={() => setEnclosureToDelete(null)} className="px-4 py-2.5 text-slate-600 hover:bg-slate-200 rounded-xl font-bold transition-all">Cancel</button>
+                 <button onClick={confirmDelete} className="px-4 py-2.5 bg-red-600 text-white hover:bg-red-700 rounded-xl font-bold shadow-lg shadow-red-100 transition-all">Delete Forever</button>
+              </div>
+           </div>
+        </div>
       )}
     </div>
   );

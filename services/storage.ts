@@ -280,14 +280,19 @@ export const trustDevice = (userId: string) => {
 
 export const sendMfaCode = async (email: string, code: string) => {
   const s = getSystemSettings();
+  const org = getOrg();
   const t = s.emailTemplates?.mfa;
-  // REMOVED THE IF(T?.ENABLED) GUARD - ALWAYS TRY TO SEND MFA FOR SECURITY
+  
   await sendSystemEmail(
     email, 
     'mfa', 
-    { code }, 
+    { 
+      code, 
+      orgName: org.name || 'OpenStudbook',
+      year: new Date().getFullYear().toString()
+    }, 
     t?.subject || "Your Security Code", 
-    t?.bodyHtml || `<p>Your verification code is: <b>${code}</b></p>`
+    t?.bodyHtml || `<p>Your verification code for <b>${org.name}</b> is: <b>${code}</b></p>`
   );
 };
 
