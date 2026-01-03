@@ -105,7 +105,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     };
   }, [viewMode, org]);
 
-  const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
+  const isAll = currentProjectId === 'ALL_PROJECTS';
+  const projectIndividuals = isAll ? allIndividuals : allIndividuals.filter(ind => ind.projectId === currentProjectId);
   const filtered = projectIndividuals.filter(ind => {
     const matchesSearch = ind.name.toLowerCase().includes(searchTerm.toLowerCase()) || ind.studbookId.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
@@ -113,7 +114,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     return matchesSearch && matchesSpecies && matchesStatus;
   });
 
-  const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
+  const projectSpecies = allSpecies.filter(s => isAll ? true : s.projectId === currentProjectId);
   const speciesSearchResults = projectSpecies.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
 
   // Map Data Updater
@@ -224,7 +225,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const entry: Individual = {
         ...formData as Individual,
         id: editingId || `ind-${Date.now()}`,
-        projectId: currentProjectId,
+        projectId: isAll ? (formData.projectId || '') : currentProjectId,
         weightKg: Number(formData.weightKg || 0)
     };
     
@@ -244,9 +245,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const potentialSires = potentialParents.filter(i => i.sex === Sex.MALE || i.sex === Sex.UNKNOWN);
   const potentialDams = potentialParents.filter(i => i.sex === Sex.FEMALE || i.sex === Sex.UNKNOWN);
 
-  const hasMappedIndividuals = filtered.some(ind => typeof ind.latitude === 'number' && typeof ind.longitude === 'number');
-  const hasVisibleEnclosures = showEnclosuresOnMap && allEnclosures.some(enc => enc.boundary && enc.boundary.length >= 3);
-  const shouldShowEmptyMapOverlay = !hasMappedIndividuals && !hasVisibleEnclosures;
+  const shouldShowEmptyMapOverlay = filtered.length === 0 || (!filtered.some(ind => typeof ind.latitude === 'number' && typeof ind.longitude === 'number') && !allEnclosures.some(enc => enc.boundary && enc.boundary.length >= 3));
 
   const getResidentsOfEnclosure = (enc: Enclosure) => {
      const residents = allIndividuals.filter(i => enc.individualIds.includes(i.id) && !i.isDeceased);
@@ -270,9 +269,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
-            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid size={18} /></button>
-            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
-            <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><MapIcon size={18} /></button>
+            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Grid view"><LayoutGrid size={18} /></button>
+            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="List view"><List size={18} /></button>
+            <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Map view"><MapIcon size={18} /></button>
           </div>
           <button onClick={handleOpenNewForm} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm">
             <Plus size={18} /><span>{t('add')}</span>
@@ -303,7 +302,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             return (
               <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col">
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
-                  <img src={ind.imageUrl || sp?.imageUrl || generatePattern(ind.name)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <img src={ind.imageUrl || sp?.imageUrl || generatePattern(ind.name)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
                   <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
                 </Link>
                 <div className="p-4 flex-1">
@@ -319,6 +318,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               </div>
             );
           })}
+          {filtered.length === 0 && (
+             <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400">
+                <PawPrint size={48} className="mb-4 opacity-20" />
+                <p className="text-lg font-bold">No individuals found.</p>
+                <p className="text-sm">Try adjusting your filters or search term.</p>
+             </div>
+          )}
         </div>
       )}
 
@@ -355,6 +361,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               ))}
             </tbody>
           </table>
+          {filtered.length === 0 && (
+             <div className="py-20 text-center text-slate-400 italic">No records to display.</div>
+          )}
         </div>
       )}
 
@@ -413,7 +422,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   <MapPin size={32} />
                </div>
                <p className="text-slate-700 bg-white/90 backdrop-blur-sm px-6 py-2 rounded-full font-bold shadow-lg border border-slate-100">
-                  {t('noLocationDataMessage')}
+                  {filtered.length === 0 ? "No individuals match your filters" : t('noLocationDataMessage')}
                </p>
             </div>
           )}
@@ -530,44 +539,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         </select>
                         {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential dams.</p>}
                     </div>
-                  </div>
-                </div>
-
-                {/* Section 4: Acquisition & Status */}
-                <div className="space-y-4 pt-6 border-t border-slate-100">
-                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Anchor size={16}/> {t('acquisitionSource')}
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Source Type</label>
-                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as AcquisitionSource})}>
-                          <option value="Bred in house">Bred in house</option>
-                          <option value="Captive Bred">Captive Bred (Transfer)</option>
-                          <option value="Wild Caught">Wild Caught</option>
-                          <option value="Other">Other</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Status</label>
-                        <div className="flex items-center gap-4 h-10">
-                          <label className="flex items-center gap-2 text-sm cursor-pointer">
-                            <input type="checkbox" className="rounded text-red-600" checked={formData.isDeceased || false} onChange={e => setFormData({...formData, isDeceased: e.target.checked})} />
-                            Deceased / Removed
-                          </label>
-                        </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 5: Notes & Media */}
-                <div className="space-y-4 pt-6 border-t border-slate-100">
-                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <FileText size={16}/> {t('notes')}
-                  </h4>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Observations / Clinical Notes</label>
-                    <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Detailed notes about behavior, health status, or transfer details..." />
                   </div>
                 </div>
 

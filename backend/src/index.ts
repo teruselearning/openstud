@@ -52,7 +52,26 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
-const sendMail = async (to: string, subject: string, html: string) => {
+// Responsive HTML Wrapper for all emails
+const wrapEmail = (title: string, content: string) => `
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
+  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
+  </div>
+  <div style="padding: 40px 32px; color: #1e293b;">
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">${title}</h2>
+    <div style="font-size: 16px; line-height: 1.6; color: #475569;">
+      ${content}
+    </div>
+  </div>
+  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
+    <p style="margin: 4px 0 0; font-size: 11px; color: #cbd5e1;">This is a system notification from your captive breeding management platform.</p>
+  </div>
+</div>
+`;
+
+const sendMail = async (to: string, subject: string, html: string, isRaw: boolean = false) => {
     const db = getDb();
     try {
         const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
@@ -68,7 +87,14 @@ const sendMail = async (to: string, subject: string, html: string) => {
           tls: { rejectUnauthorized: false }
         });
         
-        await transporter.sendMail({ from: `"OpenStudbook" <${settings.smtpUser}>`, to, subject, html });
+        const finalHtml = isRaw ? html : wrapEmail(subject, html);
+        
+        await transporter.sendMail({ 
+          from: `"OpenStudbook" <noreply@openstudbook.org>`, 
+          to, 
+          subject, 
+          html: finalHtml 
+        });
         return { success: true };
     } catch (e: any) { 
         console.error("Email send failed:", e);
@@ -208,7 +234,15 @@ app.post('/api/forgot-password', async (req: any, res: any) => {
         
         await db.execute('UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?', [code, expires, normalizedEmail]);
         
-        await sendMail(normalizedEmail, "Password Reset Code", `<p>Your password reset code is: <b>${code}</b></p>`);
+        await sendMail(
+          normalizedEmail, 
+          "Password Reset Code", 
+          `<p>You requested a password reset. Please use the following verification code to proceed:</p>
+           <div style="margin: 32px 0; padding: 24px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center;">
+             <span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #065f46;">${code}</span>
+           </div>
+           <p style="font-size: 14px; color: #64748b;">This code will expire in 1 hour. If you did not request this, please ignore this email.</p>`
+        );
         res.json({ success: true, message: "Reset code sent to your email." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -288,14 +322,40 @@ app.get('/api/config', async (req: any, res: any) => {
 });
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
-    const { to, subject, html } = req.body;
-    const result = await sendMail(to, subject, html);
+    const { to, subject, html, templateKey, placeholders } = req.body;
+    
+    let finalHtml = html;
+    let finalSubject = subject;
+
+    // Optional: Pull from DB templates if templateKey is provided
+    if (templateKey) {
+       const db = getDb();
+       const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+       let settings = rows[0]?.settings;
+       if (typeof settings === 'string') settings = JSON.parse(settings);
+       
+       const template = settings?.emailTemplates?.[templateKey];
+       if (template && template.enabled) {
+          finalHtml = template.bodyHtml;
+          finalSubject = template.subject;
+          
+          if (placeholders) {
+             Object.entries(placeholders).forEach(([k, v]) => {
+                const regex = new RegExp(`{{${k}}}`, 'g');
+                finalHtml = finalHtml.replace(regex, String(v));
+                finalSubject = finalSubject.replace(regex, String(v));
+             });
+          }
+       }
+    }
+
+    const result = await sendMail(to, finalSubject, finalHtml, !!templateKey);
     if (result.success) res.json({ success: true });
     else res.status(500).json({ error: result.error });
 });
 
 app.post('/api/email/test', authenticate, async (req: any, res: any) => {
-    const result = await sendMail(req.body.to, "OpenStudbook SMTP Test", "<p>Your SMTP configuration is working correctly!</p>");
+    const result = await sendMail(req.body.to, "OpenStudbook SMTP Test", "<p>Your SMTP configuration is working correctly! You are now ready to receive system notifications.</p>");
     if (result.success) res.json({ success: true });
     else res.status(500).json({ error: result.error });
 });

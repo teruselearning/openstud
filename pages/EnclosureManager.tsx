@@ -31,10 +31,6 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   const [selectedEnclosure, setSelectedEnclosure] = useState<Enclosure | null>(null);
   const [enclosureToDelete, setEnclosureToDelete] = useState<Enclosure | null>(null);
   
-  const [showMoveModal, setShowMoveModal] = useState(false);
-  const [moveSourceId, setMoveSourceId] = useState('');
-  const [moveDestId, setMoveDestId] = useState('');
-  const [selectedIndsForMove, setSelectedIndsForMove] = useState<Set<string>>(new Set());
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
 
   const [formData, setFormData] = useState<Partial<Enclosure>>({
@@ -45,15 +41,9 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
     projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId
   });
 
-  const [showMapPicker, setShowMapPicker] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
-  const pickerMapRef = useRef<HTMLDivElement>(null);
-  const pickerInstance = useRef<any>(null);
-  const pickerPolygon = useRef<any>(null);
-  const pickerMarkers = useRef<any[]>([]);
 
   useEffect(() => {
     const encls = getEnclosures();
@@ -74,9 +64,11 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   }, [location.state]);
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
-  const filteredEnclosures = enclosures.filter(e => 
-    (isAll || e.projectId === currentProjectId) && e.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEnclosures = enclosures.filter(e => {
+    const matchesProject = isAll || (e.projectId === currentProjectId);
+    const matchesSearch = e.name.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesProject && matchesSearch;
+  });
 
   // Main Map View Effect
   useEffect(() => {
@@ -136,7 +128,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   const speciesIndividuals = allIndividuals.filter(i => i.speciesId === selectedSpeciesId && (isAll ? true : i.projectId === currentProjectId));
 
   const getEnclosureProjectName = (enc: Enclosure) => {
-     if(!enc.projectId) return 'Global/None';
+     if(!enc.projectId) return 'Global/Organization-Wide';
      return projects.find(p => p.id === enc.projectId)?.name || 'Unknown Project';
   };
 
@@ -154,15 +146,33 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
           <p className="text-slate-500">Physical management of collections by site location.</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
-          {!isAll && (
-            <button onClick={() => { setEditingId(null); setFormData({name: '', description: '', individualIds: [], boundary: [], projectId: currentProjectId}); setShowForm(true); }} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all">
-              <Plus size={18} /><span>Add {label}</span>
-            </button>
-          )}
+          <button 
+             onClick={() => { 
+                setEditingId(null); 
+                setFormData({
+                   name: '', 
+                   description: '', 
+                   individualIds: [], 
+                   boundary: [], 
+                   projectId: isAll ? '' : currentProjectId
+                }); 
+                setShowForm(true); 
+             }} 
+             className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all"
+          >
+            <Plus size={18} /><span>Add {label}</span>
+          </button>
           <div className="flex bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><List size={18} /></button>
             <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}><MapIcon size={18} /></button>
           </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder={`Search ${labelsPlural.toLowerCase()}...`} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
       </div>
 
@@ -172,22 +182,27 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
             <div key={enc.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col group">
                <div className="flex justify-between items-start mb-4">
                   <div className="p-2.5 bg-purple-100 text-purple-600 rounded-lg"><Box size={24} /></div>
-                  {!isAll && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingId(enc.id); setFormData(enc); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil size={16}/></button>
-                      <button onClick={() => setEnclosureToDelete(enc)} className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg"><Trash2 size={16}/></button>
-                    </div>
-                  )}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => { setEditingId(enc.id); setFormData(enc); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil size={16}/></button>
+                    <button onClick={() => setEnclosureToDelete(enc)} className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg"><Trash2 size={16}/></button>
+                  </div>
                </div>
                <h3 className="text-lg font-bold text-slate-900 mb-1">{enc.name}</h3>
-               {isAll && <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderOpen size={10}/> {getEnclosureProjectName(enc)}</p>}
+               <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2 flex items-center gap-1"><FolderOpen size={10}/> {getEnclosureProjectName(enc)}</p>
                <p className="text-sm text-slate-500 mb-4 line-clamp-2">{enc.description || 'No description provided.'}</p>
                <div className="mt-auto pt-4 border-t border-slate-50 flex items-center justify-between text-xs font-bold text-slate-400">
                   <span className="uppercase tracking-widest">{enc.individualIds.length} Occupants</span>
-                  <span className="text-emerald-600 uppercase">View Details →</span>
+                  <button onClick={() => { setSelectedEnclosure(enc); setViewMode('map'); }} className="text-emerald-600 uppercase hover:underline">View on Map →</button>
                </div>
             </div>
           ))}
+          {filteredEnclosures.length === 0 && (
+             <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400">
+                <Box size={48} className="mb-4 opacity-20" />
+                <p className="text-lg font-bold">No {labelsPlural.toLowerCase()} found.</p>
+                <p className="text-sm">Try selecting 'All Projects' or create a new ${label.toLowerCase()}.</p>
+             </div>
+          )}
         </div>
       )}
 
@@ -221,6 +236,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
                 </div>
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-blue-600"/> Assign Individuals</h4>
+                  <p className="text-xs text-slate-500">Only individuals from the selected project (or all if unassigned) will appear here.</p>
                   <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm" value={selectedSpeciesId} onChange={(e) => setSelectedSpeciesId(e.target.value)}>
                      <option value="">Choose species...</option>
                      {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
@@ -233,16 +249,38 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
                         <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
                       </label>
                     ))}
+                    {selectedSpeciesId && speciesIndividuals.length === 0 && (
+                      <p className="p-4 text-xs text-slate-400 italic">No individuals of this species found in the current scope.</p>
+                    )}
                   </div>
                 </div>
               </div>
               <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
-                <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2 rounded-lg font-bold shadow-lg">Save {label}</button>
+                <button type="submit" className="bg-emerald-600 text-white px-10 py-2 rounded-lg font-bold shadow-lg">Save {label}</button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {enclosureToDelete && (
+         <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-8 text-center animate-in zoom-in duration-200">
+               <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32}/></div>
+               <h3 className="text-xl font-bold text-slate-900 mb-2">Delete {label}?</h3>
+               <p className="text-slate-500 mb-8">Are you sure you want to remove <strong>{enclosureToDelete.name}</strong>? Individuals will remain but their location assignment will be cleared.</p>
+               <div className="flex gap-3">
+                  <button onClick={() => setEnclosureToDelete(null)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
+                  <button onClick={() => {
+                     const updated = enclosures.filter(e => e.id !== enclosureToDelete.id);
+                     setEnclosures(updated);
+                     saveEnclosures(updated);
+                     setEnclosureToDelete(null);
+                  }} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md">Delete</button>
+               </div>
+            </div>
+         </div>
       )}
     </div>
   );
