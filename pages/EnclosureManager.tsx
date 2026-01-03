@@ -44,6 +44,10 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
+  
+  const formMapRef = useRef<HTMLDivElement>(null);
+  const formMapInstanceRef = useRef<any>(null);
+  const formBoundaryLayerRef = useRef<any>(null);
 
   useEffect(() => {
     const encls = getEnclosures();
@@ -101,14 +105,76 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
     }
   }, [viewMode, filteredEnclosures, selectedEnclosure]);
 
+  // Form Drawing Map Effect
+  useEffect(() => {
+    if (showForm && formMapRef.current && !formMapInstanceRef.current) {
+      const initialLat = typeof org.latitude === 'number' ? org.latitude : 0;
+      const initialLng = typeof org.longitude === 'number' ? org.longitude : 0;
+      
+      const map = L.map(formMapRef.current, { maxZoom: 22 }).setView([initialLat, initialLng], 18);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22 }).addTo(map);
+      
+      formBoundaryLayerRef.current = L.featureGroup().addTo(map);
+      formMapInstanceRef.current = map;
+
+      map.on('click', (e: any) => {
+        const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
+        setFormData(prev => ({
+          ...prev,
+          boundary: [...(prev.boundary || []), newPoint]
+        }));
+      });
+
+      if (formData.boundary && formData.boundary.length > 0) {
+        const poly = L.polygon(formData.boundary.map((p: any) => [p.lat, p.lng]), { color: '#9333ea' });
+        map.fitBounds(poly.getBounds(), { padding: [20, 20] });
+      }
+
+      setTimeout(() => map.invalidateSize(), 300);
+    }
+
+    return () => {
+      if (formMapInstanceRef.current) {
+        formMapInstanceRef.current.remove();
+        formMapInstanceRef.current = null;
+        formBoundaryLayerRef.current = null;
+      }
+    };
+  }, [showForm]);
+
+  // Update boundary visual in form
+  useEffect(() => {
+    if (formMapInstanceRef.current && formBoundaryLayerRef.current) {
+      const layer = formBoundaryLayerRef.current;
+      layer.clearLayers();
+      if (formData.boundary && formData.boundary.length > 0) {
+        formData.boundary.forEach((p, idx) => {
+          L.circleMarker([p.lat, p.lng], { radius: 5, color: '#9333ea', fillColor: '#fff', fillOpacity: 1 }).addTo(layer)
+            .bindTooltip(`Point ${idx + 1}`, { permanent: false });
+        });
+        if (formData.boundary.length >= 2) {
+          L.polyline(formData.boundary.map(p => [p.lat, p.lng]), { color: '#9333ea', weight: 2, dashArray: '5, 5' }).addTo(layer);
+        }
+        if (formData.boundary.length >= 3) {
+          L.polygon(formData.boundary.map(p => [p.lat, p.lng]), { color: '#9333ea', fillColor: '#9333ea', fillOpacity: 0.2 }).addTo(layer);
+        }
+      }
+    }
+  }, [formData.boundary]);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAll && !formData.projectId) {
+      alert("Please select a project for this " + label.toLowerCase());
+      return;
+    }
+
     const newEnc: Enclosure = {
       ...formData as Enclosure,
       id: editingId || `enc-${Date.now()}`,
       orgId: org.id,
       individualIds: formData.individualIds || [],
-      projectId: formData.projectId || (isAll ? '' : currentProjectId)
+      projectId: isAll ? formData.projectId : currentProjectId
     };
     const updated = editingId ? enclosures.map(enc => enc.id === editingId ? newEnc : enc) : [...enclosures, newEnc];
     setEnclosures(updated);
@@ -118,14 +184,16 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
     setSelectedEnclosure(null);
   };
 
+  const clearBoundary = () => setFormData(prev => ({ ...prev, boundary: [] }));
+
   const toggleIndividual = (id: string) => {
     const current = formData.individualIds || [];
     if (current.includes(id)) setFormData({ ...formData, individualIds: current.filter(cid => cid !== id) });
     else setFormData({ ...formData, individualIds: [...current, id] });
   };
 
-  const projectSpecies = allSpecies.filter(s => isAll ? true : s.projectId === currentProjectId);
-  const speciesIndividuals = allIndividuals.filter(i => i.speciesId === selectedSpeciesId && (isAll ? true : i.projectId === currentProjectId));
+  const projectSpecies = allSpecies.filter(s => isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId);
+  const speciesIndividuals = allIndividuals.filter(i => i.speciesId === selectedSpeciesId && (isAll ? (formData.projectId ? i.projectId === formData.projectId : true) : i.projectId === currentProjectId));
 
   const getEnclosureProjectName = (enc: Enclosure) => {
      if(!enc.projectId) return 'Global/Organization-Wide';
@@ -210,41 +278,65 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
 
       {showForm && (
         <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl animate-in zoom-in duration-200 flex flex-col max-h-[95vh]">
             <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
               <h3 className="font-bold text-xl text-slate-900">{editingId ? `Edit ${label}` : `Add ${label}`}</h3>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
             </div>
             <form onSubmit={handleSave} className="p-8 space-y-6 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-500 uppercase">{label} Name</label>
-                    <input className="w-full px-4 py-2 border border-slate-300 rounded-lg" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-500 uppercase">{label} Name</label>
+                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+                    </div>
+                    {isAll && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
+                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-emerald-500" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
+                          <option value="">Select Scoped Project...</option>
+                          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
+                      <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
-                    <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
-                      <option value="">Select Scoped Project...</option>
-                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
-                    <textarea className="w-full px-4 py-2 border border-slate-300 rounded-lg" rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><MapPin size={14}/> Define Boundary</label>
+                      <button type="button" onClick={clearBoundary} className="text-[10px] font-bold text-red-600 uppercase hover:underline">Clear Map</button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 italic">Click on the map to define the polygon vertices for this {label.toLowerCase()}.</p>
+                    <div className="h-64 rounded-xl border border-slate-200 overflow-hidden bg-slate-100">
+                      <div ref={formMapRef} className="h-full w-full" />
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400 bg-slate-50 p-2 rounded">
+                      Points: {(formData.boundary || []).length} vertices defined.
+                    </div>
                   </div>
                 </div>
+
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-blue-600"/> Assign Individuals</h4>
-                  <p className="text-xs text-slate-500">Only individuals from the selected project (or all if unassigned) will appear here.</p>
-                  <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm" value={selectedSpeciesId} onChange={(e) => setSelectedSpeciesId(e.target.value)}>
-                     <option value="">Choose species...</option>
+                  <p className="text-xs text-slate-500">Only individuals from the selected project will appear here.</p>
+                  <select 
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500" 
+                    value={selectedSpeciesId} 
+                    onChange={(e) => setSelectedSpeciesId(e.target.value)}
+                    disabled={isAll && !formData.projectId}
+                  >
+                     <option value="">{isAll && !formData.projectId ? 'Choose project first...' : 'Choose species...'}</option>
                      {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
                   </select>
-                  <div className="border border-slate-200 rounded-xl bg-slate-50 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                  <div className="border border-slate-200 rounded-xl bg-slate-50 max-h-72 overflow-y-auto divide-y divide-slate-100">
                     {speciesIndividuals.map(ind => (
                       <label key={ind.id} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-white transition-colors">
-                        <input type="checkbox" checked={formData.individualIds?.includes(ind.id)} onChange={() => toggleIndividual(ind.id)} className="rounded text-blue-600" />
+                        <input type="checkbox" checked={formData.individualIds?.includes(ind.id)} onChange={() => toggleIndividual(ind.id)} className="rounded text-blue-600 focus:ring-blue-500" />
                         <span className="text-sm font-bold text-slate-700">{ind.name}</span>
                         <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
                       </label>
@@ -252,12 +344,18 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
                     {selectedSpeciesId && speciesIndividuals.length === 0 && (
                       <p className="p-4 text-xs text-slate-400 italic">No individuals of this species found in the current scope.</p>
                     )}
+                    {!selectedSpeciesId && (
+                      <div className="p-8 text-center text-slate-300">
+                        <Users size={32} className="mx-auto mb-2 opacity-20" />
+                        <p className="text-xs uppercase font-bold tracking-widest">Select species to assign</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
               <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
-                <button type="submit" className="bg-emerald-600 text-white px-10 py-2 rounded-lg font-bold shadow-lg">Save {label}</button>
+                <button type="submit" className="bg-emerald-600 text-white px-10 py-2 rounded-lg font-bold shadow-lg hover:bg-emerald-700 transform active:scale-95 transition-all">Save {label}</button>
               </div>
             </form>
           </div>

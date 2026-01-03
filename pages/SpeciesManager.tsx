@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useContext } from 'react';
-import { getSpecies, saveSpecies, generatePattern, getOrg } from '../services/storage';
+import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
-import { Species, SpeciesType, PlantClassification, NativeStatus, Organization } from '../types';
+import { Species, SpeciesType, PlantClassification, NativeStatus, Organization, Project } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink, FolderOpen, ImageIcon, Info, Calendar, Weight, Activity, Dna, PawPrint } from 'lucide-react';
 import { LanguageContext } from '../App';
 
@@ -13,6 +13,7 @@ interface SpeciesManagerProps {
 const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => {
   const { t } = useContext(LanguageContext);
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loadingAI, setLoadingAI] = useState(false);
@@ -28,6 +29,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     commonName: '',
     scientificName: '',
     type: 'Animal',
+    projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId,
     plantClassification: undefined,
     conservationStatus: '',
     sexualMaturityAgeYears: 0,
@@ -43,7 +45,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   useEffect(() => {
     setAllSpecies(getSpecies());
     setOrg(getOrg());
-  }, []);
+    setAllProjects(getProjects());
+  }, [currentProjectId]);
 
   const handleAutoFill = async () => {
     if (!formData.commonName) return;
@@ -84,19 +87,26 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ commonName: '', scientificName: '', type: 'Animal', conservationStatus: '', sexualMaturityAgeYears: 0, averageAdultWeightKg: 0, lifeExpectancyYears: 0, breedingSeasonStart: 1, breedingSeasonEnd: 12, imageUrl: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown' });
+    setFormData({ 
+      commonName: '', scientificName: '', type: 'Animal', conservationStatus: '', sexualMaturityAgeYears: 0, 
+      averageAdultWeightKg: 0, lifeExpectancyYears: 0, breedingSeasonStart: 1, breedingSeasonEnd: 12, 
+      imageUrl: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
+      projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentProjectId || currentProjectId === 'ALL_PROJECTS') {
-       alert("Select a specific project before adding/editing species.");
+    const targetProjectId = isAll ? formData.projectId : currentProjectId;
+    if (!targetProjectId) {
+       alert("Please select a specific project for this species.");
        return;
     }
+
     const finalSpecies: Species = {
        ...formData as Species,
        id: editingId || `sp-${Date.now()}`,
-       projectId: currentProjectId,
+       projectId: targetProjectId,
        imageUrl: formData.imageUrl || generatePattern(formData.commonName || 'Sp'),
        sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
        averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
@@ -132,9 +142,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <input type="text" placeholder={t('searchSpecies')} className="w-full md:w-64 pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm outline-none focus:ring-2 focus:ring-emerald-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
-          {!isAll && (
-            <button onClick={() => setShowForm(true)} className="flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all"><Plus size={18} /><span>{t('add')}</span></button>
-          )}
+          <button onClick={() => setShowForm(true)} className="flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all"><Plus size={18} /><span>{t('add')}</span></button>
         </div>
       </div>
 
@@ -171,6 +179,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} required /></div>
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} required /></div>
+                        {isAll && (
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
+                            <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
+                              <option value="">Select Project...</option>
+                              {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                        )}
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as SpeciesType, plantClassification: e.target.value === 'Plant' ? 'Monoecious' : undefined})}><option value="Animal">{t('animal')}</option><option value="Plant">{t('plant')}</option></select></div>
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('conservationStatus')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.conservationStatus} onChange={e => setFormData({...formData, conservationStatus: e.target.value})} placeholder="e.g. Critically Endangered" /></div>
                      </div>
@@ -211,9 +228,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <div className="p-5 flex-1 flex flex-col">
               <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
               <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>
-              {isAll && (
-                <div className="mb-4 text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5"><FolderOpen size={12}/> {getOrg().name}</div>
-              )}
+              <div className="mb-4 text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5"><FolderOpen size={12}/> {allProjects.find(p => p.id === species.projectId)?.name || 'Unknown Project'}</div>
               <div className="grid grid-cols-2 gap-3 mt-auto">
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} {t('years')}</span></div>
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} {t('years')}</span></div>

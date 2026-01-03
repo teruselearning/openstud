@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures } from '../services/storage';
+import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
-import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff } from 'lucide-react';
+import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure, Project } from '../types';
+// Fixed: Added FolderOpen to lucide-react imports
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -22,6 +22,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const location = useLocation();
   const [allIndividuals, setAllIndividuals] = useState<Individual[]>([]);
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [allEnclosures, setAllEnclosures] = useState<Enclosure[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -49,15 +50,16 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const speciesDropdownRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<Partial<Individual>>({
-    speciesId: '', enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
+    speciesId: '', projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId, enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
   });
 
   useEffect(() => {
     setAllIndividuals(getIndividuals());
     setAllSpecies(getSpecies());
+    setAllProjects(getProjects());
     setAllEnclosures(getEnclosures());
     setOrg(getOrg());
-  }, []);
+  }, [currentProjectId]);
 
   useEffect(() => {
     if (location.state?.editId && allIndividuals.length > 0) {
@@ -114,8 +116,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     return matchesSearch && matchesSpecies && matchesStatus;
   });
 
-  const projectSpecies = allSpecies.filter(s => isAll ? true : s.projectId === currentProjectId);
-  const speciesSearchResults = projectSpecies.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
+  const availableSpeciesForForm = allSpecies.filter(s => isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId);
+  const speciesSearchResults = availableSpeciesForForm.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
 
   // Map Data Updater
   useEffect(() => {
@@ -186,6 +188,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setFormData({ 
       studbookId: `SB-${new Date().getFullYear()}-${Math.random().toString(36).substring(7).toUpperCase()}`, 
       speciesId: '', 
+      projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId,
       enclosureId: '', 
       name: '', 
       sex: Sex.UNKNOWN, 
@@ -220,12 +223,18 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.speciesId || !formData.studbookId) return;
+    const targetProjectId = isAll ? formData.projectId : currentProjectId;
+    if (!targetProjectId) {
+      alert("Please select a project for this individual.");
+      return;
+    }
+
     setIsSubmitting(true);
     
     const entry: Individual = {
         ...formData as Individual,
         id: editingId || `ind-${Date.now()}`,
-        projectId: isAll ? (formData.projectId || '') : currentProjectId,
+        projectId: targetProjectId,
         weightKg: Number(formData.weightKg || 0)
     };
     
@@ -286,7 +295,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
         <select className="px-4 py-2 border border-slate-300 rounded-lg bg-white" value={filterSpeciesId} onChange={e => setFilterSpeciesId(e.target.value)}>
           <option value="">{t('allSpeciesFilter')}</option>
-          {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
+          {allSpecies.filter(s => isAll ? true : s.projectId === currentProjectId).map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
         </select>
         <select className="px-4 py-2 border border-slate-300 rounded-lg bg-white" value={filterStatus} onChange={e => setFilterStatus(e.target.value as StatusFilter)}>
           <option value="current">{t('statusCurrent')}</option>
@@ -443,6 +452,29 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              </div>
              
              <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
+                {/* Section 0: Project Scoping (if All Projects view) */}
+                {isAll && (
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <FolderOpen size={16}/> Project Selection
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Target Project <span className="text-red-500">*</span></label>
+                        <select 
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-emerald-500" 
+                          value={formData.projectId} 
+                          onChange={e => setFormData({...formData, projectId: e.target.value, speciesId: '', enclosureId: ''})} 
+                          required
+                        >
+                          <option value="">Select Project...</option>
+                          {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Section 1: Identity */}
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -451,7 +483,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="relative" ref={speciesDropdownRef}>
                         <label className="text-xs font-bold text-slate-700 block mb-1">Species <span className="text-red-500">*</span></label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" value={speciesSearchQuery} onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} onFocus={() => setIsSpeciesDropdownOpen(true)} placeholder="Search species..." required />
+                        <input 
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400" 
+                          value={speciesSearchQuery} 
+                          onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} 
+                          onFocus={() => setIsSpeciesDropdownOpen(true)} 
+                          placeholder={isAll && !formData.projectId ? "Select project first" : "Search species..."} 
+                          required 
+                          disabled={isAll && !formData.projectId}
+                        />
                         {isSpeciesDropdownOpen && (
                           <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-auto">
                               {speciesSearchResults.map(s => <button key={s.id} type="button" className="w-full text-left p-3 hover:bg-slate-50 border-b last:border-0" onClick={() => { setFormData({...formData, speciesId: s.id}); setSpeciesSearchQuery(s.commonName); setIsSpeciesDropdownOpen(false); }}>{s.commonName}</button>)}
@@ -491,9 +531,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">Current Enclosure</label>
-                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.enclosureId} onChange={e => setFormData({...formData, enclosureId: e.target.value})}>
+                        <select 
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" 
+                          value={formData.enclosureId} 
+                          onChange={e => setFormData({...formData, enclosureId: e.target.value})}
+                          disabled={isAll && !formData.projectId}
+                        >
                           <option value="">Unassigned</option>
-                          {allEnclosures.map(encl => <option key={encl.id} value={encl.id}>{encl.name}</option>)}
+                          {allEnclosures.filter(enc => isAll ? enc.projectId === formData.projectId : enc.projectId === currentProjectId).map(encl => <option key={encl.id} value={encl.id}>{encl.name}</option>)}
                         </select>
                     </div>
                     <div>
