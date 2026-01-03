@@ -17,18 +17,17 @@
     "vite": "^7.2.7",
     "recharts": "^3.5.1",
     "react-router-dom": "^7.10.1",
-    "@supabase/supabase-js": "^2.89.0",
     "express": "^5.2.1",
     "cors": "^2.8.5",
-    "mysql2": "^3.16.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
     "dotenv": "^17.2.3",
     "bcryptjs": "^3.0.3",
     "nodemailer": "^7.0.12",
     "path": "^0.12.7",
-    "crypto": "^1.0.1",
-    "process": "^0.11.10"
+    "process": "^0.11.10",
+    "@supabase/supabase-js": "^2.89.0",
+    "mysql2": "^3.16.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

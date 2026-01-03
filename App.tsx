@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -71,8 +70,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
   render() {
-    const { hasError, error } = (this as any).state;
-    const { children } = (this as any).props;
+    const { hasError, error } = this.state;
+    const { children } = this.props;
     if (hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">
@@ -275,12 +274,12 @@ const App: React.FC = () => {
   }, [systemSettings]);
 
   const calculateFeatureVisibility = (pid: string) => {
-     const isAll = pid === 'ALL_PROJECTS';
+     if (!pid) return;
      const org = getOrg();
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
      
-     if (isAll) {
+     if (pid === 'ALL_PROJECTS') {
        setShowBreeding(org.focus === 'Animals' || allSpecies.some(s => s.type === 'Animal'));
        setShowEnclosures(!!org.enableEnclosures);
        setShowPlantMap(allInds.some(i => i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant'));
@@ -370,14 +369,12 @@ const App: React.FC = () => {
     setCurrentOrg(activeOrg);
     const allProjects = getProjects();
     
-    // Scoping check
     let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
     if (session.allowedProjectIds && session.allowedProjectIds.length > 0) {
        availableProjects = availableProjects.filter(p => session.allowedProjectIds!.includes(p.id));
     }
 
     let savedPid = getCurrentProjectId();
-    // Validate current selection
     if (savedPid !== 'ALL_PROJECTS' && !availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
@@ -394,7 +391,6 @@ const App: React.FC = () => {
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
   const handleProjectChange = (id: string) => { setCurrentProjectIdState(id); saveCurrentProjectId(id); calculateFeatureVisibility(id); };
 
-  // Fix: Added missing handleCreateProject
   const handleCreateProject = () => {
     if (!newProjectName) return;
     const orgId = currentOrg?.id || getOrg().id;
@@ -408,14 +404,12 @@ const App: React.FC = () => {
     showToast("Project created successfully!", "success");
   };
 
-  // Fix: Added missing openProfileModal
   const openProfileModal = () => {
      if (!user) return;
      setProfileForm({ name: user.name, email: user.email, avatarUrl: user.avatarUrl || '', newPassword: '', confirmPassword: '' });
      setPendingEmail(''); setIsVerifyingEmail(false); setVerifyCode(''); setShowProfileModal(true);
   };
 
-  // Fix: Added missing handleSaveProfile
   const handleSaveProfile = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!user) return;
@@ -430,6 +424,9 @@ const App: React.FC = () => {
 
   if (isLoading) return null;
   if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
+
+  const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
+  const isAdmin = user.role === UserRole.ADMIN || isSuper;
 
   return (
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>

@@ -293,6 +293,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
 // Generic REST endpoint for CRUD
 const restRouter = express.Router();
 restRouter.use(authenticate);
+
+// List/Upsert
 restRouter.post('/:table', async (req: any, res: any) => {
     const { table } = req.params;
     const items = Array.isArray(req.body) ? req.body : [req.body];
@@ -308,6 +310,19 @@ restRouter.post('/:table', async (req: any, res: any) => {
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
+
+// Explicit DELETE handler
+restRouter.delete('/:table', async (req: any, res: any) => {
+   const { table } = req.params;
+   const { id } = req.query;
+   if (!id) return res.status(400).json({ error: "Missing ID for deletion" });
+   const db = getDb();
+   try {
+      await db.execute(`DELETE FROM \`${table}\` WHERE id = ?`, [id]);
+      res.json({ success: true });
+   } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.use('/rest/v1', restRouter);
 
 app.get('/api/config', async (req: any, res: any) => {
@@ -342,11 +357,12 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     }
 
     // 2. Perform placeholder replacement on the content (whether fallback or custom)
+    // Updated to use a safer global replacement method
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
-          const regex = new RegExp(`{{${k}}}`, 'g');
-          finalHtml = finalHtml.replace(regex, String(v));
-          finalSubject = finalSubject.replace(regex, String(v));
+          const placeholder = `{{${k}}}`;
+          finalHtml = finalHtml.split(placeholder).join(String(v));
+          finalSubject = finalSubject.split(placeholder).join(String(v));
        });
     }
 

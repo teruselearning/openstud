@@ -1,7 +1,7 @@
 
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
-import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures } from './syncService';
+import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 import { localDb } from './localDb';
@@ -401,7 +401,7 @@ export const deleteUser = async (userId: string) => {
   
   const isInvitedOnly = user.status === UserStatus.INVITED;
   
-  // Refined Email Notification based on status
+  // Send Email Notification
   await sendSystemEmail(
     user.email,
     'notification',
@@ -418,6 +418,14 @@ export const deleteUser = async (userId: string) => {
       : (t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been removed by an administrator.</p>`)
   );
 
+  // Sync deletion to server
+  try {
+     await syncDeleteRecord('users', userId);
+  } catch (e) {
+     console.error("Failed to sync user deletion:", e);
+  }
+
+  // Update local state
   saveUsers(allUsers.filter(u => u.id !== userId));
 };
 
