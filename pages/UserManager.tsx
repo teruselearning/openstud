@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { getUsers, getProjects, inviteUser, deleteUser, getSession, saveUsers } from '../services/storage';
 import { User, UserRole, UserStatus, Project } from '../types';
-import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock } from 'lucide-react';
+import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock, ShieldAlert } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 const ROLE_KEY = [
@@ -60,16 +60,15 @@ const UserManager: React.FC = () => {
     }
   };
 
-  // Fix: Added missing handleDelete function
   const handleDelete = async () => {
     if (!userToDelete) return;
     try {
       await deleteUser(userToDelete.id);
       setUsers(getUsers());
-      setToast({ message: "User removed successfully.", type: 'success' });
+      setToast({ message: userToDelete.status === UserStatus.INVITED ? "Invitation cancelled." : "User removed.", type: 'success' });
       setUserToDelete(null);
     } catch (err: any) {
-      setToast({ message: "Failed to remove user.", type: 'error' });
+      setToast({ message: "Action failed.", type: 'error' });
     }
   };
 
@@ -92,7 +91,7 @@ const UserManager: React.FC = () => {
            <p className="text-slate-500 text-sm">{t('teamSubtitle')}</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <button onClick={() => setShowRoleKey(!showRoleKey)} className="flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => setShowRoleKey(!showRoleKey)} className="flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-200 shadow-sm">
             <Info size={16} />
             <span>Role Key</span>
           </button>
@@ -104,11 +103,12 @@ const UserManager: React.FC = () => {
       </div>
 
       {showRoleKey && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-300">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-300 relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-2"><button onClick={() => setShowRoleKey(false)} className="text-slate-400 hover:text-slate-600"><X size={14}/></button></div>
            {ROLE_KEY.map(rk => (
              <div key={rk.role} className="space-y-1">
-                <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${rk.bg} ${rk.color}`}>
-                   <Shield size={12}/> {rk.role}
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${rk.bg} ${rk.color} uppercase tracking-wider`}>
+                   <Shield size={10}/> {rk.role}
                 </div>
                 <p className="text-xs text-slate-500 leading-relaxed">{rk.desc}</p>
              </div>
@@ -129,7 +129,7 @@ const UserManager: React.FC = () => {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {users.map(user => (
-              <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+              <tr key={user.id} className="hover:bg-slate-50 transition-colors group">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
@@ -157,15 +157,17 @@ const UserManager: React.FC = () => {
                    </div>
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${user.status === UserStatus.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {user.status === UserStatus.ACTIVE ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${user.status === UserStatus.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {user.status === UserStatus.ACTIVE ? <CheckCircle2 size={10} /> : <Clock size={10} />}
                     {user.status}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <button onClick={() => setUserToDelete(user)} className="p-2 text-slate-400 hover:text-red-600 transition-colors">
-                    <Trash2 size={18} />
-                  </button>
+                  {user.id !== currentUser?.id && (
+                    <button onClick={() => setUserToDelete(user)} className="p-2 text-slate-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100">
+                      <Trash2 size={18} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -174,11 +176,11 @@ const UserManager: React.FC = () => {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Mail size={20} className="text-emerald-600" /> {t('inviteMember')}</h3>
-              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
             </div>
             <form onSubmit={handleInvite} className="space-y-4">
               <div>
@@ -200,7 +202,7 @@ const UserManager: React.FC = () => {
                     const isDisabled = role === UserRole.SUPER_ADMIN && !isSuperAdmin;
                     return (
                       <option key={role} value={role} disabled={isDisabled}>
-                        {role} {isDisabled ? '(Requires Super Admin)' : ''}
+                        {role} {isDisabled ? '(Super Admin Only)' : ''}
                       </option>
                     );
                   })}
@@ -255,16 +257,24 @@ const UserManager: React.FC = () => {
       )}
 
       {userToDelete && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 text-center animate-in zoom-in duration-200">
-            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle size={32} />
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 text-center animate-in zoom-in duration-200">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${userToDelete.status === UserStatus.INVITED ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
+              {userToDelete.status === UserStatus.INVITED ? <Clock size={32} /> : <ShieldAlert size={32} />}
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Remove Team Member?</h3>
-            <p className="text-slate-500 mb-6 text-sm">Are you sure you want to remove <strong>{userToDelete.name}</strong>? They will no longer be able to access the system.</p>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">
+               {userToDelete.status === UserStatus.INVITED ? "Cancel Invitation?" : "Remove Team Member?"}
+            </h3>
+            <p className="text-slate-500 mb-6 text-sm">
+               {userToDelete.status === UserStatus.INVITED 
+                 ? `Are you sure you want to cancel the invitation for ${userToDelete.name}? They haven't joined the organization yet.` 
+                 : `Are you sure you want to remove ${userToDelete.name}? They will lose all access to organization data and projects.`}
+            </p>
             <div className="flex gap-3">
-              <button onClick={() => setUserToDelete(null)} className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold">Cancel</button>
-              <button onClick={handleDelete} className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold">Remove User</button>
+              <button onClick={() => setUserToDelete(null)} className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold">Back</button>
+              <button onClick={handleDelete} className={`flex-1 px-4 py-2 rounded-xl font-bold text-white shadow-md transform active:scale-95 transition-all ${userToDelete.status === UserStatus.INVITED ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                 {userToDelete.status === UserStatus.INVITED ? "Revoke Invitation" : "Remove Access"}
+              </button>
             </div>
           </div>
         </div>
@@ -273,8 +283,8 @@ const UserManager: React.FC = () => {
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-300 ${toast.type === 'success' ? 'bg-slate-900 text-white' : 'bg-red-600 text-white'}`}>
           {toast.type === 'success' ? <CheckCircle2 size={24} className="text-emerald-400" /> : <AlertTriangle size={24} className="text-white" />}
-          <div><p className="text-sm">{toast.message}</p></div>
-          <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/20 rounded-full"><X size={16} /></button>
+          <div><p className="text-sm font-bold">{toast.message}</p></div>
+          <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/20 rounded-full transition-colors"><X size={16} /></button>
         </div>
       )}
     </div>

@@ -49,7 +49,9 @@ const safeParse = (data: any, fallback: any = {}) => {
 };
 
 const fromDbOrg = (o: any): Organization => ({ 
-  id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, founded_year: o.founded_year, 
+  id: o.id, name: o.name, location: o.location, latitude: o.latitude, longitude: o.longitude, 
+  // Fix: changed founded_year to foundedYear
+  foundedYear: o.founded_year, 
   description: o.description, focus: o.focus, isOrgPublic: !!o.is_org_public, isSpeciesPublic: !!o.is_species_public, 
   obscureLocation: !!o.obscure_location, hideName: !!o.hide_name, allowBreedingRequests: !!o.allow_breeding_requests, 
   breedingRequestContactId: o.breeding_request_contact_id, showNativeStatus: !!o.show_native_status, 
@@ -58,8 +60,10 @@ const fromDbOrg = (o: any): Organization => ({
 });
 
 const fromDbProject = (p: any): Project => ({ id: p.id, name: p.name, description: p.description, orgId: p.org_id });
-const fromDbUser = (u: any): User => ({ id: u.id, org_id: u.org_id, name: u.name, email: u.email, role: u.role, status: u.status, avatarUrl: u.avatar_url, allowed_project_ids: safeParse(u.allowed_project_ids, []) });
-// Fix: Fixed incorrect property mapping from database to Species object
+
+// Fix: changed org_id to orgId and allowed_project_ids to allowedProjectIds
+const fromDbUser = (u: any): User => ({ id: u.id, orgId: u.org_id, name: u.name, email: u.email, role: u.role, status: u.status, avatarUrl: u.avatar_url, allowedProjectIds: safeParse(u.allowed_project_ids, []) });
+
 const fromDbSpecies = (s: any): Species => ({ 
   id: s.id, projectId: s.project_id, commonName: s.common_name, scientificName: s.scientific_name, type: s.type, 
   plantClassification: s.plant_classification, conservationStatus: s.conservation_status, 
@@ -74,8 +78,9 @@ const fromDbInd = (i: any): Individual => ({
   name: i.name, sex: i.sex, birthDate: i.birth_date, weightKg: i.weight_kg, sireId: i.sire_id, damId: i.dam_id, 
   imageUrl: i.image_url, dnaSequence: i.dna_sequence, notes: i.notes, source: i.source, sourceDetails: i.source_details, 
   latitude: i.latitude, longitude: i.longitude, isDeceased: !!i.is_deceased, deathDate: i.death_date, 
-  loanStatus: i.loan_status, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date, 
-  transfer_note: i.transfer_note, weightHistory: safeParse(i.weight_history, []), growthHistory: safeParse(i.growth_history, []), 
+  // Fix: changed transferred_to_org_id, transfer_date, transfer_note to camelCase properties
+  loanStatus: i.loan_status, transferredToOrgId: i.transferred_to_org_id, transferDate: i.transfer_date, 
+  transferNote: i.transfer_note, weightHistory: safeParse(i.weight_history, []), growthHistory: safeParse(i.growth_history, []), 
   healthHistory: safeParse(i.health_history, []) 
 });
 
@@ -86,8 +91,12 @@ const fromDbEnclosure = (e: any): Enclosure => ({
 
 const fromDbEvent = (e: any): BreedingEvent => ({ id: e.id, speciesId: e.species_id, sireId: e.sire_id || '', damId: e.dam_id || '', date: e.date, offspringCount: e.offspring_count, successfulBirths: e.successful_births, losses: e.losses, notes: e.notes, offspringIds: safeParse(e.offspring_ids, []) });
 const fromDbLoan = (l: any): BreedingLoan => ({ id: l.id, partnerOrgId: l.partner_org_id, proposerOrgId: l.proposer_org_id, role: l.role, startDate: l.start_date, endDate: l.end_date, status: l.status, individualIds: safeParse(l.individual_ids, []), terms: l.terms, notificationRecipientId: l.notification_recipient_id, changeRequest: safeParse(l.change_request, null) });
+
+// Fix: changed p.org_id_1 to p.orgId1 and p.org_id_2 to p.orgId2 (though not reported as error, it follows pattern)
 const fromDbPartnership = (p: any): Partnership => ({ id: p.id, orgId1: p.org_id_1, orgId2: p.org_id_2, status: p.status, establishedDate: p.established_date });
-const fromDbLanguage = (l: any): LanguageConfig => ({ code: l.code, name: l.name, translations: safeParse(l.translations, {}), isDefault: !!l.is_default, manual_overrides: safeParse(l.manual_overrides, []), deleted: !!l.is_deleted });
+
+// Fix: changed manual_overrides to manualOverrides
+const fromDbLanguage = (l: any): LanguageConfig => ({ code: l.code, name: l.name, translations: safeParse(l.translations, {}), isDefault: !!l.is_default, manualOverrides: safeParse(l.manual_overrides, []), deleted: !!l.is_deleted });
 
 const sanitizeNum = (val: any, fallback: any = 0) => {
     if (val === null || val === undefined) return fallback;
@@ -98,10 +107,11 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
 export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [] });
-// Fix: Fixed incorrect mapping in mapSpeciesToDb (plantClassification and conservationStatus typos)
 export const mapSpeciesToDb = (s: Species) => ({ id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, plant_classification: s.plantClassification || null, conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null });
+
 export const mapIndToDb = (i: Individual) => ({ 
-  id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dna_sequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, 
+  // Fix: changed i.studbook_id, i.sire_id, i.dam_id, i.dna_sequence to camelCase properties on source Individual object
+  id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dnaSequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, 
   loan_status: i.loanStatus || null, transferred_to_org_id: i.transferredToOrgId || null, transfer_date: i.transferDate || null, transfer_note: i.transferNote || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] 
 });
 
@@ -109,9 +119,14 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
   id: e.id, org_id: e.orgId, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individualIds || [] 
 });
 
-export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sire_id || null, dam_id: e.dam_id || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
+// Fix: changed e.sire_id and e.dam_id to sireId and damId
+export const mapEventToDb = (e: BreedingEvent) => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId || null, dam_id: e.damId || null, date: e.date, offspring_count: sanitizeNum(e.offspringCount), successful_births: sanitizeNum(e.successfulBirths), losses: sanitizeNum(e.losses), notes: e.notes, offspring_ids: e.offspringIds || [] });
+
 export const mapLoanToDb = (l: BreedingLoan) => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate || null, status: l.status, individual_ids: l.individualIds || [], terms: l.terms, notification_recipient_id: l.notificationRecipientId || null, change_request: l.changeRequest || null });
-export const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.established_date });
+
+// Fix: changed p.established_date to p.establishedDate
+export const mapPartnershipToDb = (p: Partnership) => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate });
+
 export const mapLanguageToDb = (l: LanguageConfig) => ({ code: l.code, name: l.name, translations: l.translations || {}, is_default: !!l.isDefault, manual_overrides: l.manualOverrides || [], is_deleted: !!l.deleted });
 
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));

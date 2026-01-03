@@ -1,3 +1,4 @@
+
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures } from './syncService';
@@ -113,7 +114,8 @@ export const getSystemSettings = (): SystemSettings => {
       mfa: { enabled: true, subject: "Security Code", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody }, 
       invite: { enabled: true, subject: BASE_TRANSLATIONS.emailInviteSubject, bodyHtml: BASE_TRANSLATIONS.emailInviteBody },
       notification: { enabled: true, subject: BASE_TRANSLATIONS.emailNotifySubject, bodyHtml: BASE_TRANSLATIONS.emailNotifyBody },
-      password_reset: { enabled: true, subject: "Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody } 
+      password_reset: { enabled: true, subject: "Password Reset", bodyHtml: BASE_TRANSLATIONS.emailVerifyBody },
+      removal: { enabled: true, subject: "Account Removed", bodyHtml: "<p>Your account at {{orgName}} has been removed by an administrator.</p>" }
     },
     themePrimaryColor: '#059669', themeSecondaryColor: '#10b981',
     aboutPage: { enabled: true, title: 'About', contentHtml: '' },
@@ -362,15 +364,83 @@ export const generatePartnerInvite = (): string => {
 export const redeemPartnerInvite = (code: string): {success: boolean, message: string} => ({ success: true, message: "Partnership established!" });
 
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[]) => {
-  const newUser: User = { id: `u-${Date.now()}`, orgId: getOrg().id, name, email, role, status: UserStatus.INVITED, allowedProjectIds };
+  const org = getOrg();
+  const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds };
   saveUsers([...getUsers(), newUser]);
+
+  const s = getSystemSettings();
+  const t = s.emailTemplates?.invite;
+  const inviteUrl = `${window.location.origin}/#/accept-invite?token=${newUser.id}`;
+  
+  await sendSystemEmail(
+    email,
+    'invite',
+    {
+      userName: name,
+      orgName: org.name,
+      inviteUrl,
+      year: new Date().getFullYear().toString()
+    },
+    t?.subject || BASE_TRANSLATIONS.emailInviteSubject,
+    t?.bodyHtml || BASE_TRANSLATIONS.emailInviteBody
+  );
 };
 
-export const deleteUser = async (id: string) => saveUsers(getUsers().filter(u => u.id !== id));
+export const deleteUser = async (userId: string) => {
+  const allUsers = getUsers();
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
 
-export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => ({ success: true, data: { name: 'Invited User', email: 'user@example.com', orgName: 'Sample Org' } });
+  const org = getOrg();
+  const s = getSystemSettings();
+  const t = s.emailTemplates?.removal;
+  
+  // Send removal email to either invited or active users
+  await sendSystemEmail(
+    user.email,
+    'notification',
+    {
+      orgName: org.name,
+      message: user.status === UserStatus.INVITED 
+        ? "Your invitation to join the management team has been cancelled."
+        : "Your access to the organisation has been removed by an administrator.",
+      year: new Date().getFullYear().toString()
+    },
+    t?.subject || "Account Update",
+    t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been updated.</p>`
+  );
 
-export const acceptInvite = async (token: string, pass: string) => ({ user: getUsers()[0] });
+  saveUsers(allUsers.filter(u => u.id !== userId));
+};
+
+export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => {
+  const users = getUsers();
+  const user = users.find(u => u.id === token && u.status === UserStatus.INVITED);
+  if (!user) return { success: false, error: "Invalid or expired invitation." };
+  
+  const org = getOrg();
+  return { 
+    success: true, 
+    data: { 
+      name: user.name, 
+      email: user.email, 
+      orgName: org.name 
+    } 
+  };
+};
+
+export const acceptInvite = async (token: string, pass: string) => {
+  const users = getUsers();
+  const userIdx = users.findIndex(u => u.id === token && u.status === UserStatus.INVITED);
+  if (userIdx === -1) throw new Error("Invalid invitation.");
+
+  const updatedUser = { ...users[userIdx], status: UserStatus.ACTIVE, password: pass };
+  const updatedList = [...users];
+  updatedList[userIdx] = updatedUser;
+  
+  saveUsers(updatedList);
+  return { user: updatedUser };
+};
 
 export const exportFullData = () => ({ org: getOrg(), projects: getProjects(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(), enclosures: getEnclosures(), breedingEvents: getBreedingEvents(), breedingLoans: getBreedingLoans(), partnerships: getPartnerships(), settings: getSystemSettings(), languages: getLanguages() });
 
