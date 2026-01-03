@@ -1,3 +1,4 @@
+
 import { LanguageConfig } from "../types";
 
 export const BASE_TRANSLATIONS = {
@@ -194,6 +195,7 @@ export const BASE_TRANSLATIONS = {
     addFirstSpecies: "Add your first species record",
     createFirstEvent: "Record your first breeding event",
     startFirstLoan: "Propose a breeding loan",
+    noLocationDataMessage: "Add location data to individuals for them to appear in map view",
 
     // Section Titles
     classificationTitle: "Classification",

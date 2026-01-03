@@ -4,7 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures } from '../services/storage';
 import { fetchSpeciesData } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -39,13 +39,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   // Form State
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [returnToId, setReturnToId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const speciesDropdownRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<Partial<Individual>>({
-    speciesId: '', enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house'
+    speciesId: '', enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
   });
 
   useEffect(() => {
@@ -61,6 +62,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       const indToEdit = allIndividuals.find(i => i.id === location.state.editId);
       if (indToEdit) {
         setEditingId(indToEdit.id);
+        setReturnToId(location.state.fromId || null);
         setFormData({ ...indToEdit });
         const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
         setSpeciesSearchQuery(sp?.commonName || '');
@@ -83,35 +85,67 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const handleOpenNewForm = () => {
     setEditingId(null);
-    setFormData({ studbookId: `SB-${new Date().getFullYear()}-${Math.random().toString(36).substring(7).toUpperCase()}`, speciesId: '', enclosureId: '', name: '', sex: Sex.UNKNOWN, weightKg: 0, birthDate: new Date().toISOString().split('T')[0], source: 'Bred in house', notes: '', imageUrl: '' });
+    setReturnToId(null);
+    setFormData({ 
+      studbookId: `SB-${new Date().getFullYear()}-${Math.random().toString(36).substring(7).toUpperCase()}`, 
+      speciesId: '', 
+      enclosureId: '', 
+      name: '', 
+      sex: Sex.UNKNOWN, 
+      weightKg: 0, 
+      birthDate: new Date().toISOString().split('T')[0], 
+      source: 'Bred in house', 
+      notes: '', 
+      imageUrl: '',
+      latitude: org?.latitude,
+      longitude: org?.longitude
+    });
     setSpeciesSearchQuery('');
     setShowForm(true);
   };
 
   const handleEdit = (ind: Individual) => {
     setEditingId(ind.id);
+    setReturnToId(null);
     setFormData({ ...ind });
     const sp = allSpecies.find(s => s.id === ind.speciesId);
     setSpeciesSearchQuery(sp?.commonName || '');
     setShowForm(true);
   };
 
+  const handleCloseForm = () => {
+    setShowForm(false);
+    if (returnToId) {
+      navigate(`/individuals/${returnToId}`);
+    }
+    setEditingId(null);
+    setReturnToId(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.speciesId || !formData.studbookId) return;
     setIsSubmitting(true);
+    
     const entry: Individual = {
         ...formData as Individual,
         id: editingId || `ind-${Date.now()}`,
         projectId: currentProjectId,
         weightKg: Number(formData.weightKg || 0)
     };
+    
     const updated = editingId ? allIndividuals.map(i => i.id === editingId ? entry : i) : [...allIndividuals, entry];
     setAllIndividuals(updated);
     saveIndividuals(updated);
     setIsSubmitting(false);
-    setShowForm(false);
+    
+    if (returnToId) {
+      navigate(`/individuals/${returnToId}`);
+    } else {
+      setShowForm(false);
+    }
     setEditingId(null);
+    setReturnToId(null);
   };
 
   const projectIndividuals = allIndividuals.filter(ind => ind.projectId === currentProjectId);
@@ -124,6 +158,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const projectSpecies = allSpecies.filter(s => s.projectId === currentProjectId);
   const speciesSearchResults = projectSpecies.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
+
+  // Filters for parentage selection
+  const potentialParents = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.id !== editingId && !i.isDeceased);
+  const potentialSires = potentialParents.filter(i => i.sex === Sex.MALE || i.sex === Sex.UNKNOWN);
+  const potentialDams = potentialParents.filter(i => i.sex === Sex.FEMALE || i.sex === Sex.UNKNOWN);
+
+  const hasMappedIndividuals = filtered.some(ind => ind.latitude !== undefined && ind.longitude !== undefined);
 
   return (
     <div className="space-y-6">
@@ -166,12 +207,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             const sp = allSpecies.find(s => s.id === ind.speciesId);
             return (
               <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col">
-                <div className="h-48 bg-slate-100 relative overflow-hidden">
-                  <img src={ind.imageUrl || sp?.imageUrl || generatePattern(ind.name)} className="w-full h-full object-cover" />
+                <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
+                  <img src={ind.imageUrl || sp?.imageUrl || generatePattern(ind.name)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
-                </div>
+                </Link>
                 <div className="p-4 flex-1">
-                  <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">{ind.name}</h3>
+                  <Link to={`/individuals/${ind.id}`} className="block">
+                    <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">{ind.name}</h3>
+                  </Link>
                   <p className="text-xs text-slate-500 mb-2 truncate">{sp?.commonName}</p>
                   <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-50">
                     <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-widest">{ind.studbookId}</span>
@@ -199,7 +242,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <tbody className="divide-y divide-slate-100">
               {filtered.map(ind => (
                 <tr key={ind.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-6 py-4 font-bold text-slate-900">{ind.name}</td>
+                  <td className="px-6 py-4">
+                    <Link to={`/individuals/${ind.id}`} className="font-bold text-slate-900 hover:text-emerald-700 transition-colors">
+                      {ind.name}
+                    </Link>
+                  </td>
                   <td className="px-6 py-4 text-sm text-slate-500">{allSpecies.find(s => s.id === ind.speciesId)?.commonName}</td>
                   <td className="px-6 py-4 text-sm">{ind.sex}</td>
                   <td className="px-6 py-4 text-xs font-mono text-slate-400">{ind.studbookId}</td>
@@ -216,45 +263,178 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       )}
 
-      {viewMode === 'map' && <div ref={mapContainerRef} className="h-[600px] w-full rounded-xl border border-slate-200" />}
+      {viewMode === 'map' && (
+        <div className="relative">
+          <div ref={mapContainerRef} className={`h-[600px] w-full rounded-xl border border-slate-200 ${!hasMappedIndividuals ? 'opacity-30 pointer-events-none' : ''}`} />
+          {!hasMappedIndividuals && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mb-4">
+                  <MapPin size={32} />
+               </div>
+               <p className="text-slate-600 font-medium max-w-xs leading-relaxed">
+                  {t('noLocationDataMessage')}
+               </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
              <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-               <h3 className="text-xl font-bold">{editingId ? t('updateIndividual') : t('registerIndividual')}</h3>
-               <button onClick={() => setShowForm(false)} className="text-slate-400"><XIcon size={24}/></button>
+               <div className="flex items-center gap-3">
+                 <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
+                   {editingId ? <Pencil size={20}/> : <Plus size={20}/>}
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : t('registerIndividual')}</h3>
+               </div>
+               <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><XIcon size={24}/></button>
              </div>
-             <form onSubmit={handleSubmit} className="p-8 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className="relative" ref={speciesDropdownRef}>
-                      <label className="text-sm font-bold text-slate-700 block mb-1">Species</label>
-                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={speciesSearchQuery} onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} onFocus={() => setIsSpeciesDropdownOpen(true)} placeholder="Search species..." />
-                      {isSpeciesDropdownOpen && (
-                         <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-auto">
-                            {speciesSearchResults.map(s => <button key={s.id} type="button" className="w-full text-left p-3 hover:bg-slate-50 border-b last:border-0" onClick={() => { setFormData({...formData, speciesId: s.id}); setSpeciesSearchQuery(s.commonName); setIsSpeciesDropdownOpen(false); }}>{s.commonName}</button>)}
-                         </div>
-                      )}
-                   </div>
-                   <div>
-                      <label className="text-sm font-bold text-slate-700 block mb-1">Studbook ID</label>
-                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none font-mono" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required />
-                   </div>
-                   <div>
-                      <label className="text-sm font-bold text-slate-700 block mb-1">Name</label>
-                      <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
-                   </div>
-                   <div>
-                      <label className="text-sm font-bold text-slate-700 block mb-1">Sex</label>
-                      <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}>
-                        {Object.values(Sex).map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                   </div>
+             
+             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
+                {/* Section 1: Identity */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <UserIcon size={16}/> {t('identityStatusTitle')}
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="relative" ref={speciesDropdownRef}>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Species <span className="text-red-500">*</span></label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" value={speciesSearchQuery} onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} onFocus={() => setIsSpeciesDropdownOpen(true)} placeholder="Search species..." required />
+                        {isSpeciesDropdownOpen && (
+                          <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-auto">
+                              {speciesSearchResults.map(s => <button key={s.id} type="button" className="w-full text-left p-3 hover:bg-slate-50 border-b last:border-0" onClick={() => { setFormData({...formData, speciesId: s.id}); setSpeciesSearchQuery(s.commonName); setIsSpeciesDropdownOpen(false); }}>{s.commonName}</button>)}
+                          </div>
+                        )}
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Studbook ID <span className="text-red-500">*</span></label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none font-mono text-sm" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Name <span className="text-red-500">*</span></label>
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Individual name" required />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Sex</label>
+                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}>
+                          {Object.values(Sex).map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Birth Date</label>
+                        <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Current Weight (Kg)</label>
+                        <input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} />
+                    </div>
+                  </div>
                 </div>
+
+                {/* Section 2: Environment & Location */}
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <MapPin size={16}/> Environment & Geolocation
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Current Enclosure</label>
+                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.enclosureId} onChange={e => setFormData({...formData, enclosureId: e.target.value})}>
+                          <option value="">Unassigned</option>
+                          {allEnclosures.map(encl => <option key={encl.id} value={encl.id}>{encl.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Latitude</label>
+                        <input type="number" step="any" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.latitude || ''} onChange={e => setFormData({...formData, latitude: parseFloat(e.target.value)})} placeholder="e.g. 45.123" />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Longitude</label>
+                        <input type="number" step="any" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.longitude || ''} onChange={e => setFormData({...formData, longitude: parseFloat(e.target.value)})} placeholder="e.g. -122.456" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Lineage */}
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Dna size={16}/> {t('parentageTitle')}
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">{t('sire')}</label>
+                        <select 
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" 
+                          value={formData.sireId} 
+                          onChange={e => setFormData({...formData, sireId: e.target.value})}
+                          disabled={!formData.speciesId}
+                        >
+                          <option value="">Unknown</option>
+                          {potentialSires.map(i => <option key={i.id} value={i.id}>{i.name} ({i.studbookId})</option>)}
+                        </select>
+                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential sires.</p>}
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">{t('dam')}</label>
+                        <select 
+                          className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" 
+                          value={formData.damId} 
+                          onChange={e => setFormData({...formData, damId: e.target.value})}
+                          disabled={!formData.speciesId}
+                        >
+                          <option value="">Unknown</option>
+                          {potentialDams.map(i => <option key={i.id} value={i.id}>{i.name} ({i.studbookId})</option>)}
+                        </select>
+                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential dams.</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Acquisition & Status */}
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Anchor size={16}/> {t('acquisitionSource')}
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Source Type</label>
+                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as AcquisitionSource})}>
+                          <option value="Bred in house">Bred in house</option>
+                          <option value="Captive Bred">Captive Bred (Transfer)</option>
+                          <option value="Wild Caught">Wild Caught</option>
+                          <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Status</label>
+                        <div className="flex items-center gap-4 h-10">
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" className="rounded text-red-600" checked={formData.isDeceased || false} onChange={e => setFormData({...formData, isDeceased: e.target.checked})} />
+                            Deceased / Removed
+                          </label>
+                        </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 5: Notes & Media */}
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <FileText size={16}/> {t('notes')}
+                  </h4>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">Observations / Clinical Notes</label>
+                    <textarea rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Detailed notes about behavior, health status, or transfer details..." />
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-                   <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2 text-slate-600">Cancel</button>
-                   <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-8 py-2 rounded-lg font-bold flex items-center gap-2">
-                     {isSubmitting && <Loader2 size={18} className="animate-spin"/>} {t('save')}
+                   <button type="button" onClick={handleCloseForm} className="px-8 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancel</button>
+                   <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-10 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-100 transform active:scale-95 transition-all">
+                     {isSubmitting ? <Loader2 size={20} className="animate-spin"/> : <Save size={20}/>} 
+                     {editingId ? "Update Record" : "Register Individual"}
                    </button>
                 </div>
              </form>

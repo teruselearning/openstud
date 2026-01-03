@@ -110,7 +110,7 @@ const IndividualDetail: React.FC = () => {
             </p>
           </div>
         </div>
-        <button onClick={() => navigate('/individuals', { state: { editId: individual.id } })} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold shadow-sm transition-all">
+        <button onClick={() => navigate('/individuals', { state: { editId: individual.id, fromId: individual.id } })} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold shadow-sm transition-all">
           <Edit size={18} />
           <span>Edit Profile</span>
         </button>
@@ -312,7 +312,7 @@ const IndividualDetail: React.FC = () => {
       {/* Health Modal */}
       {showHealthModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+           <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                  <h3 className="font-bold">New Medical Record</h3>
                  <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
