@@ -1,3 +1,4 @@
+
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
@@ -147,12 +148,6 @@ export const deleteLanguage = async (code: string) => {
   try { await syncDeleteLanguage(code); } catch (e) {}
 };
 
-export const generatePattern = (text: string): string => {
-  const settings = getSystemSettings();
-  const baseColor = settings.themePrimaryColor || '#059669';
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="${baseColor}"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="24" fill="white">${text}</text></svg>`)}`;
-};
-
 export const getSession = (): User | null => get(KEYS.SESSION, null);
 export const saveSession = (u: User) => set(KEYS.SESSION, u);
 
@@ -284,7 +279,6 @@ export const sendMfaCode = async (email: string, code: string, lang?: string) =>
   const org = getOrg();
   const t = s.emailTemplates?.mfa;
   
-  // Try to find the user to get their preferred language if lang is not provided
   let finalLang = lang;
   if (!finalLang) {
       const users = getUsers();
@@ -308,10 +302,8 @@ export const sendMfaCode = async (email: string, code: string, lang?: string) =>
 
 export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => {
   try {
-    // Find the user to get their preferred language
     const users = getUsers();
     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    
     const response = await fetch('/api/forgot-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -343,14 +335,10 @@ export const resetPassword = async (email: string, code: string, pass: string): 
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[], lang?: string) => {
   const org = getOrg();
   const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds, preferredLanguage: lang };
-  
-  // Persist locally and sync to DB first
   saveUsers([...getUsers(), newUser]);
 
   const s = getSystemSettings();
   const t = s.emailTemplates?.invite;
-  
-  // Construct Invite URL for HashRouter
   const inviteUrl = `${window.location.origin}/#/accept-invite?token=${newUser.id}`;
   
   await sendSystemEmail(
@@ -376,89 +364,91 @@ export const deleteUser = async (userId: string) => {
   const org = getOrg();
   const s = getSystemSettings();
   const t = s.emailTemplates?.removal;
-  
   const isInvitedOnly = user.status === UserStatus.INVITED;
   
-  // Send Email Notification in user's preferred language
   await sendSystemEmail(
     user.email,
     'notification',
     {
       orgName: org.name,
       message: isInvitedOnly 
-        ? `The invitation to join ${org.name} has been cancelled by an administrator.`
-        : `Your access to the organisation ${org.name} has been removed by an administrator.`,
-      year: new Date().getFullYear().toString()
+        ? `The invitation to join ${org.name} has been cancelled.`
+        : `Your access to ${org.name} has been removed by an administrator.`,
+      year: new Date().getFullYear().toString(),
+      appUrl: window.location.origin
     },
     isInvitedOnly ? "Invitation Revoked" : (t?.subject || "Account Removed"),
     isInvitedOnly 
-      ? `<p>The invitation for you to join <b>${org.name}</b> has been revoked. You will no longer be able to accept the invite.</p>`
-      : (t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been removed by an administrator.</p>`),
+      ? `<p>The invitation for you to join <b>${org.name}</b> has been revoked.</p>`
+      : (t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been removed.</p>`),
     user.preferredLanguage
   );
 
-  // Sync deletion to server
-  try {
-     await syncDeleteRecord('users', userId);
-  } catch (e) {
-     console.error("Failed to sync user deletion:", e);
-  }
-
-  // Update local state
+  try { await syncDeleteRecord('users', userId); } catch (e) {}
   saveUsers(allUsers.filter(u => u.id !== userId));
 };
 
 export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => {
   const users = getUsers();
   const user = users.find(u => u.id === token && u.status === UserStatus.INVITED);
-  if (!user) return { success: false, error: "Invalid or expired invitation." };
-  
+  if (!user) return { success: false, error: "Invalid invitation." };
   const org = getOrg();
-  return { 
-    success: true, 
-    data: { 
-      name: user.name, 
-      email: user.email, 
-      orgName: org.name 
-    } 
-  };
+  return { success: true, data: { name: user.name, email: user.email, orgName: org.name } };
 };
 
 export const acceptInvite = async (token: string, pass: string) => {
   const users = getUsers();
   const userIdx = users.findIndex(u => u.id === token && u.status === UserStatus.INVITED);
   if (userIdx === -1) throw new Error("Invalid invitation.");
-
   const updatedUser = { ...users[userIdx], status: UserStatus.ACTIVE, password: pass };
   const updatedList = [...users];
   updatedList[userIdx] = updatedUser;
-  
   saveUsers(updatedList);
   return { user: updatedUser };
 };
 
-export const exportFullData = () => ({ org: getOrg(), projects: getProjects(), users: getUsers(), species: getSpecies(), individuals: getIndividuals(), enclosures: getEnclosures(), breedingEvents: getBreedingEvents(), breedingLoans: getBreedingLoans(), partnerships: getPartnerships(), settings: getSystemSettings(), languages: getLanguages() });
-
-export const exportDataAsCSV = (): string => {
-  const species = getSpecies();
-  const individuals = getIndividuals();
-  const headers = ['Studbook ID', 'Name', 'Common Name', 'Scientific Name', 'Sex', 'Birth Date', 'Weight (kg)', 'Status'];
-  const rows = individuals.map(ind => {
-    const sp = species.find(s => s.id === ind.speciesId);
-    return [ind.studbookId || '', `"${ind.name}"`, `"${sp?.commonName}"`, `"${sp?.scientificName}"`, ind.sex || '', ind.birthDate || '', ind.weightKg || '0', ind.isDeceased ? 'Deceased' : 'Active'];
-  });
-  return [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-};
-
 export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.enclosures) saveEnclosures(data.enclosures); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };
 
-// Added missing generatePartnerInvite and redeemPartnerInvite functions
+// Fix: Added missing exportFullData function
+export const exportFullData = () => {
+  return {
+    org: getOrg(),
+    projects: getProjects(),
+    users: getUsers(),
+    species: getSpecies(),
+    individuals: getIndividuals(),
+    enclosures: getEnclosures(),
+    breedingEvents: getBreedingEvents(),
+    breedingLoans: getBreedingLoans(),
+    partnerships: getPartnerships(),
+    settings: getSystemSettings(),
+    languages: getLanguages()
+  };
+};
+
+// Fix: Added missing exportDataAsCSV function
+export const exportDataAsCSV = (): string => {
+  const individuals = getIndividuals();
+  const species = getSpecies();
+  let csv = 'Type,Name,Studbook ID,Common Name,Scientific Name,Sex,Birth Date,Weight(kg)\n';
+  individuals.forEach(ind => {
+    const sp = species.find(s => s.id === ind.speciesId);
+    csv += `Individual,"${ind.name}","${ind.studbookId}","${sp?.commonName || ''}","${sp?.scientificName || ''}",${ind.sex},${ind.birthDate || ''},${ind.weightKg}\n`;
+  });
+  return csv;
+};
+
+// Fix: Added missing generatePattern function
+export const generatePattern = (seed: string): string => {
+  const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const color = colors[seed.length % colors.length];
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='${encodeURIComponent(color)}' opacity='0.1'/%3E%3Ccircle cx='50' cy='50' r='20' fill='${encodeURIComponent(color)}' opacity='0.2'/%3E%3C/svg%3E`;
+};
 
 export const generatePartnerInvite = (): string => {
   return `${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 };
 
 export const redeemPartnerInvite = (code: string): { success: boolean; message: string } => {
-  // Mock logic for established partnerships in demo
   return { success: true, message: "Partnership established successfully!" };
 };

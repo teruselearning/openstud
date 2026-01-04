@@ -333,66 +333,20 @@ export const BASE_TRANSLATIONS = {
     yourInviteCode: "Your Invite Code",
     partnerVisibilityPrivate: "Species list private",
 
-    // Email Templates Localized - Styled with clickable components
-    emailVerifySubject: "Verify your OpenStudbook account",
-    emailVerifyBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
-  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
-  </div>
-  <div style="padding: 40px 32px; color: #1e293b;">
-    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Verify your account</h2>
-    <p style="font-size: 16px; line-height: 1.6; color: #475569;">Please use the following verification code for <strong>{{orgName}}</strong>:</p>
-    <div style="margin: 32px 0; padding: 24px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center;">
-      <span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #065f46;">{{code}}</span>
-    </div>
-    <p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>
-  </div>
-  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
-    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
-  </div>
-</div>`,
-    emailInviteSubject: "Invitation to join {{orgName}} on OpenStudbook",
-    emailInviteBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
-  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
-  </div>
-  <div style="padding: 40px 32px; color: #1e293b;">
-    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">You've been invited!</h2>
-    <p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello <strong>{{userName}}</strong>,</p>
-    <p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>{{orgName}}</strong>. Click the button below to accept your invitation and set up your account password:</p>
-    <div style="margin: 32px 0; text-align: center;">
-      <a href="{{inviteUrl}}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">Accept Invitation</a>
-    </div>
-    <p style="font-size: 14px; color: #64748b;">If the button above does not work, copy and paste this link into your browser:<br><br>
-    <a href="{{inviteUrl}}" style="color: #059669; word-break: break-all;">{{inviteUrl}}</a></p>
-  </div>
-  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
-    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
-  </div>
-</div>`,
-    emailNotifySubject: "New Notification from OpenStudbook",
-    emailNotifyBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
-  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
-  </div>
-  <div style="padding: 40px 32px; color: #1e293b;">
-    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">System Notification</h2>
-    <div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border-left: 4px solid #059669; border-radius: 4px;">
-      <p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">{{message}}</p>
-    </div>
-    <div style="margin: 32px 0; text-align: center;">
-      <a href="{{appUrl}}" style="background-color: #1e293b; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">View Dashboard</a>
-    </div>
-  </div>
-  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
-    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
-  </div>
-</div>`
+    // Email Templates Localized - CLEAN INNER CONTENT
+    emailVerifySubject: "Security Code: OpenStudbook",
+    emailVerifyBody: `<p>Please use the following verification code for <strong>{{orgName}}</strong>:</p><div class="code-block">{{code}}</div><p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>`,
+    
+    emailInviteSubject: "You've been invited to join {{orgName}}",
+    emailInviteBody: `<p>Hello <strong>{{userName}}</strong>,</p><p>You have been invited to join the management team at <strong>{{orgName}}</strong>. Use the button below to accept your invitation and set up your account password:</p><div class="button-container"><a href="{{inviteUrl}}" class="button">Accept Invitation</a></div><p style="font-size: 14px; color: #64748b;">If the button above does not work, copy and paste this link into your browser:<br><a href="{{inviteUrl}}" style="color: #059669; word-break: break-all;">{{inviteUrl}}</a></p>`,
+    
+    emailNotifySubject: "System Notification from OpenStudbook",
+    emailNotifyBody: `<p>A new event has occurred at <strong>{{orgName}}</strong> that requires your attention:</p><div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border-left: 4px solid #059669; border-radius: 4px;"><p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">{{message}}</p></div><div class="button-container"><a href="{{appUrl}}" class="button" style="background-color: #1e293b;">Open Dashboard</a></div>`
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
 
-// Initial Seeds - These match the requested defaults
+// Initial Seeds - Optimized
 export const SEED_LANGUAGES: LanguageConfig[] = [
   {
     code: "en-GB",
@@ -428,90 +382,6 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
     code: "en-US",
     name: "English (US)",
     isDefault: false,
-    translations: { ...BASE_TRANSLATIONS } // Uses default US English base
-  },
-  {
-    code: "pt",
-    name: "Português",
-    isDefault: false,
-    translations: {
-      ...BASE_TRANSLATIONS,
-      dashboard: "Painel",
-      networkMap: "Rede",
-      species: "Espécies",
-      individuals: "Indivíduos",
-      breeding: "Reprodução",
-      usersRoles: "Usuários e Funções",
-      organization: "Organização",
-      signOut: "Sair",
-      landingTitle: "Gestão de Criação em Cativeiro de Código Aberto",
-      landingSubtitle: "OpenStudbook é uma plataforma de código aberto para zoológicos, aquários e jardins botânicos gerenciarem populações de espécies e rastrearem genética.",
-      getStarted: "Começar",
-      createOrg: "Criar Organização",
-      save: "Salvar",
-      cancel: "Cancelar",
-      delete: "Excluir",
-      edit: "Editar",
-      add: "Adicionar",
-      overview: "Visão Geral",
-      totalSpecies: "Total de Espécies",
-      totalIndividuals: "Total de Indivíduos"
-    }
-  },
-  {
-    code: "fr",
-    name: "Français",
-    isDefault: false,
-    translations: {
-      ...BASE_TRANSLATIONS,
-      dashboard: "Tableau de Bord",
-      networkMap: "Réseau",
-      species: "Espèces",
-      individuals: "Individus",
-      breeding: "Reproduction",
-      usersRoles: "Utilisateurs et Rôles",
-      organization: "Organisation",
-      signOut: "Se Déconnecter",
-      landingTitle: "Gestion de l'Élevage en Captivité en Open Source",
-      landingSubtitle: "OpenStudbook est une plateforme open-source pour les zoos, aquariums et jardins botaniques pour gérer les populations d'espèces et suivre la génétique.",
-      getStarted: "Commencer",
-      createOrg: "Créer une Organisation",
-      save: "Enregistrer",
-      cancel: "Annuler",
-      delete: "Supprimer",
-      edit: "Modifier",
-      add: "Ajouter",
-      overview: "Aperçu",
-      totalSpecies: "Total des Espèces",
-      totalIndividuals: "Total des Individus"
-    }
-  },
-  {
-    code: "id",
-    name: "Bahasa Indonesia",
-    isDefault: false,
-    translations: {
-      ...BASE_TRANSLATIONS,
-      dashboard: "Dasbor",
-      networkMap: "Jaringan",
-      species: "Spesies",
-      individuals: "Indivíduo",
-      breeding: "Pembiakan",
-      usersRoles: "Pengguna & Peran",
-      organization: "Organisasi",
-      signOut: "Keluar",
-      landingTitle: "Manajemen Pembiakan Penangkaran Sumber Terbuka",
-      landingSubtitle: "OpenStudbook adalah platform sumber terbuka bagi kebun binatang, akuarium, dan kebun raya untuk mengelola populasi spesies dan melacak genetika.",
-      getStarted: "Mulai",
-      createOrg: "Buat Organisasi",
-      save: "Simpan",
-      cancel: "Batal",
-      delete: "Hapus",
-      edit: "Ubah",
-      add: "Tambah",
-      overview: "Ringkasan",
-      totalSpecies: "Total Spesies",
-      totalIndividu: "Total Individu"
-    }
+    translations: { ...BASE_TRANSLATIONS }
   }
 ];

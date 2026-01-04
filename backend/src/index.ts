@@ -52,23 +52,43 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
-// Responsive HTML Wrapper for system emails
+// Optimized Responsive HTML Wrapper for system emails
 const wrapEmail = (title: string, content: string) => `
-<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
-  <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
-    <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
-  </div>
-  <div style="padding: 40px 32px; color: #1e293b;">
-    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">${title}</h2>
-    <div style="font-size: 16px; line-height: 1.6; color: #475569;">
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
+    .container { max-width: 600px; margin: 20px auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .header { background-color: #059669; padding: 32px 24px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em; text-decoration: none; }
+    .content { padding: 40px 32px; color: #1e293b; line-height: 1.6; }
+    .content h2 { margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+    .footer { background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9; }
+    .footer p { margin: 0; font-size: 12px; color: #94a3b8; }
+    .button-container { text-align: center; margin: 30px 0; }
+    .button { background-color: #059669; color: #ffffff !important; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; }
+    .code-block { margin: 24px 0; padding: 20px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center; font-family: monospace; font-size: 32px; font-weight: 800; color: #065f46; letter-spacing: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>OpenStudbook</h1>
+    </div>
+    <div class="content">
+      <h2>${title}</h2>
       ${content}
     </div>
+    <div class="footer">
+      <p>&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
+      <p style="margin-top: 4px; font-size: 11px; color: #cbd5e1;">Captive Population Management System</p>
+    </div>
   </div>
-  <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
-    <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
-    <p style="margin: 4px 0 0; font-size: 11px; color: #cbd5e1;">Captive Population Management System</p>
-  </div>
-</div>
+</body>
+</html>
 `;
 
 const sendMail = async (to: string, subject: string, html: string, isRaw: boolean = false) => {
@@ -87,6 +107,8 @@ const sendMail = async (to: string, subject: string, html: string, isRaw: boolea
           tls: { rejectUnauthorized: false }
         });
         
+        // Only wrap if not explicitly raw.
+        // We use inner templates in the DB and wrap them here for consistency.
         const finalHtml = isRaw ? html : wrapEmail(subject, html);
         
         await transporter.sendMail({ 
@@ -144,7 +166,7 @@ const initDatabase = async () => {
             }
         };
 
-        // Migrations for Users
+        // Migrations
         await ensureColumn('users', 'name', "VARCHAR(255) NOT NULL DEFAULT ''");
         await ensureColumn('users', 'email', "VARCHAR(255) NOT NULL UNIQUE");
         await ensureColumn('users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Keeper'");
@@ -155,8 +177,6 @@ const initDatabase = async () => {
         await ensureColumn('users', 'reset_code', "VARCHAR(10)");
         await ensureColumn('users', 'reset_expires', "BIGINT");
         await ensureColumn('users', 'preferred_language', "VARCHAR(10) DEFAULT 'en-GB'");
-
-        // Migrations for Organizations
         await ensureColumn('organizations', 'location', "VARCHAR(255)");
         await ensureColumn('organizations', 'latitude', "DOUBLE");
         await ensureColumn('organizations', 'longitude', "DOUBLE");
@@ -171,14 +191,9 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'breeding_request_contact_id', "VARCHAR(255)");
         await ensureColumn('organizations', 'show_native_status', "TINYINT(1) DEFAULT 1");
         await ensureColumn('organizations', 'dashboard_block', "JSON");
-        await ensureColumn('organizations', 'ai_usage_limit', "INT DEFAULT 100");
-        await ensureColumn('organizations', 'ai_usage_count', "INT DEFAULT 0");
-        await ensureColumn('organizations', 'ai_usage_last_reset', "VARCHAR(255)");
         await ensureColumn('organizations', 'enable_mfa', "TINYINT(1) DEFAULT 0");
         await ensureColumn('organizations', 'enable_enclosures', "TINYINT(1) DEFAULT 0");
         await ensureColumn('organizations', 'is_deleted', "TINYINT(1) DEFAULT 0");
-
-        // Migrations for Enclosures
         await ensureColumn('enclosures', 'project_id', "VARCHAR(255)");
 
         // Seed Demo Data if empty
@@ -239,7 +254,7 @@ app.post('/api/login', async (req: any, res: any) => {
 });
 
 app.post('/api/forgot-password', async (req: any, res: any) => {
-    const { email, language } = req.body;
+    const { email } = req.body;
     const db = getDb();
     try {
         const [rows]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [email]);
@@ -249,7 +264,7 @@ app.post('/api/forgot-password', async (req: any, res: any) => {
         const expires = Date.now() + 3600000; // 1 hour
         await db.execute(`UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?`, [code, expires, email]);
 
-        await sendMail(email, "Password Reset Code", `<p>Your password reset code is: <b>${code}</b></p><p>This code expires in 1 hour.</p>`);
+        await sendMail(email, "Password Reset Code", `<p>You have requested a password reset. Please enter the following code into the application:</p><div class="code-block">${code}</div><p style="color: #64748b; font-size: 14px;">This code will expire in 1 hour.</p>`);
         res.json({ success: true, message: "Recovery code sent to your email." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -305,8 +320,10 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     const { to, subject, html, templateKey, placeholders, language } = req.body;
-    let finalHtml = html; let finalSubject = subject; let useRawLayout = false;
+    let finalHtml = html; let finalSubject = subject;
     const db = getDb();
+    
+    // 1. Try to pull custom translation for the template
     if (language && templateKey) {
         const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ? AND is_deleted = 0`, [language]);
         const translations = langRows[0]?.translations;
@@ -314,17 +331,21 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
             const subjKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Subject`;
             const bodyKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Body`;
             if (translations[subjKey]) finalSubject = translations[subjKey];
-            if (translations[bodyKey]) { finalHtml = translations[bodyKey]; useRawLayout = true; }
+            if (translations[bodyKey]) finalHtml = translations[bodyKey];
         }
     }
+
+    // 2. Perform placeholder replacements
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
-          const placeholder = `{{${k}}}`;
-          finalHtml = finalHtml.split(placeholder).join(String(v));
-          finalSubject = finalSubject.split(placeholder).join(String(v));
+          const placeholder = new RegExp(`{{${k}}}`, 'g');
+          finalHtml = finalHtml.replace(placeholder, String(v));
+          finalSubject = finalSubject.replace(placeholder, String(v));
        });
     }
-    const result = await sendMail(to, finalSubject, finalHtml, useRawLayout);
+
+    // 3. Dispatch email
+    const result = await sendMail(to, finalSubject, finalHtml, false);
     if (result.success) res.json({ success: true });
     else res.status(500).json({ error: result.error });
 });

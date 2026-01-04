@@ -58,7 +58,19 @@ const fromDbOrg = (o: any): Organization => ({
 });
 
 const fromDbProject = (p: any): Project => ({ id: p.id, name: p.name, description: p.description, orgId: p.org_id });
-const fromDbUser = (u: any): User => ({ id: u.id, org_id: u.org_id, name: u.name, email: u.email, role: u.role, status: u.status, avatarUrl: u.avatar_url, allowedProjectIds: safeParse(u.allowed_project_ids, []), preferredLanguage: u.preferred_language });
+
+// Fix: Corrected snake_case mapping to camelCase interface properties for fromDbUser
+const fromDbUser = (u: any): User => ({ 
+  id: u.id, 
+  orgId: u.org_id, 
+  name: u.name, 
+  email: u.email, 
+  role: u.role, 
+  status: u.status, 
+  avatarUrl: u.avatar_url, 
+  allowedProjectIds: safeParse(u.allowed_project_ids, []), 
+  preferredLanguage: u.preferred_language 
+});
 
 const fromDbSpecies = (s: any): Species => ({ 
   id: s.id, projectId: s.project_id, commonName: s.common_name, scientificName: s.scientific_name, type: s.type, 
@@ -69,7 +81,7 @@ const fromDbSpecies = (s: any): Species => ({
   imageUrl: s.image_url, nativeStatusCountry: s.native_status_country, nativeStatusLocal: s.native_status_local 
 });
 
-// Fixed: Correctly map snake_case DB fields to camelCase Individual interface properties
+// Fix: Corrected snake_case mapping to camelCase interface properties for fromDbInd
 const fromDbInd = (i: any): Individual => ({ 
   id: i.id, 
   projectId: i.project_id, 
@@ -105,7 +117,6 @@ const fromDbEnclosure = (e: any): Enclosure => ({
   boundary: safeParse(e.boundary, []), individualIds: safeParse(e.individual_ids, []) 
 });
 
-// Fixed: Corrected successful_births mapping to successfulBirths property (line 108)
 const fromDbEvent = (e: any): BreedingEvent => ({ id: e.id, speciesId: e.species_id, sireId: e.sire_id || '', damId: e.dam_id || '', date: e.date, offspringCount: e.offspring_count, successfulBirths: e.successful_births, losses: e.losses, notes: e.notes, offspringIds: safeParse(e.offspring_ids, []) });
 
 const fromDbLoan = (l: any): BreedingLoan => ({ 
@@ -140,20 +151,47 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
 
 export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-// Fixed: Using correct preferredLanguage property from User interface
+
 export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [], preferred_language: u.preferredLanguage || 'en-GB' });
 
-// Fixed: Using correct commonName and scientificName properties from Species interface
 export const mapSpeciesToDb = (s: Species) => ({ 
   id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, 
   plant_classification: s.plantClassification || null, 
   conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null 
 });
 
-// Fixed: Using correct dnaSequence property from Individual interface
-export const mapIndToDb = (i: Individual) => ({ id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbook_id, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dnaSequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.death_date || null, loan_status: i.loanStatus || null, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transfer_date || null, transfer_note: i.transfer_note || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] });
-// Fixed: Using correct individualIds property from Enclosure interface
-export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.orgId, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individualIds || [] });
+// Fix: Corrected camelCase mapping to snake_case DB fields for Individual in mapIndToDb
+export const mapIndToDb = (i: Individual) => ({ 
+  id: i.id, 
+  project_id: i.projectId, 
+  species_id: i.speciesId, 
+  enclosure_id: i.enclosureId || null, 
+  studbook_id: i.studbookId, 
+  name: i.name, 
+  sex: i.sex, 
+  birth_date: i.birthDate || null, 
+  weight_kg: sanitizeNum(i.weightKg), 
+  sire_id: i.sireId || null, 
+  dam_id: i.damId || null, 
+  image_url: i.imageUrl || null, 
+  dna_sequence: i.dnaSequence || null, 
+  notes: i.notes || null, 
+  source: i.source || null, 
+  source_details: i.sourceDetails || null, 
+  latitude: i.latitude ?? null, 
+  longitude: i.longitude ?? null, 
+  is_deceased: i.isDeceased ?? false, 
+  death_date: i.deathDate || null, 
+  loan_status: i.loanStatus || null, 
+  transferred_to_org_id: i.transferredToOrgId || null, 
+  transfer_date: i.transferDate || null, 
+  transfer_note: i.transferNote || null, 
+  weight_history: i.weightHistory || [], 
+  growth_history: i.growthHistory || [], 
+  health_history: i.healthHistory || [] 
+});
+
+export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.orgId, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individual_ids || [] });
 
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
 export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
@@ -167,7 +205,6 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-// Fixed: Corrected offspring_count and successful_births mapping from camelCase BreedingEvent properties (line 169)
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));

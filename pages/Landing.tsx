@@ -275,7 +275,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     { id: 'f3', title: t('globalNetwork'), description: "Connect with partners worldwide.", icon: 'Globe2' }
   ];
 
-  // Logic fix for landing title/subtitle prioritizing saved settings over default translation
   const displayTitle = (landingConfig?.heroTitle && landingConfig.heroTitle.trim() !== "") 
       ? landingConfig.heroTitle 
       : t('landingTitle');
@@ -319,7 +318,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           </div>
         )}
         
-        {/* ... remaining view modes omitted for brevity, same as original ... */}
         {viewMode === 'login' && (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
