@@ -72,9 +72,9 @@ const fromDbSpecies = (s: any): Species => ({
 const fromDbInd = (i: any): Individual => ({ 
   id: i.id, projectId: i.project_id, speciesId: i.species_id, enclosureId: i.enclosure_id, 
   studbookId: i.studbook_id, 
-  name: i.name, sex: i.sex, birthDate: i.birth_date, weightKg: i.weight_kg, sireId: i.sire_id, damId: i.dam_id, 
-  imageUrl: i.image_url, dnaSequence: i.dna_sequence, notes: i.notes, source: i.source, sourceDetails: i.source_details, 
-  latitude: i.latitude, longitude: i.longitude, isDeceased: !!i.is_deceased, deathDate: i.death_date, 
+  name: i.name, sex: i.sex, birth_date: i.birth_date, weightKg: i.weight_kg, sireId: i.sire_id, damId: i.dam_id, 
+  imageUrl: i.image_url, dnaSequence: i.dna_sequence, notes: i.notes, source: i.source, source_details: i.source_details, 
+  latitude: i.latitude, longitude: i.longitude, isDeceased: !!i.is_deceased, death_date: i.death_date, 
   loanStatus: i.loan_status, transferredToOrgId: i.transferred_to_org_id, transferDate: i.transfer_date, 
   transferNote: i.transfer_note, weightHistory: safeParse(i.weight_history, []), growthHistory: safeParse(i.growth_history, []), 
   healthHistory: safeParse(i.health_history, []) 
@@ -119,9 +119,10 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
     return isNaN(n) ? fallback : n;
 };
 
-export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboard_block, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
+// Fixed: Map frontend camelCase properties (dashboardBlock, preferredLanguage, transferredToOrgId, orgId) to snake_case DB fields
+export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [], preferred_language: u.preferred_language || 'en-GB' });
+export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [], preferred_language: u.preferredLanguage || 'en-GB' });
 
 // Fixed: Correctly access plantClassification from Species object
 export const mapSpeciesToDb = (s: Species) => ({ 
@@ -130,8 +131,8 @@ export const mapSpeciesToDb = (s: Species) => ({
   conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null 
 });
 
-export const mapIndToDb = (i: Individual) => ({ id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dnaSequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, loan_status: i.loanStatus || null, transferred_to_org_id: i.transferred_to_org_id, transfer_date: i.transferDate || null, transfer_note: i.transferNote || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] });
-export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.org_id, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individualIds || [] });
+export const mapIndToDb = (i: Individual) => ({ id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dnaSequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, loan_status: i.loanStatus || null, transferred_to_org_id: i.transferredToOrgId, transfer_date: i.transferDate || null, transfer_note: i.transferNote || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] });
+export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.orgId, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individualIds || [] });
 
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
 export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
@@ -145,12 +146,12 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-// Fixed: Use offspringCount instead of offspring_count from BreedingEvent object
+// Fixed: Use camelCase offspringCount property during DB mapping
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
-// Fixed: Use camelCase properties from Partnership object (orgId1, orgId2, establishedDate)
+// Fixed: Use camelCase properties (orgId1, orgId2, establishedDate) during DB mapping
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
 
 export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });

@@ -118,7 +118,7 @@ const initDatabase = async () => {
 
     const db = getDb();
     try {
-        // Tables init
+        // Core Table creation
         await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 0, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(255), enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE, role VARCHAR(50) NOT NULL, status VARCHAR(50) NOT NULL, password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, reset_code VARCHAR(10), reset_expires BIGINT, preferred_language VARCHAR(10) DEFAULT 'en-GB')`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
@@ -131,6 +131,29 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS app_config (id VARCHAR(255) PRIMARY KEY, settings JSON)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
+
+        // Migration Helper: Ensure specific columns exist for older installations
+        const ensureColumn = async (table: string, column: string, definition: string) => {
+            try {
+                const [columns]: any = await db.execute(`SHOW COLUMNS FROM ${table} LIKE ?`, [column]);
+                if (columns.length === 0) {
+                    console.log(`Migration: Adding column ${column} to table ${table}...`);
+                    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+                }
+            } catch (err: any) {
+                console.warn(`Migration check failed for ${table}.${column}:`, err.message);
+            }
+        };
+
+        // Run migrations
+        await ensureColumn('users', 'preferred_language', "VARCHAR(10) DEFAULT 'en-GB'");
+        await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
+        await ensureColumn('organizations', 'enable_enclosures', 'TINYINT(1) DEFAULT 0');
+        await ensureColumn('organizations', 'is_deleted', 'TINYINT(1) DEFAULT 0');
+        await ensureColumn('individuals', 'transferred_to_org_id', 'VARCHAR(255)');
+        await ensureColumn('individuals', 'transfer_date', 'VARCHAR(50)');
+        await ensureColumn('individuals', 'transfer_note', 'LONGTEXT');
+        
     } catch (e: any) { 
         console.error("Database Init Failed:", e);
     }
@@ -182,8 +205,6 @@ app.post('/api/login', async (req: any, res: any) => {
         const user = rows[0];
         if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-        // In production, compare with bcrypt. For demo, we check if password field exists
-        // This is simplified for the migration flow
         if (user.password && user.password !== password) {
             const isValid = await bcrypt.compare(password, user.password).catch(() => false);
             if (!isValid && user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
@@ -283,7 +304,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
 
     const db = getDb();
     
-    // 1. Fetch language-specific translations if a language is specified
     if (language && templateKey) {
         const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ? AND is_deleted = 0`, [language]);
         const translations = langRows[0]?.translations;
@@ -299,7 +319,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
         }
     }
 
-    // 2. Fallback to settings templates if provided AND enabled
     if (!finalHtml || finalHtml === html) {
        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
        let settings = configRows[0]?.settings;
@@ -315,7 +334,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
        }
     }
 
-    // 3. Placeholder replacement
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
           const placeholder = `{{${k}}}`;
@@ -332,7 +350,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
 // Serve Frontend
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
-   // Don't serve HTML for API or REST calls that weren't caught
    if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) {
        return res.status(404).json({ error: "Endpoint not found" });
    }
