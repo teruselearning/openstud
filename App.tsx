@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -64,7 +65,7 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Explicitly use React.Component to ensure props and state are correctly typed in class components
+// Fix: Explicitly extend React.Component to resolve 'props' visibility issue in TS
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
@@ -127,7 +128,6 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
-  // Global Access = Admin OR no specific project IDs assigned
   const hasGlobalAccess = isAdmin || !user.allowedProjectIds || user.allowedProjectIds.length === 0;
 
   return (
@@ -222,10 +222,6 @@ const App: React.FC = () => {
   const [showEnclosures, setShowEnclosures] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
-  const [pendingEmail, setPendingEmail] = useState('');
-  const [verifyCode, setVerifyCode] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
 
@@ -375,7 +371,7 @@ const App: React.FC = () => {
   const openProfileModal = () => {
      if (!user) return;
      setProfileForm({ name: user.name, email: user.email, avatarUrl: user.avatarUrl || '', newPassword: '', confirmPassword: '' });
-     setPendingEmail(''); setIsVerifyingEmail(false); setVerifyCode(''); setShowProfileModal(true);
+     setShowProfileModal(true);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -390,7 +386,12 @@ const App: React.FC = () => {
   };
 
   if (isLoading) return null;
-  if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
+  
+  if (!user) return (
+    <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
+       <Landing onLogin={handleLogin} initialView={initialLandingView} />
+    </LanguageContext.Provider>
+  );
 
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;

@@ -174,7 +174,34 @@ export const BASE_TRANSLATIONS = {
     native: "Native",
     introduced: "Introduced",
     invasive: "Invasive",
+    unassigned: "Unassigned",
+    assignedToOther: "Assigned to another area",
     
+    // Breeding
+    breedingEvents: "Breeding Events",
+    breedingLoans: "Breeding Loans",
+    recordBreedingEvent: "Record Breeding Event",
+    newBreedingLoan: "New Breeding Loan",
+    breedingSubtitle: "Manage lineage, offspring, and inter-organizational population loans.",
+    totalOffspring: "Total Offspring",
+    successfulBirths: "Successful Births",
+    losses: "Losses",
+    linkNewOffspring: "Link New Offspring",
+    involvedIndividuals: "Involved Individuals",
+    selectSpecies: "Select Species...",
+    selectSire: "Select Sire...",
+    selectDam: "Select Dam...",
+    eventDate: "Event Date",
+    saveEvent: "Save Event",
+    partnerOrg: "Partner Organization",
+    providerDesc: "We provide the animals",
+    recipientDesc: "We receive the animals",
+    batchOffspring: "Batch Offspring Entry",
+    batchOffspringDesc: "offspring were recorded. Use the table below to register them or skip to do it later.",
+    skipClose: "Skip & Close",
+    optional: "Optional",
+    noOffspringLinked: "No offspring linked to this event yet.",
+
     // Filters & Status
     allSpeciesFilter: "All Species",
     statusCurrent: "Current",
@@ -197,16 +224,6 @@ export const BASE_TRANSLATIONS = {
     startFirstLoan: "Propose a breeding loan",
     noLocationDataMessage: "Add location data to individuals for them to appear in map view",
     showEnclosuresToggle: "Show Enclosures",
-
-    // Section Titles
-    classificationTitle: "Classification",
-    identityStatusTitle: "Identity & Status",
-    geoLocationTitle: "Geo-Location",
-    parentageTitle: "Parentage / Lineage",
-    geneticDataTitle: "Genetic Data",
-    notesMediaTitle: "Notes & Media",
-    biologicalMetrics: "Biological Metrics",
-    coreTaxonomy: "Core Taxonomy",
 
     // Super Admin & Settings
     saDashboard: "Super Admin Dashboard",
@@ -270,6 +287,7 @@ export const BASE_TRANSLATIONS = {
     apiKey: "API Key",
     enableMfa: "Enable Two-Factor Auth (Global)",
     enableMfaDesc: "Force MFA for all users across all organizations.",
+    enableRegistration: "Public Registration",
     manageOrgs: "Manage Organisations",
     network: "Network",
     security: "Security",
@@ -284,6 +302,13 @@ export const BASE_TRANSLATIONS = {
     createOrgBtn: "Create Organisation",
     loginAs: "Login As",
     hostTag: "Host",
+    smtpTestSuccess: "SMTP test sent successfully!",
+
+    // Templates Labels
+    registration: "User Registration",
+    mfa: "Two-Factor Auth",
+    invite: "Team Invitation",
+    notification: "System Alerts",
 
     // Records & History
     geneticsTitle: "Genetics",
@@ -298,11 +323,7 @@ export const BASE_TRANSLATIONS = {
     viewFullFile: "View Full File",
     logWeight: "Log Weight",
     addRecord: "Add Record",
-    batchOffspring: "Quick Register Offspring",
     offspring: "Offspring",
-    successfulBirths: "Successful Births",
-    losses: "Losses",
-    totalOffspring: "Total Offspring",
 
     // Network Map
     globalMap: "Global Map",
@@ -312,92 +333,19 @@ export const BASE_TRANSLATIONS = {
     yourInviteCode: "Your Invite Code",
     partnerVisibilityPrivate: "Species list private",
 
-    // New additions for full coverage
-    speciesDatabase: "Species Database",
-    speciesSubtitle: "Biological profiles and population management.",
-    representativeImage: "Representative Image",
-    noImageProvided: "No image provided.",
-    upload: "Upload",
-    aiGenerate: "AI Generate",
-    commonNamePlaceholder: "e.g. Sumatran Tiger",
-    scientificNamePlaceholder: "e.g. Panthera tigris sumatrae",
-    startMonth: "Start Month",
-    endMonth: "End Month",
-    localRegionStatus: "Local Region Status",
-    unknownStatus: "Unknown Status",
-    maturity: "Maturity",
-    lifespan: "Lifespan",
-    deleteSpeciesConfirm: "Delete Species?",
-    deleteSpeciesDesc: "This will permanently remove the species and all associated breeding history. This action cannot be undone.",
-    yesDelete: "Yes, Delete",
-    indivSubtitleAnimal: "Track animal populations and lineage.",
-    indivSubtitlePlant: "Track botanical collection and lineage.",
-    searchSpeciesPlaceholder: "Type to search species...",
-    selectFromList: "Select from list",
-    createSpeciesAuto: "+ Create species automatically",
-    autoCreateSpeciesHint: "Enter common name (e.g. Red Oak)",
-    assignCoordsDesc: "Assign specific coordinates for tracking the individual in the project's Plant Map.",
-    manualEntryExternalId: "Manual Entry (External ID)",
-    selectFromCollection: "Select from collection",
-    dnaDataFileLabel: "DNA Data File (FASTA, FASTQ, VCF, BAM, GBK, etc.)",
-    clickToUploadDna: "Click to upload DNA sequence",
-    secureGenomicStorage: "Secure Genomic Storage",
-    captureUploadPhoto: "Capture / Upload Photo",
-    changePhoto: "Change Photo",
-    deleteRecord: "Delete Record?",
-    deleteRecordDesc: "This will permanently remove this individual and all their historical logs. This action cannot be undone.",
-    breedingSubtitle: "Manage pairings, record births, and track lineage.",
-    recordBreedingEvent: "Record Breeding Event",
-    newBreedingLoan: "New Breeding Loan",
-    includePartnerOrgs: "Include Partner Organisations",
-    selectSpecies: "Select Species",
-    selectSire: "Select Sire",
-    selectDam: "Select Dam",
-    eventDate: "Event Date",
-    saveEvent: "Save Event",
-    batchOffspringDesc: "births recorded for. Fill details below to create records instantly.",
-    skipClose: "Skip / Close",
-    noOffspringLinked: "No offspring linked yet.",
-    partnerOrg: "Partner Organization",
-    providerDesc: "I am sending animals",
-    recipientDesc: "I am receiving animals",
-    involvedIndividuals: "Involved Individuals",
-    collectionScope: "Collection Scope",
-    founded: "Founded",
-    speciesSummary: "Species Summary",
-    managedSpecies: "Managed Species",
-    noPopDataFound: "No active population data found",
-    smtpTestSuccess: "SMTP Connection Test Successful!",
-    emailSubject: "Email Subject",
-    teamMembers: "Team Members",
-    teamSubtitle: "Manage staff access and roles.",
-    inviteMember: "Invite Member",
-    allProjects: "All Projects",
-    selectedProjects: "Selected Projects",
-    
-    // Bulk Invite
-    bulkInvite: "Bulk Invite (CSV)",
-    bulkInviteDesc: "Invite multiple members at once using a CSV file.",
-    csvFormatTitle: "CSV Format Instructions",
-    csvFormatDesc: "Your CSV should have columns for: name, email, role. Optional: projects (comma-separated project names or IDs). Roles must match: Admin, Keeper, Researcher, or Veterinarian.",
-    uploadCsv: "Upload CSV File",
-    processingBulk: "Processing bulk invitations...",
-    bulkSuccess: "Bulk invitations sent successfully!",
-    bulkError: "Some invitations could not be sent. Please check the CSV format.",
-
-    // Email Templates Localized - Styled
+    // Email Templates Localized - Styled with clickable components
     emailVerifySubject: "Verify your OpenStudbook account",
     emailVerifyBody: `<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
   <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
     <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
   </div>
   <div style="padding: 40px 32px; color: #1e293b;">
-    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Welcome! Verify your account</h2>
-    <p style="font-size: 16px; line-height: 1.6; color: #475569;">To complete your registration for <strong>{{orgName}}</strong>, please use the following verification code:</p>
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">Verify your account</h2>
+    <p style="font-size: 16px; line-height: 1.6; color: #475569;">Please use the following verification code for <strong>{{orgName}}</strong>:</p>
     <div style="margin: 32px 0; padding: 24px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center;">
       <span style="font-family: 'Courier New', Courier, monospace; font-size: 42px; font-weight: 800; letter-spacing: 8px; color: #065f46;">{{code}}</span>
     </div>
-    <p style="font-size: 14px; color: #64748b;">This code will expire in 30 minutes. If you did not request this, please ignore this email.</p>
+    <p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>
   </div>
   <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
     <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
@@ -411,11 +359,12 @@ export const BASE_TRANSLATIONS = {
   <div style="padding: 40px 32px; color: #1e293b;">
     <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">You've been invited!</h2>
     <p style="font-size: 16px; line-height: 1.6; color: #475569;">Hello <strong>{{userName}}</strong>,</p>
-    <p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>{{orgName}}</strong>.</p>
+    <p style="font-size: 16px; line-height: 1.6; color: #475569;">You have been invited to join the management team at <strong>{{orgName}}</strong>. Click the button below to accept your invitation and set up your account password:</p>
     <div style="margin: 32px 0; text-align: center;">
       <a href="{{inviteUrl}}" style="background-color: #059669; color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">Accept Invitation</a>
     </div>
-    <p style="font-size: 14px; color: #64748b;">If the button doesn't work, copy and paste this link: <br> <span style="color: #059669; text-decoration: underline;">{{inviteUrl}}</span></p>
+    <p style="font-size: 14px; color: #64748b;">If the button above does not work, copy and paste this link into your browser:<br><br>
+    <a href="{{inviteUrl}}" style="color: #059669; word-break: break-all;">{{inviteUrl}}</a></p>
   </div>
   <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
     <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; {{year}} OpenStudbook Project. All rights reserved.</p>
@@ -427,12 +376,12 @@ export const BASE_TRANSLATIONS = {
     <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">OpenStudbook</h1>
   </div>
   <div style="padding: 40px 32px; color: #1e293b;">
-    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">New System Activity</h2>
+    <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700;">System Notification</h2>
     <div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border-left: 4px solid #059669; border-radius: 4px;">
       <p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">{{message}}</p>
     </div>
     <div style="margin: 32px 0; text-align: center;">
-      <a href="{{appUrl}}" style="background-color: #1e293b; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">View in Dashboard</a>
+      <a href="{{appUrl}}" style="background-color: #1e293b; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">View Dashboard</a>
     </div>
   </div>
   <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
@@ -523,7 +472,7 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       usersRoles: "Utilisateurs et Rôles",
       organization: "Organisation",
       signOut: "Se Déconnecter",
-      landingTitle: "L'Avenir de la Gestion de l'Élevage en Captivité",
+      landingTitle: "L'Avenir de la Gestion de l'Élevage en Captivite",
       landingSubtitle: "OpenStudbook est une plateforme open-source pour les zoos, aquariums et jardins botaniques pour gérer les populations d'espèces et collaborer mondialement.",
       getStarted: "Commencer",
       createOrg: "Créer une Organisation",

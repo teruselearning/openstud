@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useContext } from 'react';
-import { getUsers, getProjects, inviteUser, deleteUser, getSession, saveUsers } from '../services/storage';
-import { User, UserRole, UserStatus, Project } from '../types';
-import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock, ShieldAlert, Upload, FileSpreadsheet, Download } from 'lucide-react';
+import { getUsers, getProjects, inviteUser, deleteUser, getSession, saveUsers, getLanguages } from '../services/storage';
+import { User, UserRole, UserStatus, Project, LanguageConfig } from '../types';
+import { Plus, Trash2, Shield, User as UserIcon, Mail, CheckCircle2, Clock, Pencil, Briefcase, Loader2, X, AlertTriangle, Send, Info, Eye, Lock, ShieldAlert, Upload, FileSpreadsheet, Download, Globe } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 const ROLE_KEY = [
@@ -16,6 +17,7 @@ const UserManager: React.FC = () => {
   const { t } = useContext(LanguageContext);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [availableLanguages, setAvailableLanguages] = useState<LanguageConfig[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -29,7 +31,8 @@ const UserManager: React.FC = () => {
     name: '',
     email: '',
     role: UserRole.KEEPER,
-    allowedProjectIds: []
+    allowedProjectIds: [],
+    preferredLanguage: ''
   });
 
   const [projectAccessType, setProjectAccessType] = useState<'global' | 'selected'>('global');
@@ -37,7 +40,12 @@ const UserManager: React.FC = () => {
   useEffect(() => {
     setUsers(getUsers());
     setProjects(getProjects());
+    setAvailableLanguages(getLanguages());
     setCurrentUser(getSession());
+    
+    // Default to system default language
+    const defaultLang = getLanguages().find(l => l.isDefault)?.code || 'en-GB';
+    setFormData(prev => ({ ...prev, preferredLanguage: defaultLang }));
   }, []);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -47,11 +55,23 @@ const UserManager: React.FC = () => {
     setIsSubmitting(true);
     try {
       const allowedProjects = projectAccessType === 'global' ? [] : formData.allowedProjectIds || [];
-      await inviteUser(formData.name, formData.email, formData.role as UserRole, allowedProjects);
+      await inviteUser(
+          formData.name, 
+          formData.email, 
+          formData.role as UserRole, 
+          allowedProjects, 
+          formData.preferredLanguage
+      );
       
       setToast({ message: "Invitation sent successfully!", type: 'success' });
       setShowForm(false);
-      setFormData({ name: '', email: '', role: UserRole.KEEPER, allowedProjectIds: [] });
+      setFormData({ 
+          name: '', 
+          email: '', 
+          role: UserRole.KEEPER, 
+          allowedProjectIds: [], 
+          preferredLanguage: availableLanguages.find(l => l.isDefault)?.code || 'en-GB' 
+      });
       setUsers(getUsers()); 
     } catch (err: any) {
       setToast({ message: err.message || "Failed to send invitation.", type: 'error' });
@@ -73,6 +93,8 @@ const UserManager: React.FC = () => {
         const startIndex = (lines[0].toLowerCase().includes('email') || lines[0].toLowerCase().includes('name')) ? 1 : 0;
         
         let successCount = 0;
+        const defaultLang = availableLanguages.find(l => l.isDefault)?.code || 'en-GB';
+
         for (let i = startIndex; i < lines.length; i++) {
           const [name, email, roleStr, projectStr] = lines[i].split(',').map(s => s.trim());
           if (!email || !name) continue;
@@ -94,7 +116,7 @@ const UserManager: React.FC = () => {
           }
 
           try {
-             await inviteUser(name, email, role, allowedPids);
+             await inviteUser(name, email, role, allowedPids, defaultLang);
              successCount++;
           } catch (err) { console.error(`Failed to invite ${email}`, err); }
         }
@@ -266,9 +288,21 @@ const UserManager: React.FC = () => {
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
             </div>
             <form onSubmit={handleInvite} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700 mb-1 block">Full Name</label>
-                <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder="John Doe" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">Full Name</label>
+                  <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder="John Doe" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                </div>
+                <div>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1.5"><Globe size={14}/> Preferred Language</label>
+                    <select 
+                        className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
+                        value={formData.preferredLanguage} 
+                        onChange={e => setFormData({ ...formData, preferredLanguage: e.target.value })}
+                    >
+                        {availableLanguages.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+                    </select>
+                </div>
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 mb-1 block">Email Address</label>
@@ -341,7 +375,7 @@ const UserManager: React.FC = () => {
 
       {userToDelete && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 text-center animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-md p-6 text-center animate-in zoom-in duration-200">
             <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${userToDelete.status === UserStatus.INVITED ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
               {userToDelete.status === UserStatus.INVITED ? <Clock size={32} /> : <ShieldAlert size={32} />}
             </div>

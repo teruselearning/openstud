@@ -2,7 +2,7 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { registerOrganization, login, forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
+import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { fetchRemoteData } from '../services/syncService'; 
 import { User, OrganizationFocus, LandingFeature, Organization } from '../types';
@@ -56,7 +56,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             handleCheckInvite(token);
          }
       } else {
-         // Reset view if hash changes away from invite, unless manually set
          if (viewMode === 'accept_invite') setViewMode('landing');
       }
     };
@@ -276,6 +275,15 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     { id: 'f3', title: t('globalNetwork'), description: "Connect with partners worldwide.", icon: 'Globe2' }
   ];
 
+  // Logic fix for landing title/subtitle prioritizing saved settings over default translation
+  const displayTitle = (landingConfig?.heroTitle && landingConfig.heroTitle.trim() !== "") 
+      ? landingConfig.heroTitle 
+      : t('landingTitle');
+      
+  const displaySubtitle = (landingConfig?.heroSubtitle && landingConfig.heroSubtitle.trim() !== "") 
+      ? landingConfig.heroSubtitle 
+      : t('landingSubtitle');
+
   return (
     <div className="min-h-screen bg-white flex flex-col relative">
       {isLoading && (
@@ -302,15 +310,16 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       <main className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center max-w-5xl mx-auto w-full">
         {viewMode === 'landing' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
-            <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 tracking-tight">{landingConfig?.heroTitle || t('landingTitle')}</h1>
-            <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{landingConfig?.heroSubtitle || t('landingSubtitle')}</p>
+            <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 tracking-tight">{displayTitle}</h1>
+            <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{displaySubtitle}</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               {isRegistrationEnabled && (<button onClick={() => setViewMode('register')} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold text-lg hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-200 flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
               <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
             </div>
           </div>
         )}
-
+        
+        {/* ... remaining view modes omitted for brevity, same as original ... */}
         {viewMode === 'login' && (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
@@ -409,7 +418,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <form onSubmit={handleResetSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Reset Code</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-mono text-center tracking-widest" value={resetData.code} onChange={e => setResetData({...resetData, code: e.target.value})} required /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" name="new-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.newPassword} onChange={e => setResetData({...resetData, newPassword: e.target.value})} required /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label><input type="password" name="confirm-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.confirmPassword} onChange={e => setResetData({...resetData, confirmPassword: e.target.value})} required /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.confirmPassword} onChange={e => setResetData({...resetData, confirmPassword: e.target.value})} required /></div>
                 <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors" disabled={isLoading}>Change Password</button></div>
               </form>
             </div>

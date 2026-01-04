@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -66,7 +67,7 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Explicitly use React.Component to ensure props and state are correctly typed in class components
+// Fix: Use React.Component explicitly to resolve 'props' accessibility issues
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
   
@@ -75,7 +76,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
   render() {
-    // Standard access to state and props in React class components
     const { hasError, error } = this.state;
     const { children } = this.props;
     if (hasError) {
@@ -360,6 +360,7 @@ const App: React.FC = () => {
                  saveSystemSettings(merged, true); 
                  setSystemSettings(merged); 
               }
+              // Fix: Use 'data' variable instead of undefined 'res'
               if (data.languages && data.languages.length > 0) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);

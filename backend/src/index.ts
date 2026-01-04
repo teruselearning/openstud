@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -118,9 +119,9 @@ const initDatabase = async () => {
 
     const db = getDb();
     try {
-        // Tables init...
+        // Tables init
         await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 0, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(255), enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE, role VARCHAR(50) NOT NULL, status VARCHAR(50) NOT NULL, password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, reset_code VARCHAR(10), reset_expires BIGINT)`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE, role VARCHAR(50) NOT NULL, status VARCHAR(50) NOT NULL, password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, reset_code VARCHAR(10), reset_expires BIGINT, preferred_language VARCHAR(10) DEFAULT 'en-GB')`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes LONGTEXT, source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
@@ -148,28 +149,48 @@ const authenticate = (req: any, res: any, next: any) => {
 };
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
-    const { to, subject, html, templateKey, placeholders } = req.body;
+    const { to, subject, html, templateKey, placeholders, language } = req.body;
     
     let finalHtml = html;
     let finalSubject = subject;
     let useRawLayout = false;
 
     const db = getDb();
-    const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-    let settings = rows[0]?.settings;
-    if (typeof settings === 'string') settings = JSON.parse(settings);
+    
+    // 1. Fetch language-specific translations if a language is specified
+    if (language && templateKey) {
+        const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ? AND is_deleted = 0`, [language]);
+        const translations = langRows[0]?.translations;
+        if (translations) {
+            // Map template key to localisation keys
+            const subjKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Subject`;
+            const bodyKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Body`;
+            
+            if (translations[subjKey]) finalSubject = translations[subjKey];
+            if (translations[bodyKey]) {
+                finalHtml = translations[bodyKey];
+                useRawLayout = true; // Use the translated HTML layout
+            }
+        }
+    }
 
-    // 1. Pull from custom templates if provided AND enabled
-    if (templateKey) {
-       const template = settings?.emailTemplates?.[templateKey];
-       if (template && template.enabled) {
-          finalHtml = template.bodyHtml;
-          finalSubject = template.subject;
-          useRawLayout = true; // Use their custom layout exactly
+    // 2. Fallback to settings templates if provided AND enabled (English usually)
+    if (!finalHtml || finalHtml === html) {
+       const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+       let settings = configRows[0]?.settings;
+       if (typeof settings === 'string') settings = JSON.parse(settings);
+       
+       if (templateKey) {
+          const template = settings?.emailTemplates?.[templateKey];
+          if (template && template.enabled) {
+             finalHtml = template.bodyHtml;
+             finalSubject = template.subject;
+             useRawLayout = true; 
+          }
        }
     }
 
-    // 2. Placeholder replacement
+    // 3. Placeholder replacement
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
           const placeholder = `{{${k}}}`;
@@ -183,8 +204,7 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     else res.status(500).json({ error: result.error });
 });
 
-// Other routes...
-
+// Serve Frontend
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
    if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Not Found" });

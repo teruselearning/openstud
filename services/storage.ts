@@ -1,4 +1,3 @@
-
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
@@ -280,11 +279,19 @@ export const trustDevice = (userId: string) => {
   if (!d.includes(userId)) set(KEYS.TRUSTED_DEVICES, [...d, userId]);
 };
 
-export const sendMfaCode = async (email: string, code: string) => {
+export const sendMfaCode = async (email: string, code: string, lang?: string) => {
   const s = getSystemSettings();
   const org = getOrg();
   const t = s.emailTemplates?.mfa;
   
+  // Try to find the user to get their preferred language if lang is not provided
+  let finalLang = lang;
+  if (!finalLang) {
+      const users = getUsers();
+      const user = users.find(u => u.email === email);
+      if (user) finalLang = user.preferredLanguage;
+  }
+
   await sendSystemEmail(
     email, 
     'mfa', 
@@ -294,40 +301,21 @@ export const sendMfaCode = async (email: string, code: string) => {
       year: new Date().getFullYear().toString()
     }, 
     t?.subject || "Your Security Code", 
-    t?.bodyHtml || `<p>Your verification code for <b>${org.name}</b> is: <b>${code}</b></p>`
+    t?.bodyHtml || `<p>Your verification code for <b>${org.name}</b> is: <b>${code}</b></p>`,
+    finalLang
   );
-};
-
-export const login = async (email: string, pass: string): Promise<User | null> => {
-  return null;
-};
-
-export const registerOrganization = async (orgName: string, userName: string, email: string, focus: OrganizationFocus, password: string, lang: string, latitude?: number, longitude?: number, location?: string) => {
-  const response = await fetch('/api/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orgName, userName, email, focus, password, language: lang, latitude, longitude, location })
-  });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Registration failed");
-
-  localStorage.setItem('os_token', data.token);
-  saveSession(data.user);
-  saveOrg(data.organization, true);
-  return { needsVerification: false };
-};
-
-export const confirmRegistration = async (email: string, code: string): Promise<User> => {
-   throw new Error("Verification handled by login flow.");
 };
 
 export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => {
   try {
+    // Find the user to get their preferred language
+    const users = getUsers();
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    
     const response = await fetch('/api/forgot-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email, language: user?.preferredLanguage })
     });
     const data = await response.json();
     if (!response.ok) return { success: false, error: data.error };
@@ -352,20 +340,9 @@ export const resetPassword = async (email: string, code: string, pass: string): 
   }
 };
 
-export const regenerateDemoData = async () => {};
-
-export const generatePartnerInvite = (): string => {
-  const code = Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-  const invites = get(KEYS.INVITE_CODES, [] as string[]);
-  set(KEYS.INVITE_CODES, [...invites, code]);
-  return code;
-};
-
-export const redeemPartnerInvite = (code: string): {success: boolean, message: string} => ({ success: true, message: "Partnership established!" });
-
-export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[]) => {
+export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[], lang?: string) => {
   const org = getOrg();
-  const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds };
+  const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds, preferredLanguage: lang };
   
   // Persist locally and sync to DB first
   saveUsers([...getUsers(), newUser]);
@@ -386,7 +363,8 @@ export const inviteUser = async (name: string, email: string, role: UserRole, al
       year: new Date().getFullYear().toString()
     },
     t?.subject || BASE_TRANSLATIONS.emailInviteSubject,
-    t?.bodyHtml || BASE_TRANSLATIONS.emailInviteBody
+    t?.bodyHtml || BASE_TRANSLATIONS.emailInviteBody,
+    lang || getLanguages().find(l => l.isDefault)?.code
   );
 };
 
@@ -401,7 +379,7 @@ export const deleteUser = async (userId: string) => {
   
   const isInvitedOnly = user.status === UserStatus.INVITED;
   
-  // Send Email Notification
+  // Send Email Notification in user's preferred language
   await sendSystemEmail(
     user.email,
     'notification',
@@ -415,7 +393,8 @@ export const deleteUser = async (userId: string) => {
     isInvitedOnly ? "Invitation Revoked" : (t?.subject || "Account Removed"),
     isInvitedOnly 
       ? `<p>The invitation for you to join <b>${org.name}</b> has been revoked. You will no longer be able to accept the invite.</p>`
-      : (t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been removed by an administrator.</p>`)
+      : (t?.bodyHtml || `<p>Your account at <b>${org.name}</b> has been removed by an administrator.</p>`),
+    user.preferredLanguage
   );
 
   // Sync deletion to server
@@ -472,3 +451,14 @@ export const exportDataAsCSV = (): string => {
 };
 
 export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.enclosures) saveEnclosures(data.enclosures); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };
+
+// Added missing generatePartnerInvite and redeemPartnerInvite functions
+
+export const generatePartnerInvite = (): string => {
+  return `${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+};
+
+export const redeemPartnerInvite = (code: string): { success: boolean; message: string } => {
+  // Mock logic for established partnerships in demo
+  return { success: true, message: "Partnership established successfully!" };
+};

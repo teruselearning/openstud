@@ -171,6 +171,7 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
       return;
     }
 
+    // 1. Prepare Enclosure Save
     const newEnc: Enclosure = {
       ...formData as Enclosure,
       id: editingId || `enc-${Date.now()}`,
@@ -178,9 +179,35 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
       individualIds: formData.individualIds || [],
       projectId: targetProjectId
     };
-    const updated = editingId ? enclosures.map(enc => enc.id === editingId ? newEnc : enc) : [...enclosures, newEnc];
-    setEnclosures(updated);
-    saveEnclosures(updated);
+
+    // 2. Enforce single enclosure per individual by updating all OTHER enclosures
+    const updatedEnclosures = (editingId ? enclosures.map(enc => enc.id === editingId ? newEnc : enc) : [...enclosures, newEnc])
+      .map(enc => {
+          if (enc.id === newEnc.id) return enc;
+          // Filter out IDs that have been assigned to the new/updated enclosure
+          return {
+              ...enc,
+              individualIds: enc.individualIds.filter(id => !newEnc.individualIds.includes(id))
+          };
+      });
+
+    // 3. Update Individuals' enclosureId links
+    const updatedIndividuals = allIndividuals.map(ind => {
+        if (newEnc.individualIds.includes(ind.id)) {
+            return { ...ind, enclosureId: newEnc.id };
+        }
+        // If it was in the current editing enclosure but removed
+        if (ind.enclosureId === newEnc.id && !newEnc.individualIds.includes(ind.id)) {
+            return { ...ind, enclosureId: undefined };
+        }
+        return ind;
+    });
+
+    setEnclosures(updatedEnclosures);
+    saveEnclosures(updatedEnclosures);
+    setAllIndividuals(updatedIndividuals);
+    saveIndividuals(updatedIndividuals);
+
     setShowForm(false);
     setEditingId(null);
     setSelectedEnclosure(null);
@@ -369,13 +396,28 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
                      {projectSpecies.map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
                   </select>
                   <div className="border border-slate-200 rounded-xl bg-slate-50 max-h-72 overflow-y-auto divide-y divide-slate-100">
-                    {speciesIndividuals.map(ind => (
-                      <label key={ind.id} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-white transition-colors">
-                        <input type="checkbox" checked={formData.individualIds?.includes(ind.id)} onChange={() => toggleIndividual(ind.id)} className="rounded text-blue-600 focus:ring-blue-500" />
-                        <span className="text-sm font-bold text-slate-700">{ind.name}</span>
-                        <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
-                      </label>
-                    ))}
+                    {speciesIndividuals.map(ind => {
+                      const otherEnc = enclosures.find(e => e.id !== editingId && e.individualIds.includes(ind.id));
+                      const isUnassigned = !ind.enclosureId && !otherEnc;
+                      
+                      return (
+                        <label key={ind.id} className="flex items-center gap-3 p-3 cursor-pointer hover:bg-white transition-colors relative group">
+                          <input type="checkbox" checked={formData.individualIds?.includes(ind.id)} onChange={() => toggleIndividual(ind.id)} className="rounded text-blue-600 focus:ring-blue-500" />
+                          <div className="flex-1 min-w-0">
+                             <div className="flex items-center gap-2">
+                                <span className={`text-sm font-bold truncate ${isUnassigned ? 'text-emerald-700' : 'text-slate-700'}`}>{ind.name}</span>
+                                {isUnassigned && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 rounded-sm font-black uppercase">New / Unassigned</span>}
+                             </div>
+                             <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
+                          </div>
+                          {otherEnc && (
+                            <div className="flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 opacity-60 group-hover:opacity-100 transition-opacity">
+                               <AlertCircle size={10}/> Currently in: {otherEnc.name}
+                            </div>
+                          )}
+                        </label>
+                      );
+                    })}
                     {selectedSpeciesId && speciesIndividuals.length === 0 && (
                       <p className="p-4 text-xs text-slate-400 italic">No individuals of this species found in the current scope.</p>
                     )}
@@ -403,7 +445,16 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={40}/></div>
                <h3 className="text-xl font-bold text-slate-900 mb-2">Delete {label}?</h3>
                <p className="text-slate-500 mb-8">Are you sure you want to remove <strong>{enclosureToDelete.name}</strong>? Individuals will remain but their location assignment will be cleared.</p>
-               <div className="flex gap-3"><button onClick={() => setEnclosureToDelete(null)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button><button onClick={() => { const updated = enclosures.filter(e => e.id !== enclosureToDelete.id); setEnclosures(updated); saveEnclosures(updated); setEnclosureToDelete(null); }} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md">Delete</button></div>
+               <div className="flex gap-3"><button onClick={() => setEnclosureToDelete(null)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button><button onClick={() => { 
+                   // Clear enclosureId from individuals before deleting enclosure
+                   const updatedIndividuals = allIndividuals.map(i => i.enclosureId === enclosureToDelete.id ? { ...i, enclosureId: undefined } : i);
+                   setAllIndividuals(updatedIndividuals);
+                   saveIndividuals(updatedIndividuals);
+                   const updated = enclosures.filter(e => e.id !== enclosureToDelete.id); 
+                   setEnclosures(updated); 
+                   saveEnclosures(updated); 
+                   setEnclosureToDelete(null); 
+               }} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md">Delete</button></div>
             </div>
          </div>
       )}

@@ -1,3 +1,4 @@
+
 import { getSystemSettings } from './storage';
 
 // API Configuration
@@ -13,9 +14,10 @@ export const sendSystemEmail = async (
   templateType: 'mfa' | 'invite' | 'notification' | 'registration', 
   placeholders: Record<string, string>,
   fallbackSubject: string,
-  fallbackBody: string
+  fallbackBody: string,
+  language?: string
 ) => {
-  console.log(`[EMAIL SERVICE] Attempting to dispatch ${templateType} email to ${to}...`);
+  console.log(`[EMAIL SERVICE] Attempting to dispatch ${templateType} email to ${to} in ${language || 'default'}...`);
   // Use session token for auth
   const token = localStorage.getItem('os_token');
   
@@ -30,9 +32,9 @@ export const sendSystemEmail = async (
         to,
         templateKey: templateType,
         placeholders,
-        // Optional raw fields if template key fails on backend
         subject: fallbackSubject,
-        html: fallbackBody
+        html: fallbackBody,
+        language
       })
     });
 
