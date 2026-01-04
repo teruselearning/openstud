@@ -113,15 +113,12 @@ const initDatabase = async () => {
         });
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
         await connection.end();
-        console.log(`[DATABASE] Database check complete: \`${dbConfig.database}\``);
     } catch (e: any) {
         console.error("[DATABASE] Pre-init connection check failed:", e.message);
     }
 
     const db = getDb();
     try {
-        // Table foundations (Core)
-        console.log('[DATABASE] Validating table structures...');
         await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
@@ -135,7 +132,6 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
 
-        // Migration engine: Ensure every required column exists for sync/auth
         const ensureColumn = async (table: string, column: string, definition: string) => {
             try {
                 const [columns]: any = await db.query(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
@@ -148,7 +144,6 @@ const initDatabase = async () => {
             }
         };
 
-        // Table: Users
         await ensureColumn('users', 'name', "VARCHAR(255) NOT NULL DEFAULT ''");
         await ensureColumn('users', 'email', "VARCHAR(255) NOT NULL UNIQUE");
         await ensureColumn('users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Keeper'");
@@ -159,8 +154,6 @@ const initDatabase = async () => {
         await ensureColumn('users', 'reset_code', "VARCHAR(10)");
         await ensureColumn('users', 'reset_expires', "BIGINT");
         await ensureColumn('users', 'preferred_language', "VARCHAR(10) DEFAULT 'en-GB'");
-
-        // Table: Organizations
         await ensureColumn('organizations', 'location', "VARCHAR(255)");
         await ensureColumn('organizations', 'latitude', "DOUBLE");
         await ensureColumn('organizations', 'longitude', "DOUBLE");
@@ -181,6 +174,16 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'enable_mfa', "TINYINT(1) DEFAULT 0");
         await ensureColumn('organizations', 'enable_enclosures', "TINYINT(1) DEFAULT 0");
         await ensureColumn('organizations', 'is_deleted', "TINYINT(1) DEFAULT 0");
+
+        // Seed Demo Data if empty
+        const [users]: any = await db.execute(`SELECT id FROM users LIMIT 1`);
+        if (users.length === 0) {
+            console.log('[DATABASE] Seeding demo user...');
+            const hashedPassword = await bcrypt.hash('password', 10);
+            await db.execute(`INSERT IGNORE INTO organizations (id, name, location, focus) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals')`);
+            await db.execute(`INSERT IGNORE INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Admin', 'Active', ?)`, [hashedPassword]);
+            await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Highland Sanctuary', 'General collection management')`);
+        }
 
         console.log('[DATABASE] All schema migrations finished successfully.');
     } catch (e: any) { 
@@ -205,25 +208,10 @@ app.get('/api/config', async (req: any, res: any) => {
     try {
         const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
         const [langRows]: any = await db.execute(`SELECT code, name, translations, is_default, manual_overrides FROM languages WHERE is_deleted = 0`);
-        
         let settings = configRows[0]?.settings || {};
         if (typeof settings === 'string') settings = JSON.parse(settings);
-
-        res.json({ 
-            success: true, 
-            data: { 
-                settings, 
-                languages: langRows.map((l: any) => ({
-                    ...l,
-                    translations: typeof l.translations === 'string' ? JSON.parse(l.translations) : l.translations,
-                    manual_overrides: typeof l.manual_overrides === 'string' ? JSON.parse(l.manual_overrides) : l.manual_overrides,
-                    isDefault: !!l.is_default
-                }))
-            } 
-        });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
+        res.json({ success: true, data: { settings, languages: langRows.map((l: any) => ({ ...l, translations: typeof l.translations === 'string' ? JSON.parse(l.translations) : l.translations, manual_overrides: typeof l.manual_overrides === 'string' ? JSON.parse(l.manual_overrides) : l.manual_overrides, isDefault: !!l.is_default })) } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/login', async (req: any, res: any) => {
@@ -234,31 +222,44 @@ app.post('/api/login', async (req: any, res: any) => {
         const user = rows[0];
         if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-        // Compare using bcrypt
         const isValid = await bcrypt.compare(password, user.password || '').catch(() => false);
-        // Fallback for simple plain text if needed during development
-        if (!isValid && user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
+        if (!isValid) return res.status(401).json({ error: "Invalid credentials" });
 
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-        
         const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
         
-        res.json({ 
-            success: true, 
-            token, 
-            user: {
-                id: user.id,
-                orgId: user.org_id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                status: user.status,
-                avatarUrl: user.avatar_url,
-                preferredLanguage: user.preferred_language,
-                allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : user.allowed_project_ids
-            },
-            organization: orgRows[0]
-        });
+        res.json({ success: true, token, user: { id: user.id, orgId: user.org_id, name: user.name, email: user.email, role: user.role, status: user.status, avatarUrl: user.avatar_url, preferredLanguage: user.preferred_language, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : user.allowed_project_ids }, organization: orgRows[0] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/forgot-password', async (req: any, res: any) => {
+    const { email, language } = req.body;
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [email]);
+        if (rows.length === 0) return res.json({ success: true, message: "If that email exists, a code has been sent." });
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = Date.now() + 3600000; // 1 hour
+        await db.execute(`UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?`, [code, expires, email]);
+
+        await sendMail(email, "Password Reset Code", `<p>Your password reset code is: <b>${code}</b></p><p>This code expires in 1 hour.</p>`);
+        res.json({ success: true, message: "Recovery code sent to your email." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/reset-password', async (req: any, res: any) => {
+    const { email, code, newPassword } = req.body;
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = ? AND reset_code = ?`, [email, code]);
+        const user = rows[0];
+        if (!user) return res.status(400).json({ error: "Invalid or expired code." });
+        if (user.reset_expires < Date.now()) return res.status(400).json({ error: "Code has expired." });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.execute(`UPDATE users SET password = ?, reset_code = NULL, reset_expires = NULL WHERE id = ?`, [hashedPassword, user.id]);
+        res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -267,25 +268,15 @@ app.post('/api/register', async (req: any, res: any) => {
     const db = getDb();
     const orgId = `org-${Date.now()}`;
     const userId = `u-${Date.now()}`;
-
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute(
-            `INSERT INTO organizations (id, name, location, focus, founded_year) VALUES (?, ?, ?, ?, ?)`,
-            [orgId, orgName, location, focus, new Date().getFullYear()]
-        );
-        
-        await db.execute(
-            `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId, orgId, userName, email, 'Admin', 'Active', hashedPassword]
-        );
-
+        await db.execute(`INSERT INTO organizations (id, name, location, focus, founded_year) VALUES (?, ?, ?, ?, ?)`, [orgId, orgName, location, focus, new Date().getFullYear()]);
+        await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)`, [userId, orgId, userName, email, 'Admin', 'Active', hashedPassword]);
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
         res.json({ success: true, token, user: { id: userId, orgId, name: userName, email, role: 'Admin', status: 'Active' }, organization: { id: orgId, name: orgName, location, focus } });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Protected Sync Endpoints
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
     const orgId = req.user.orgId;
     const db = getDb();
@@ -299,38 +290,17 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         const [events]: any = await db.execute(`SELECT e.* FROM breeding_events e JOIN species s ON e.species_id = s.id JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
         const [loans]: any = await db.execute(`SELECT * FROM breeding_loans WHERE partner_org_id = ? OR proposer_org_id = ?`, [orgId, orgId]);
         const [partnerships]: any = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
-        const [partners]: any = await db.execute(`SELECT * FROM organizations WHERE is_org_public = 1 AND id != ?`, [orgId]);
-        
+        const [partners]: any = await db.execute(`SELECT * FROM organizations WHERE id != ?`, [orgId]);
         const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
         const [langRows]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-
-        res.json({
-            success: true,
-            data: {
-                org: orgs[0],
-                users,
-                projects,
-                species,
-                individuals,
-                enclosures,
-                breedingEvents: events,
-                breedingLoans: loans,
-                partnerships,
-                partners,
-                settings: configRows[0]?.settings || {},
-                languages: langRows
-            }
-        });
+        res.json({ success: true, data: { org: orgs[0], users, projects, species, individuals, enclosures, breedingEvents: events, breedingLoans: loans, partnerships, partners, settings: configRows[0]?.settings || {}, languages: langRows } });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     const { to, subject, html, templateKey, placeholders, language } = req.body;
-    let finalHtml = html;
-    let finalSubject = subject;
-    let useRawLayout = false;
+    let finalHtml = html; let finalSubject = subject; let useRawLayout = false;
     const db = getDb();
-    
     if (language && templateKey) {
         const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ? AND is_deleted = 0`, [language]);
         const translations = langRows[0]?.translations;
@@ -338,27 +308,9 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
             const subjKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Subject`;
             const bodyKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Body`;
             if (translations[subjKey]) finalSubject = translations[subjKey];
-            if (translations[bodyKey]) {
-                finalHtml = translations[bodyKey];
-                useRawLayout = true; 
-            }
+            if (translations[bodyKey]) { finalHtml = translations[bodyKey]; useRawLayout = true; }
         }
     }
-
-    if (!finalHtml || finalHtml === html) {
-       const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-       let settings = configRows[0]?.settings;
-       if (typeof settings === 'string') settings = JSON.parse(settings);
-       if (templateKey) {
-          const template = settings?.emailTemplates?.[templateKey];
-          if (template && template.enabled) {
-             finalHtml = template.bodyHtml;
-             finalSubject = template.subject;
-             useRawLayout = true; 
-          }
-       }
-    }
-
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
           const placeholder = `{{${k}}}`;
@@ -366,22 +318,15 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
           finalSubject = finalSubject.split(placeholder).join(String(v));
        });
     }
-
     const result = await sendMail(to, finalSubject, finalHtml, useRawLayout);
     if (result.success) res.json({ success: true });
     else res.status(500).json({ error: result.error });
 });
 
-// Serve Frontend
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
-   if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) {
-       return res.status(404).json({ error: "Endpoint not found" });
-   }
+   if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Endpoint not found" });
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 
-(async () => { 
-    await initDatabase(); 
-    app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`)); 
-})();
+(async () => { await initDatabase(); app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`)); })();

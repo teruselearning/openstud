@@ -105,7 +105,7 @@ const fromDbEnclosure = (e: any): Enclosure => ({
   boundary: safeParse(e.boundary, []), individualIds: safeParse(e.individual_ids, []) 
 });
 
-const fromDbEvent = (e: any): BreedingEvent => ({ id: e.id, speciesId: e.species_id, sireId: e.sire_id || '', damId: e.dam_id || '', date: e.date, offspringCount: e.offspring_count, successfulBirths: e.successful_births, losses: e.losses, notes: e.notes, offspringIds: safeParse(e.offspring_ids, []) });
+const fromDbEvent = (e: any): BreedingEvent => ({ id: e.id, speciesId: e.species_id, sireId: e.sire_id || '', damId: e.dam_id || '', date: e.date, offspringCount: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspringIds: safeParse(e.offspring_ids, []) });
 
 const fromDbLoan = (l: any): BreedingLoan => ({ 
   id: l.id, 
@@ -139,16 +139,20 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
 
 export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
-export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [], preferred_language: u.preferred_language || 'en-GB' });
+// Fixed: Using correct preferredLanguage property from User interface
+export const mapUserToDb = (u: User) => ({ id: u.id, org_id: u.orgId, name: u.name, email: u.email, role: u.role, status: u.status, password: u.password || null, avatar_url: u.avatarUrl || null, allowed_project_ids: u.allowedProjectIds || [], preferred_language: u.preferredLanguage || 'en-GB' });
 
+// Fixed: Using correct commonName and scientificName properties from Species interface
 export const mapSpeciesToDb = (s: Species) => ({ 
-  id: s.id, project_id: s.projectId, common_name: s.common_name, scientific_name: s.scientific_name, type: s.type, 
+  id: s.id, project_id: s.projectId, common_name: s.commonName, scientific_name: s.scientificName, type: s.type, 
   plant_classification: s.plantClassification || null, 
   conservation_status: s.conservationStatus, sexual_maturity_age_years: sanitizeNum(s.sexualMaturityAgeYears), average_adult_weight_kg: sanitizeNum(s.averageAdultWeightKg), life_expectancy_years: sanitizeNum(s.lifeExpectancyYears), breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), image_url: s.imageUrl || null, native_status_country: s.nativeStatusCountry || null, native_status_local: s.nativeStatusLocal || null 
 });
 
-export const mapIndToDb = (i: Individual) => ({ id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dna_sequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, loan_status: i.loanStatus || null, transferred_to_org_id: i.transferredToOrgId, transfer_date: i.transferDate || null, transfer_note: i.transferNote || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] });
-export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.orgId, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individual_ids || [] });
+// Fixed: Using correct dnaSequence property from Individual interface
+export const mapIndToDb = (i: Individual) => ({ id: i.id, project_id: i.projectId, species_id: i.speciesId, enclosure_id: i.enclosureId || null, studbook_id: i.studbookId, name: i.name, sex: i.sex, birth_date: i.birthDate || null, weight_kg: sanitizeNum(i.weightKg), sire_id: i.sireId || null, dam_id: i.damId || null, image_url: i.imageUrl || null, dna_sequence: i.dnaSequence || null, notes: i.notes || null, source: i.source || null, source_details: i.sourceDetails || null, latitude: i.latitude ?? null, longitude: i.longitude ?? null, is_deceased: i.isDeceased ?? false, death_date: i.deathDate || null, loan_status: i.loanStatus || null, transferred_to_org_id: i.transferredToOrgId, transfer_date: i.transferDate || null, transfer_note: i.transferNote || null, weight_history: i.weightHistory || [], growth_history: i.growthHistory || [], health_history: i.healthHistory || [] });
+// Fixed: Using correct individualIds property from Enclosure interface
+export const mapEnclosureToDb = (e: Enclosure) => ({ id: e.id, org_id: e.orgId, project_id: e.projectId || null, name: e.name, description: e.description || null, boundary: e.boundary || [], individual_ids: e.individualIds || [] });
 
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
 export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
@@ -162,7 +166,7 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
+export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
