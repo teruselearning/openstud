@@ -52,7 +52,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
-// Responsive HTML Wrapper for all system emails
+// Responsive HTML Wrapper for system emails
 const wrapEmail = (title: string, content: string) => `
 <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff;">
   <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
@@ -103,6 +103,7 @@ const sendMail = async (to: string, subject: string, html: string, isRaw: boolea
 };
 
 const initDatabase = async () => {
+    console.log('[DATABASE] Initializing connectivity and schema...');
     try {
         const connection = await mysql.createConnection({ 
             host: dbConfig.host, 
@@ -112,15 +113,17 @@ const initDatabase = async () => {
         });
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
         await connection.end();
+        console.log(`[DATABASE] Database check complete: \`${dbConfig.database}\``);
     } catch (e: any) {
-        console.warn("Database creation check failed:", e.message);
+        console.error("[DATABASE] Pre-init connection check failed:", e.message);
     }
 
     const db = getDb();
     try {
-        // Core Table creation
-        await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 0, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(255), enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE, role VARCHAR(50) NOT NULL, status VARCHAR(50) NOT NULL, password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, reset_code VARCHAR(10), reset_expires BIGINT, preferred_language VARCHAR(10) DEFAULT 'en-GB')`);
+        // Table foundations (Core)
+        console.log('[DATABASE] Validating table structures...');
+        await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255))`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes LONGTEXT, source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
@@ -132,30 +135,56 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`INSERT IGNORE INTO app_config (id, settings) VALUES ('global-settings', '{}')`);
 
-        // Migration Helper: Ensure specific columns exist for older installations
+        // Migration engine: Ensure every required column exists for sync/auth
         const ensureColumn = async (table: string, column: string, definition: string) => {
             try {
-                const [columns]: any = await db.execute(`SHOW COLUMNS FROM ${table} LIKE ?`, [column]);
+                const [columns]: any = await db.query(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
                 if (columns.length === 0) {
-                    console.log(`Migration: Adding column ${column} to table ${table}...`);
-                    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+                    console.log(`[DB MIGRATION] Adding column \`${column}\` to table \`${table}\`...`);
+                    await db.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
                 }
             } catch (err: any) {
-                console.warn(`Migration check failed for ${table}.${column}:`, err.message);
+                console.warn(`[DB MIGRATION WARNING] Column check for ${table}.${column}:`, err.message);
             }
         };
 
-        // Run migrations
+        // Table: Users
+        await ensureColumn('users', 'name', "VARCHAR(255) NOT NULL DEFAULT ''");
+        await ensureColumn('users', 'email', "VARCHAR(255) NOT NULL UNIQUE");
+        await ensureColumn('users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Keeper'");
+        await ensureColumn('users', 'status', "VARCHAR(50) NOT NULL DEFAULT 'Active'");
+        await ensureColumn('users', 'password', "VARCHAR(255)");
+        await ensureColumn('users', 'avatar_url', "LONGTEXT");
+        await ensureColumn('users', 'allowed_project_ids', "JSON");
+        await ensureColumn('users', 'reset_code', "VARCHAR(10)");
+        await ensureColumn('users', 'reset_expires', "BIGINT");
         await ensureColumn('users', 'preferred_language', "VARCHAR(10) DEFAULT 'en-GB'");
-        await ensureColumn('organizations', 'enable_mfa', 'TINYINT(1) DEFAULT 0');
-        await ensureColumn('organizations', 'enable_enclosures', 'TINYINT(1) DEFAULT 0');
-        await ensureColumn('organizations', 'is_deleted', 'TINYINT(1) DEFAULT 0');
-        await ensureColumn('individuals', 'transferred_to_org_id', 'VARCHAR(255)');
-        await ensureColumn('individuals', 'transfer_date', 'VARCHAR(50)');
-        await ensureColumn('individuals', 'transfer_note', 'LONGTEXT');
-        
+
+        // Table: Organizations
+        await ensureColumn('organizations', 'location', "VARCHAR(255)");
+        await ensureColumn('organizations', 'latitude', "DOUBLE");
+        await ensureColumn('organizations', 'longitude', "DOUBLE");
+        await ensureColumn('organizations', 'founded_year', "INT DEFAULT 2024");
+        await ensureColumn('organizations', 'description', "LONGTEXT");
+        await ensureColumn('organizations', 'focus', "VARCHAR(255) DEFAULT 'Animals'");
+        await ensureColumn('organizations', 'is_org_public', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'is_species_public', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'obscure_location', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'hide_name', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'allow_breeding_requests', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'breeding_request_contact_id', "VARCHAR(255)");
+        await ensureColumn('organizations', 'show_native_status', "TINYINT(1) DEFAULT 1");
+        await ensureColumn('organizations', 'dashboard_block', "JSON");
+        await ensureColumn('organizations', 'ai_usage_limit', "INT DEFAULT 100");
+        await ensureColumn('organizations', 'ai_usage_count', "INT DEFAULT 0");
+        await ensureColumn('organizations', 'ai_usage_last_reset', "VARCHAR(255)");
+        await ensureColumn('organizations', 'enable_mfa', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'enable_enclosures', "TINYINT(1) DEFAULT 0");
+        await ensureColumn('organizations', 'is_deleted', "TINYINT(1) DEFAULT 0");
+
+        console.log('[DATABASE] All schema migrations finished successfully.');
     } catch (e: any) { 
-        console.error("Database Init Failed:", e);
+        console.error("[DATABASE] Critical migration failure:", e);
     }
 };
 
@@ -205,10 +234,10 @@ app.post('/api/login', async (req: any, res: any) => {
         const user = rows[0];
         if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-        if (user.password && user.password !== password) {
-            const isValid = await bcrypt.compare(password, user.password).catch(() => false);
-            if (!isValid && user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
-        }
+        // Compare using bcrypt
+        const isValid = await bcrypt.compare(password, user.password || '').catch(() => false);
+        // Fallback for simple plain text if needed during development
+        if (!isValid && user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
 
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
         
@@ -240,6 +269,7 @@ app.post('/api/register', async (req: any, res: any) => {
     const userId = `u-${Date.now()}`;
 
     try {
+        const hashedPassword = await bcrypt.hash(password, 10);
         await db.execute(
             `INSERT INTO organizations (id, name, location, focus, founded_year) VALUES (?, ?, ?, ?, ?)`,
             [orgId, orgName, location, focus, new Date().getFullYear()]
@@ -247,7 +277,7 @@ app.post('/api/register', async (req: any, res: any) => {
         
         await db.execute(
             `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId, orgId, userName, email, 'Admin', 'Active', password]
+            [userId, orgId, userName, email, 'Admin', 'Active', hashedPassword]
         );
 
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
@@ -271,7 +301,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         const [partnerships]: any = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
         const [partners]: any = await db.execute(`SELECT * FROM organizations WHERE is_org_public = 1 AND id != ?`, [orgId]);
         
-        // Settings and Languages are global
         const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
         const [langRows]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
 
@@ -297,11 +326,9 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
 
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     const { to, subject, html, templateKey, placeholders, language } = req.body;
-    
     let finalHtml = html;
     let finalSubject = subject;
     let useRawLayout = false;
-
     const db = getDb();
     
     if (language && templateKey) {
@@ -310,7 +337,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
         if (translations) {
             const subjKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Subject`;
             const bodyKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Body`;
-            
             if (translations[subjKey]) finalSubject = translations[subjKey];
             if (translations[bodyKey]) {
                 finalHtml = translations[bodyKey];
@@ -323,7 +349,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
        let settings = configRows[0]?.settings;
        if (typeof settings === 'string') settings = JSON.parse(settings);
-       
        if (templateKey) {
           const template = settings?.emailTemplates?.[templateKey];
           if (template && template.enabled) {

@@ -67,9 +67,12 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Use named Component import and correctly type class members to fix TypeScript errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
+// Fixed: Explicitly extend React.Component and provide constructor to fix property access errors
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
   
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   
@@ -178,16 +181,10 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
           
           <div className="pt-4 mt-4 border-t border-slate-100 space-y-1">
              <NavItem to="/network" icon={Globe2} label={t('networkMap')} active={path === '/network'} />
-             
-             {/* Admin Restricted Items */}
-             {isAdmin && (
-               <>
-                 <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />
-               </>
-             )}
-             
-             {/* Super Admin Restricted Items */}
-             {isSuper && <NavItem to="/super-admin" icon={Shield} label={t('superAdmin')} active={path === '/super-admin'} />}
+             <div className="border-t border-slate-50 my-2 pt-2">
+               {isAdmin && <NavItem to="/settings" icon={Settings} label={t('orgSettings')} active={path === '/settings'} />}
+               {isSuper && <NavItem to="/super-admin" icon={Shield} label={t('superAdmin')} active={path === '/super-admin'} />}
+             </div>
           </div>
         </nav>
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex-shrink-0">
@@ -234,10 +231,6 @@ const App: React.FC = () => {
   const [showEnclosures, setShowEnclosures] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
-  const [pendingEmail, setPendingEmail] = useState('');
-  const [verifyCode, setVerifyCode] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
 
@@ -265,20 +258,8 @@ const App: React.FC = () => {
           }
        } catch (e) { console.warn("Public config failed."); }
        
-       // Handle inconsistent auth state
        if (session && token) {
-          try {
-            await loadData(session);
-          } catch (e: any) {
-            if (e.message.includes('expired') || e.message.includes('401')) {
-                logout();
-                setUser(null);
-            }
-          }
-       } else if (session && !token) {
-          console.warn("Session detected without token. Forcing re-login.");
-          logout();
-          setUser(null);
+          try { await loadData(session); } catch (e) { logout(); setUser(null); }
        }
        setIsLoading(false);
     };
@@ -313,10 +294,10 @@ const App: React.FC = () => {
      const org = getOrg();
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
-     const projectSpecies = allSpecies.filter(s => s.projectId === pid);
+     const projectSpecies = pid === 'ALL_PROJECTS' ? allSpecies : allSpecies.filter(s => s.projectId === pid);
      setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
      setShowEnclosures(!!org.enableEnclosures);
-     const hasMappedPlants = allInds.some(i => i.projectId === pid && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
+     const hasMappedPlants = allInds.some(i => (pid === 'ALL_PROJECTS' || i.projectId === pid) && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
      setShowPlantMap(hasMappedPlants);
   };
 
@@ -327,50 +308,19 @@ const App: React.FC = () => {
         const result = await fetchRemoteData();
         if (result.success && result.data) {
            const { data } = result;
-           const localSpecies = getSpecies();
-           const localInds = getIndividuals();
-           const localProjects = getProjects();
-           const localUsers = getUsers();
-           const serverIsEmpty = (data.species || []).length === 0 && (data.individuals || []).length === 0;
-           const localHasData = localSpecies.length > 0 || localInds.length > 0;
-
-           if (serverIsEmpty && localHasData) {
-              try {
-                  await syncPushOrg(getOrg());
-                  await syncPushUsers(localUsers);
-                  await syncPushProjects(localProjects);
-                  await syncPushSpecies(localSpecies);
-                  await syncPushIndividuals(localInds);
-                  await syncPushEnclosures(getEnclosures());
-                  await syncPushBreedingEvents(getBreedingEvents());
-                  await syncPushBreedingLoans(getBreedingLoans());
-                  await syncPushPartnerships(getPartnerships());
-                  await syncPushLanguages(getLanguages());
-                  await syncPushSettings(getSystemSettings());
-              } catch (pushErr: any) {
-                  setSyncError(`Backup Push Failed: ${pushErr.message}`);
-                  return;
-              }
-           } else {
-              // Priority sync from server to client
-              if (data.org) saveOrg(data.org, true);
-              if (data.settings && Object.keys(data.settings).length > 2) { 
-                 const currentLocal = getSystemSettings();
-                 const merged = { ...currentLocal, ...data.settings, landingPageConfig: { ...currentLocal.landingPageConfig, ...(data.settings.landingPageConfig || {}) } };
-                 saveSystemSettings(merged, true); 
-                 setSystemSettings(merged); 
-              }
-              if (data.languages && data.languages.length > 0) { saveLanguages(data.languages, true); setLanguages(data.languages); }
-              if (data.projects) saveProjects(data.projects, true);
-              if (data.users) saveUsers(data.users, true);
-              if (data.species) saveSpecies(data.species, true);
-              if (data.individuals) saveIndividuals(data.individuals, true);
-              if (data.enclosures) saveEnclosures(data.enclosures, true);
-              if (data.breedingEvents) saveBreedingEvents(data.breedingEvents, true);
-              if (data.breedingLoans) saveBreedingLoans(data.breedingLoans, true);
-              if (data.partnerships) savePartnerships(data.partnerships, true);
-              if (data.partners) saveNetworkPartners(data.partners); 
+           if (data.org) saveOrg(data.org, true);
+           if (data.settings) { 
+              const merged = { ...getSystemSettings(), ...data.settings };
+              saveSystemSettings(merged, true); 
+              setSystemSettings(merged); 
            }
+           if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
+           if (data.projects) saveProjects(data.projects, true);
+           if (data.users) saveUsers(data.users, true);
+           if (data.species) saveSpecies(data.species, true);
+           if (data.individuals) saveIndividuals(data.individuals, true);
+           if (data.enclosures) saveEnclosures(data.enclosures, true);
+
            const activeOrg = getOrg();
            setCurrentOrg(activeOrg);
            const pjs = getProjects().filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
@@ -379,23 +329,11 @@ const App: React.FC = () => {
               const currentId = getCurrentProjectId();
               calculateFeatureVisibility(currentId || pjs[0].id);
            }
-        } else if (!result.success) {
-           setSyncError(result.message || "Unknown sync error");
-           if (!result.message.includes('expired') && (result.message.includes('404') || result.message.includes('fetch'))) {
-              setShowBackendSetup(true);
-           }
         }
-     } catch (e: any) { 
-        setSyncError(e.message || "Sync Exception"); 
-        if (e.message.includes('expired') || e.message.includes('401')) {
-            logout();
-            setUser(null);
-        }
-     } finally { setIsSyncing(false); }
+     } catch (e: any) { setSyncError(e.message); } finally { setIsSyncing(false); }
   };
 
   const loadData = async (session: User) => {
-    // perform initial pull
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
@@ -403,15 +341,14 @@ const App: React.FC = () => {
     setImpersonating(isImpersonatingSession);
     
     let activeOrg = getOrg();
-    if (!isImpersonatingSession && activeOrg.id !== session.orgId) {
-       const allPartners = getNetworkPartners();
-       const matchedOrg = allPartners.find(p => p.id === session.orgId);
-       if (matchedOrg) { saveOrg(matchedOrg as any, true); activeOrg = matchedOrg as any; }
-    }
     setCurrentOrg(activeOrg);
     
     const allProjects = getProjects();
     let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
+    if (session.allowedProjectIds && session.allowedProjectIds.length > 0) {
+       availableProjects = availableProjects.filter(p => session.allowedProjectIds!.includes(p.id));
+    }
+
     let savedPid = getCurrentProjectId();
     if (savedPid !== 'ALL_PROJECTS' && !availableProjects.some(p => p.id === savedPid)) {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
@@ -426,6 +363,7 @@ const App: React.FC = () => {
   const handleLogin = (u: User) => loadData(u);
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
   const handleProjectChange = (id: string) => { setCurrentProjectIdState(id); saveCurrentProjectId(id); calculateFeatureVisibility(id); };
+
   const handleCreateProject = () => {
     if (!newProjectName) return;
     const orgId = currentOrg?.id || getOrg().id;
@@ -442,7 +380,7 @@ const App: React.FC = () => {
   const openProfileModal = () => {
      if (!user) return;
      setProfileForm({ name: user.name, email: user.email, avatarUrl: user.avatarUrl || '', newPassword: '', confirmPassword: '' });
-     setPendingEmail(''); setIsVerifyingEmail(false); setVerifyCode(''); setShowProfileModal(true);
+     setShowProfileModal(true);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -451,14 +389,18 @@ const App: React.FC = () => {
      if (profileForm.newPassword && profileForm.newPassword !== profileForm.confirmPassword) { showToast("Passwords do not match.", "error"); return; }
      let updatedUser = { ...user, name: profileForm.name, email: profileForm.email, avatarUrl: profileForm.avatarUrl };
      if (profileForm.newPassword) updatedUser.password = profileForm.newPassword;
-     const updatedList = getUsers().map(u => u.id === user.id ? updatedUser : u);
-     saveUsers(updatedList); saveSession(updatedUser); setUser(updatedUser);
-     syncPushUsers([updatedUser]);
+     saveUsers(getUsers().map(u => u.id === user.id ? updatedUser : u));
+     saveSession(updatedUser); setUser(updatedUser);
      setShowProfileModal(false); showToast("Profile updated successfully.", "success");
   };
 
   if (isLoading) return null;
-  if (!user) return <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}><Landing onLogin={handleLogin} initialView={initialLandingView} /></LanguageContext.Provider>;
+  
+  if (!user) return (
+    <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
+       <Landing onLogin={handleLogin} initialView={initialLandingView} />
+    </LanguageContext.Provider>
+  );
 
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
@@ -469,13 +411,11 @@ const App: React.FC = () => {
         <div className="min-h-screen bg-slate-50 flex">
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
-            {impersonating && <div className="bg-purple-600 text-white p-3 px-6 flex justify-between items-center sticky top-0 z-20 shadow-md"><div className="flex items-center gap-2"><EyeOff size={20} /><span className="font-medium">Viewing Organisation: <strong>{currentOrg?.name}</strong></span></div><button onClick={() => { restoreMainOrg(); setImpersonating(false); setCurrentOrg(getOrg()); window.location.reload(); }} className="bg-white text-purple-700 px-4 py-1 rounded-full text-sm font-bold hover:bg-purple-50 transition-colors">Exit View</button></div>}
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
                  <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
-                 <div className="hidden sm:flex items-center gap-2">{syncError && <div onClick={() => setShowBackendSetup(true)} className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-1 rounded-full text-xs border border-red-200 animate-pulse cursor-pointer hover:bg-red-100" title={syncError}><AlertCircle size={12} /><span>Sync Error</span></div>}<button onClick={performSync} className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full transition-colors ${isSyncing ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 hover:text-slate-600'}`} title="Sync Status"><RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />{isSyncing ? 'Syncing...' : 'Synced'}</button></div>
                  <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1"><Menu size={24} /></button>
               </div>
             </header>
@@ -502,7 +442,6 @@ const App: React.FC = () => {
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         {showAddProjectModal && isAdmin && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
         {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UserIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly /></div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3"><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} /><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} /></div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
-        {showBackendSetup && <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col"><div className="p-6 border-b border-red-100 bg-red-50 flex justify-between items-center rounded-t-xl"><div className="flex items-center gap-3 text-red-800"><Server size={24} /><h3 className="text-xl font-bold">Backend Service Unavailable</h3></div><button onClick={() => setShowBackendSetup(false)} className="text-red-600 hover:text-red-800 bg-white/50 p-1 rounded-full"><X size={24}/></button></div><div className="p-6 space-y-4"><div className="bg-yellow-50 border-l-4 border-yellow-400 p-4"><p className="text-sm text-yellow-800 font-bold">Sync Error: {syncError || "The backend service is not responding."}</p></div><h4 className="font-bold text-slate-900">How to Fix:</h4><ol className="list-decimal list-inside text-sm text-slate-700 space-y-2"><li>Ensure your Node.js backend is running (typically on port 3001).</li><li>Check the backend console for any database connection errors.</li><li>If you just started the app, wait a few moments and click retry.</li></ol></div><div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-xl"><button onClick={() => { setShowBackendSetup(false); performSync(); }} className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Retry Sync</button></div></div></div>}
       </HashRouter>
     </LanguageContext.Provider>
   );
