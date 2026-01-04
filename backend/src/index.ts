@@ -144,6 +144,7 @@ const initDatabase = async () => {
             }
         };
 
+        // Migrations for Users
         await ensureColumn('users', 'name', "VARCHAR(255) NOT NULL DEFAULT ''");
         await ensureColumn('users', 'email', "VARCHAR(255) NOT NULL UNIQUE");
         await ensureColumn('users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Keeper'");
@@ -154,6 +155,8 @@ const initDatabase = async () => {
         await ensureColumn('users', 'reset_code', "VARCHAR(10)");
         await ensureColumn('users', 'reset_expires', "BIGINT");
         await ensureColumn('users', 'preferred_language', "VARCHAR(10) DEFAULT 'en-GB'");
+
+        // Migrations for Organizations
         await ensureColumn('organizations', 'location', "VARCHAR(255)");
         await ensureColumn('organizations', 'latitude', "DOUBLE");
         await ensureColumn('organizations', 'longitude', "DOUBLE");
@@ -174,6 +177,9 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'enable_mfa', "TINYINT(1) DEFAULT 0");
         await ensureColumn('organizations', 'enable_enclosures', "TINYINT(1) DEFAULT 0");
         await ensureColumn('organizations', 'is_deleted', "TINYINT(1) DEFAULT 0");
+
+        // Migrations for Enclosures
+        await ensureColumn('enclosures', 'project_id', "VARCHAR(255)");
 
         // Seed Demo Data if empty
         const [users]: any = await db.execute(`SELECT id FROM users LIMIT 1`);

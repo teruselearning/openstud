@@ -65,8 +65,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Explicitly extend Component and provide constructor to fix property access errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed: Explicitly extend React.Component to ensure props and state are recognized correctly (line 72, 80, 81)
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
@@ -76,7 +76,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
   render() {
-    // Correctly accessing state and props from Component class
+    // Accessing state and props from class instance
     const { hasError, error } = this.state;
     const { children } = this.props;
     if (hasError) {

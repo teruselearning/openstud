@@ -92,6 +92,8 @@ export interface ExternalPartner {
   obscureLocation: boolean;
   hideName?: boolean;
   allowBreedingRequests: boolean;
+  // Added optional focus to satisfy type checks when treating partners as organizations
+  focus?: OrganizationFocus;
   populationCounts?: Record<string, string>;
   deleted?: boolean;
 }
