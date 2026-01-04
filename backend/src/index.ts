@@ -87,7 +87,6 @@ const sendMail = async (to: string, subject: string, html: string, isRaw: boolea
           tls: { rejectUnauthorized: false }
         });
         
-        // Apply wrapper if not explicitly raw (custom user templates are sent raw)
         const finalHtml = isRaw ? html : wrapEmail(subject, html);
         
         await transporter.sendMail({ 
@@ -148,6 +147,133 @@ const authenticate = (req: any, res: any, next: any) => {
   } catch (e) { return res.status(401).json({ error: "Unauthorized: Session expired" }); }
 };
 
+// Public Endpoints
+app.get('/api/config', async (req: any, res: any) => {
+    const db = getDb();
+    try {
+        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        const [langRows]: any = await db.execute(`SELECT code, name, translations, is_default, manual_overrides FROM languages WHERE is_deleted = 0`);
+        
+        let settings = configRows[0]?.settings || {};
+        if (typeof settings === 'string') settings = JSON.parse(settings);
+
+        res.json({ 
+            success: true, 
+            data: { 
+                settings, 
+                languages: langRows.map((l: any) => ({
+                    ...l,
+                    translations: typeof l.translations === 'string' ? JSON.parse(l.translations) : l.translations,
+                    manual_overrides: typeof l.manual_overrides === 'string' ? JSON.parse(l.manual_overrides) : l.manual_overrides,
+                    isDefault: !!l.is_default
+                }))
+            } 
+        });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/login', async (req: any, res: any) => {
+    const { email, password } = req.body;
+    const db = getDb();
+    try {
+        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = ?`, [email]);
+        const user = rows[0];
+        if (!user) return res.status(401).json({ error: "Invalid credentials" });
+
+        // In production, compare with bcrypt. For demo, we check if password field exists
+        // This is simplified for the migration flow
+        if (user.password && user.password !== password) {
+            const isValid = await bcrypt.compare(password, user.password).catch(() => false);
+            if (!isValid && user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
+        }
+
+        const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        
+        const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
+        
+        res.json({ 
+            success: true, 
+            token, 
+            user: {
+                id: user.id,
+                orgId: user.org_id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                status: user.status,
+                avatarUrl: user.avatar_url,
+                preferredLanguage: user.preferred_language,
+                allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : user.allowed_project_ids
+            },
+            organization: orgRows[0]
+        });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/register', async (req: any, res: any) => {
+    const { orgName, userName, email, focus, location, password } = req.body;
+    const db = getDb();
+    const orgId = `org-${Date.now()}`;
+    const userId = `u-${Date.now()}`;
+
+    try {
+        await db.execute(
+            `INSERT INTO organizations (id, name, location, focus, founded_year) VALUES (?, ?, ?, ?, ?)`,
+            [orgId, orgName, location, focus, new Date().getFullYear()]
+        );
+        
+        await db.execute(
+            `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [userId, orgId, userName, email, 'Admin', 'Active', password]
+        );
+
+        const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
+        res.json({ success: true, token, user: { id: userId, orgId, name: userName, email, role: 'Admin', status: 'Active' }, organization: { id: orgId, name: orgName, location, focus } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Protected Sync Endpoints
+app.get('/api/sync', authenticate, async (req: any, res: any) => {
+    const orgId = req.user.orgId;
+    const db = getDb();
+    try {
+        const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
+        const [users]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids, preferred_language FROM users WHERE org_id = ?`, [orgId]);
+        const [projects]: any = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
+        const [species]: any = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+        const [individuals]: any = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+        const [enclosures]: any = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
+        const [events]: any = await db.execute(`SELECT e.* FROM breeding_events e JOIN species s ON e.species_id = s.id JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+        const [loans]: any = await db.execute(`SELECT * FROM breeding_loans WHERE partner_org_id = ? OR proposer_org_id = ?`, [orgId, orgId]);
+        const [partnerships]: any = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
+        const [partners]: any = await db.execute(`SELECT * FROM organizations WHERE is_org_public = 1 AND id != ?`, [orgId]);
+        
+        // Settings and Languages are global
+        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        const [langRows]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+
+        res.json({
+            success: true,
+            data: {
+                org: orgs[0],
+                users,
+                projects,
+                species,
+                individuals,
+                enclosures,
+                breedingEvents: events,
+                breedingLoans: loans,
+                partnerships,
+                partners,
+                settings: configRows[0]?.settings || {},
+                languages: langRows
+            }
+        });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     const { to, subject, html, templateKey, placeholders, language } = req.body;
     
@@ -162,19 +288,18 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
         const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ? AND is_deleted = 0`, [language]);
         const translations = langRows[0]?.translations;
         if (translations) {
-            // Map template key to localisation keys
             const subjKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Subject`;
             const bodyKey = `email${templateKey.charAt(0).toUpperCase() + templateKey.slice(1)}Body`;
             
             if (translations[subjKey]) finalSubject = translations[subjKey];
             if (translations[bodyKey]) {
                 finalHtml = translations[bodyKey];
-                useRawLayout = true; // Use the translated HTML layout
+                useRawLayout = true; 
             }
         }
     }
 
-    // 2. Fallback to settings templates if provided AND enabled (English usually)
+    // 2. Fallback to settings templates if provided AND enabled
     if (!finalHtml || finalHtml === html) {
        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
        let settings = configRows[0]?.settings;
@@ -207,7 +332,10 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
 // Serve Frontend
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
-   if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) return res.status(404).json({ error: "Not Found" });
+   // Don't serve HTML for API or REST calls that weren't caught
+   if (req.path.startsWith('/api/') || req.path.startsWith('/rest/')) {
+       return res.status(404).json({ error: "Endpoint not found" });
+   }
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 

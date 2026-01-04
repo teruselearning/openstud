@@ -67,9 +67,12 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Use React.Component explicitly to resolve 'props' accessibility issues
+// Fixed: Use React.Component and constructor to ensure 'props' is recognized correctly by TypeScript
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
   
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   
@@ -360,7 +363,6 @@ const App: React.FC = () => {
                  saveSystemSettings(merged, true); 
                  setSystemSettings(merged); 
               }
-              // Fix: Use 'data' variable instead of undefined 'res'
               if (data.languages && data.languages.length > 0) { saveLanguages(data.languages, true); setLanguages(data.languages); }
               if (data.projects) saveProjects(data.projects, true);
               if (data.users) saveUsers(data.users, true);

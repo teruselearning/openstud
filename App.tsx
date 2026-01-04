@@ -65,9 +65,13 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Explicitly extend React.Component to resolve 'props' visibility issue in TS
+// Fixed: Use React.Component and constructor to ensure 'props' is recognized correctly by TypeScript
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false };
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
