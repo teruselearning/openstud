@@ -52,14 +52,13 @@ export const initHighCapacityStorage = async () => {
       localDb.getAll<Enclosure>('enclosures')
     ]);
     
-    individualsCache = inds;
-    speciesCache = specs;
-    enclosuresCache = encls;
+    individualsCache = inds || [];
+    speciesCache = specs || [];
+    enclosuresCache = encls || [];
     
-    if (langs.length === 0) {
+    if (!langs || langs.length === 0) {
       languagesCache = SEED_LANGUAGES;
       await localDb.saveAll('languages', SEED_LANGUAGES);
-      syncPushLanguages(SEED_LANGUAGES).catch(() => {});
     } else {
       languagesCache = langs;
     }
@@ -97,12 +96,14 @@ const set = <T>(key: string, val: T) => {
 export const clearLocalCache = () => {
     localStorage.removeItem(KEYS.BACKUP);
     localStorage.removeItem(KEYS.PARTNERS);
+    localStorage.removeItem(KEYS.LANGUAGES);
     individualsCache = [];
     speciesCache = [];
     enclosuresCache = [];
     localDb.saveAll('individuals', []);
     localDb.saveAll('species', []);
     localDb.saveAll('enclosures', []);
+    localDb.saveAll('languages', SEED_LANGUAGES);
     window.location.reload();
 };
 
@@ -134,8 +135,13 @@ export const saveSystemSettings = async (s: SystemSettings, skipSync = false) =>
   if (!skipSync) await syncPushSettings(s);
 };
 
-export const getLanguages = (): LanguageConfig[] => languagesCache.filter(l => !l.deleted);
+export const getLanguages = (): LanguageConfig[] => {
+    if (!languagesCache || languagesCache.length === 0) return SEED_LANGUAGES;
+    return languagesCache.filter(l => !l.deleted);
+};
+
 export const saveLanguages = (langs: LanguageConfig[], skipSync = false) => {
+  if (!langs || langs.length === 0) return;
   languagesCache = langs;
   localDb.saveAll('languages', langs);
   if (!skipSync) syncPushLanguages(langs).catch(() => {});
@@ -220,23 +226,23 @@ export const saveUsers = (u: User[], skipSync = false) => {
 
 export const getSpecies = (): Species[] => speciesCache;
 export const saveSpecies = (s: Species[], skipSync = false) => {
-  speciesCache = s;
-  localDb.saveAll('species', s);
-  if (!skipSync) syncPushSpecies(s).catch(() => {});
+  speciesCache = s || [];
+  localDb.saveAll('species', speciesCache);
+  if (!skipSync) syncPushSpecies(speciesCache).catch(() => {});
 };
 
 export const getIndividuals = (): Individual[] => individualsCache;
 export const saveIndividuals = (i: Individual[], skipSync = false) => {
-  individualsCache = i;
-  localDb.saveAll('individuals', i);
-  if (!skipSync) syncPushIndividuals(i).catch(() => {});
+  individualsCache = i || [];
+  localDb.saveAll('individuals', individualsCache);
+  if (!skipSync) syncPushIndividuals(individualsCache).catch(() => {});
 };
 
 export const getEnclosures = (): Enclosure[] => enclosuresCache;
 export const saveEnclosures = (e: Enclosure[], skipSync = false) => {
-  enclosuresCache = e;
-  localDb.saveAll('enclosures', e);
-  if (!skipSync) syncPushEnclosures(e).catch(() => {});
+  enclosuresCache = e || [];
+  localDb.saveAll('enclosures', enclosuresCache);
+  if (!skipSync) syncPushEnclosures(enclosuresCache).catch(() => {});
 };
 
 export const getBreedingEvents = (): BreedingEvent[] => get(KEYS.BREEDING, []);
@@ -409,7 +415,6 @@ export const acceptInvite = async (token: string, pass: string) => {
 
 export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.enclosures) saveEnclosures(data.enclosures); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };
 
-// Fix: Added missing exportFullData function
 export const exportFullData = () => {
   return {
     org: getOrg(),
@@ -426,7 +431,6 @@ export const exportFullData = () => {
   };
 };
 
-// Fix: Added missing exportDataAsCSV function
 export const exportDataAsCSV = (): string => {
   const individuals = getIndividuals();
   const species = getSpecies();
@@ -438,7 +442,6 @@ export const exportDataAsCSV = (): string => {
   return csv;
 };
 
-// Fix: Added missing generatePattern function
 export const generatePattern = (seed: string): string => {
   const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
   const color = colors[seed.length % colors.length];

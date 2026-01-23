@@ -65,8 +65,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Inherit from Component (named import) instead of React.Component and ensure generic parameters are correctly applied to fix member access errors on this.props and this.state
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed: Inherit from React.Component explicitly and ensure generic parameters are correctly applied to fix member access errors on this.props and this.state
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
@@ -367,7 +367,7 @@ const App: React.FC = () => {
     setCurrentOrg(activeOrg);
     
     const allProjects = getProjects();
-    let availableProjects = availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
+    let availableProjects = allProjects.filter(p => (p.orgId || (p as any).org_id) === activeOrg.id);
     if (session.allowedProjectIds && session.allowedProjectIds.length > 0) {
        availableProjects = availableProjects.filter(p => session.allowedProjectIds!.includes(p.id));
     }

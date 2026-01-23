@@ -150,17 +150,23 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
          body: JSON.stringify({ email: 'sarah@wild.org', password: 'password' })
        });
        if (loginResp.ok) {
-          const { token, user } = await loginResp.json();
-          localStorage.setItem('os_token', token);
-          saveSession(user);
+          const data = await loginResp.json();
+          localStorage.setItem('os_token', data.token);
+          saveSession(data.user);
+          if (data.organization) saveOrg(data.organization, true);
+          // Force a remote data sync immediately so the UI isn't empty
           await fetchRemoteData();
-          onLogin(user);
+          onLogin(data.user);
        } else {
           const err = await loginResp.json();
           setError(`Demo Login Failed: ${err.error || 'Check server status.'}`);
           setIsLoading(false);
        }
-    } catch (e: any) { setError("Failed to connect to backend."); setIsLoading(false); }
+    } catch (e: any) { 
+        console.error("Demo login error:", e);
+        setError("Failed to connect to backend. Ensure API server is online."); 
+        setIsLoading(false); 
+    }
   };
   
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -188,6 +194,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             setIsLoading(false);
         } else {
             saveSession(data.user);
+            if (data.organization) saveOrg(data.organization, true);
             onLogin(data.user);
         }
     } catch (err: any) { setError("Network error. Ensure the backend is running."); setIsLoading(false); }
@@ -331,7 +338,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="password" autoComplete="current-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} required /></div></div>
                 <div className="text-right"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('forgot_password'); }} className="text-xs text-slate-500 hover:text-emerald-600">Forgot Password?</button></div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
-                <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors" disabled={isLoading}>Sign In</button></div>
+                <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-standard transition-colors" disabled={isLoading}>Sign In</button></div>
                 {isRegistrationEnabled && (<div className="text-center pt-2"><button type="button" onClick={() => { setSuccess(null); setError(null); setViewMode('register'); }} className="text-sm text-emerald-600 font-medium hover:underline" disabled={isLoading}>Need an account? Register here</button></div>)}
               </form>
             </div>
@@ -416,7 +423,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <form onSubmit={handleResetSubmit} className="space-y-4">
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Reset Code</label><input className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-mono text-center tracking-widest" value={resetData.code} onChange={e => setResetData({...resetData, code: e.target.value})} required /></div>
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" name="new-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.newPassword} onChange={e => setResetData({...resetData, newPassword: e.target.value})} required /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.confirmPassword} onChange={e => setResetData({...resetData, confirmPassword: e.target.value})} required /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label><input type="password" name="confirm-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={resetData.confirmPassword} onChange={e => setResetData({...resetData, confirmPassword: e.target.value})} required /></div>
                 <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors" disabled={isLoading}>Change Password</button></div>
               </form>
             </div>
