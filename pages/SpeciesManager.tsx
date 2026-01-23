@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
@@ -47,11 +46,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const projs = getProjects();
     setAllProjects(projs);
 
-    // Default project handling for single-project orgs
+    // If only one project exists, ensure it is selected even if the user is somehow in 'ALL_PROJECTS' view
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
-  }, [currentProjectId]);
+  }, [currentProjectId, editingId]);
 
   const handleAutoFill = async () => {
     if (!formData.commonName) return;
@@ -102,7 +101,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const targetProjectId = isAll ? formData.projectId : currentProjectId;
+    const isAll = currentProjectId === 'ALL_PROJECTS';
+    // If only one project exists, we ignore the selector and use the only one available
+    const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
+    
     if (!targetProjectId) {
        alert("Please select a specific project for this species.");
        return;
@@ -226,7 +228,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
               <button onClick={() => handleEdit(species)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all"><Pencil size={16} /></button>
             </div>
             <div className="h-52 bg-slate-200 relative overflow-hidden">
-               <img src={species.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+               <img src={species.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
                <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || t('unknownStatus')}</div>
                <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type}</div>
             </div>

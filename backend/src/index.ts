@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -305,14 +304,14 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
 
         if (isSuper) {
             [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_deleted = 0`);
+            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_deleted = 0`, [orgId]);
             [projectsRows] = await db.execute(`SELECT * FROM projects`);
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             [speciesRows] = await db.execute(`SELECT * FROM species`);
             [individualsRows] = await db.execute(`SELECT * FROM individuals`);
         } else {
             [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1 AND is_deleted = 0`);
+            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1 AND is_deleted = 0`, [orgId]);
             [projectsRows] = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             [speciesRows] = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);

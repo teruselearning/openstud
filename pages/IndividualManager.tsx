@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
@@ -65,7 +64,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
-  }, [currentProjectId]);
+  }, [currentProjectId, editingId]);
 
   useEffect(() => {
     if (location.state?.editId && allIndividuals.length > 0) {
@@ -122,7 +121,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     return matchesSearch && matchesSpecies && matchesStatus;
   });
 
-  const availableSpeciesForForm = allSpecies.filter(s => isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId);
+  const availableSpeciesForForm = allSpecies.filter(s => {
+    // If org only has one project, use its ID regardless of view
+    if (allProjects.length === 1) return s.projectId === allProjects[0].id;
+    return isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId;
+  });
   const speciesSearchResults = availableSpeciesForForm.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
 
   // Map Data Updater
@@ -229,7 +232,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.speciesId || !formData.studbookId) return;
-    const targetProjectId = isAll ? formData.projectId : currentProjectId;
+    
+    // Auto-select project if only one exists
+    const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
+    
     if (!targetProjectId) {
       alert("Please select a project for this individual.");
       return;
@@ -301,7 +307,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
         <select className="px-4 py-2 border border-slate-300 rounded-lg bg-white" value={filterSpeciesId} onChange={e => setFilterSpeciesId(e.target.value)}>
           <option value="">{t('allSpeciesFilter')}</option>
-          {allSpecies.filter(s => isAll ? true : s.projectId === currentProjectId).map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
+          {allSpecies.filter(s => {
+            if (allProjects.length === 1) return s.projectId === allProjects[0].id;
+            return isAll ? true : s.projectId === currentProjectId;
+          }).map(s => <option key={s.id} value={s.id}>{s.commonName}</option>)}
         </select>
         <select className="px-4 py-2 border border-slate-300 rounded-lg bg-white" value={filterStatus} onChange={e => setFilterStatus(e.target.value as StatusFilter)}>
           <option value="current">{t('statusCurrent')}</option>
@@ -494,9 +503,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           value={speciesSearchQuery} 
                           onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} 
                           onFocus={() => setIsSpeciesDropdownOpen(true)} 
-                          placeholder={isAll && !formData.projectId ? "Select project first" : "Search species..."} 
+                          placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search species..."} 
                           required 
-                          disabled={isAll && !formData.projectId}
+                          disabled={isAll && allProjects.length > 1 && !formData.projectId}
                         />
                         {isSpeciesDropdownOpen && (
                           <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-auto">
@@ -541,10 +550,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" 
                           value={formData.enclosureId} 
                           onChange={e => setFormData({...formData, enclosureId: e.target.value})}
-                          disabled={isAll && !formData.projectId}
+                          disabled={isAll && allProjects.length > 1 && !formData.projectId}
                         >
                           <option value="">Unassigned</option>
-                          {allEnclosures.filter(enc => isAll ? enc.projectId === formData.projectId : enc.projectId === currentProjectId).map(encl => <option key={encl.id} value={encl.id}>{encl.name}</option>)}
+                          {allEnclosures.filter(enc => {
+                            if (allProjects.length === 1) return enc.projectId === allProjects[0].id;
+                            return isAll ? enc.projectId === formData.projectId : enc.projectId === currentProjectId;
+                          }).map(encl => <option key={encl.id} value={encl.id}>{encl.name}</option>)}
                         </select>
                     </div>
                     <div>
