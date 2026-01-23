@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
-import { fetchSpeciesData } from '../services/geminiService';
+import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure, Project } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck, FileUp, FileSpreadsheet, Sparkles, Download } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -25,8 +25,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [allEnclosures, setAllEnclosures] = useState<Enclosure[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
+  // Bulk Upload State
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const [bulkTotal, setBulkTotal] = useState(0);
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
   // Map State
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -60,7 +67,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setAllEnclosures(getEnclosures());
     setOrg(getOrg());
 
-    // Default project handling for single-project orgs
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
@@ -122,7 +128,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   });
 
   const availableSpeciesForForm = allSpecies.filter(s => {
-    // If org only has one project, use its ID regardless of view
     if (allProjects.length === 1) return s.projectId === allProjects[0].id;
     return isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId;
   });
@@ -233,7 +238,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     e.preventDefault();
     if (!formData.speciesId || !formData.studbookId) return;
     
-    // Auto-select project if only one exists
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     if (!targetProjectId) {
@@ -260,6 +264,132 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     
     setEditingId(null);
     setReturnToId(null);
+  };
+
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId);
+    if (!targetProjectId) {
+      alert("Please select a specific project in the navigator before uploading.");
+      return;
+    }
+
+    setIsProcessingBulk(true);
+    setBulkStatus('Reading file...');
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n').filter(l => l.trim().length > 0);
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      const rows = lines.slice(1);
+      setBulkTotal(rows.length);
+      setBulkProgress(0);
+
+      const newIndividuals: Individual[] = [];
+      const updatedSpeciesList = [...getSpecies()];
+      const currentIndividuals = getIndividuals();
+
+      for (let i = 0; i < rows.length; i++) {
+        const values = rows[i].split(',').map(v => v.trim());
+        const data: any = {};
+        headers.forEach((h, idx) => { data[h] = values[idx]; });
+
+        const name = data.name || `Indiv ${i + 1}`;
+        setBulkStatus(`Processing: ${name}`);
+        setBulkProgress(i + 1);
+
+        try {
+          // 1. Resolve Species
+          const speciesName = data.speciesname || data.species;
+          let speciesId = '';
+          
+          if (speciesName) {
+            let foundSpecies = updatedSpeciesList.find(s => 
+               s.projectId === targetProjectId && 
+               (s.commonName.toLowerCase() === speciesName.toLowerCase() || s.scientificName.toLowerCase() === speciesName.toLowerCase())
+            );
+
+            if (!foundSpecies) {
+              setBulkStatus(`Auto-creating Species: ${speciesName}`);
+              const aiData = await fetchSpeciesData(speciesName, 'Animal', org?.location || '');
+              let spImg = await fetchWikimediaImage(aiData?.scientificName || speciesName);
+              if (!spImg) spImg = await generateSpeciesImage(speciesName, aiData?.scientificName || '', 'Animal');
+              
+              const newSp: Species = {
+                id: `sp-auto-${Date.now()}-${i}`,
+                projectId: targetProjectId,
+                commonName: speciesName,
+                scientificName: aiData?.scientificName || '',
+                type: (aiData?.type || 'Animal') as SpeciesType,
+                conservationStatus: aiData?.conservationStatus || 'Unknown',
+                sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),
+                averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || 0),
+                lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || 0),
+                imageUrl: spImg || generatePattern(speciesName)
+              } as Species;
+
+              updatedSpeciesList.push(newSp);
+              foundSpecies = newSp;
+            }
+            speciesId = foundSpecies.id;
+          }
+
+          // 2. Process Remote Image if provided
+          let profileImg = '';
+          if (data.imageurl) {
+            setBulkStatus(`Fetching image for ${name}...`);
+            const processed = await urlToBase64(data.imageurl);
+            if (processed) profileImg = processed;
+          }
+          if (!profileImg) profileImg = generatePattern(name);
+
+          const indEntry: Individual = {
+            id: `ind-${Date.now()}-${i}`,
+            projectId: targetProjectId,
+            speciesId: speciesId,
+            studbookId: data.studbookid || `SB-AUTO-${Date.now()}-${i}`,
+            name,
+            sex: (data.sex || Sex.UNKNOWN) as Sex,
+            birthDate: data.birthdate || '',
+            weightKg: Number(data.weightkg || 0),
+            notes: data.notes || '',
+            imageUrl: profileImg,
+            source: 'Bred in house'
+          };
+
+          newIndividuals.push(indEntry);
+        } catch (err) {
+          console.error(`Failed to process row ${i}`, err);
+        }
+      }
+
+      saveSpecies(updatedSpeciesList);
+      setAllSpecies(updatedSpeciesList);
+      
+      const finalInds = [...currentIndividuals, ...newIndividuals];
+      saveIndividuals(finalInds);
+      setAllIndividuals(finalInds);
+
+      setIsProcessingBulk(false);
+      setShowBulkModal(false);
+      setBulkProgress(0);
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate = () => {
+    const csv = "name,studbookId,speciesName,sex,birthDate,weightKg,imageUrl,notes\nLeo,SB-123,Lion,Male,2022-01-01,150,https://example.com/lion.jpg,Rescued individual\nNala,SB-124,Lion,Female,2022-05-10,120,,Healthy adult";
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'openstudbook_individuals_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const potentialParents = allIndividuals.filter(i => i.speciesId === formData.speciesId && i.id !== editingId && !i.isDeceased);
@@ -294,11 +424,57 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="List view"><List size={18} /></button>
             <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Map view"><MapIcon size={18} /></button>
           </div>
+          <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold border border-slate-300 shadow-sm transition-all"><FileUp size={18} className="text-emerald-600" /><span>Bulk</span></button>
           <button onClick={handleOpenNewForm} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm">
             <Plus size={18} /><span>{t('add')}</span>
           </button>
         </div>
       </div>
+
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Individuals</h3>
+              <button onClick={() => !isProcessingBulk && setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><XIcon size={24} /></button>
+            </div>
+            
+            {!isProcessingBulk ? (
+              <div className="space-y-6">
+                <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
+                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Smart CSV Resolution</h4>
+                  <p className="text-xs text-indigo-700 leading-relaxed mb-4">Provide species names and remote image URLs. We'll auto-resolve missing species via AI and process all images for local storage.</p>
+                  <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
+                </div>
+                
+                <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 bg-slate-50 hover:bg-white transition-all group relative">
+                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 mb-4 group-hover:text-emerald-600 transition-colors"><FileUp size={32} /></div>
+                  <p className="font-bold text-slate-800 mb-1">Upload CSV</p>
+                  <p className="text-xs text-slate-400">or drag and drop file here</p>
+                  <input type="file" accept=".csv" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleCsvUpload} />
+                </div>
+              </div>
+            ) : (
+              <div className="py-10 text-center space-y-6">
+                <div className="relative w-24 h-24 mx-auto">
+                   <Loader2 className="w-full h-full text-indigo-600 animate-spin" />
+                   <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles className="text-emerald-500 animate-pulse" size={32} />
+                   </div>
+                </div>
+                <div>
+                   <h4 className="font-bold text-slate-900 text-lg">Processing Records</h4>
+                   <p className="text-sm text-slate-500">{bulkStatus}</p>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5">
+                   <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${(bulkProgress / bulkTotal) * 100}%` }}></div>
+                </div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{bulkProgress} / {bulkTotal} Completed</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">

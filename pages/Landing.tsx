@@ -1,4 +1,3 @@
-
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
@@ -129,17 +128,25 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           const { latitude, longitude } = pos.coords;
-          // Set coordinates first as a reliable default
+          // Set coordinates first as a reliable default instead of leaving it empty
           const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
           setRegData(prev => ({ ...prev, latitude, longitude, location: coordString }));
           
           try {
+            // Attempt reverse geocode
             const resolvedLocation = await reverseGeocode(latitude, longitude);
-            if (resolvedLocation && resolvedLocation !== "Unknown Location") {
+            // If the AI gives us a real city name, use it. Otherwise stay with the coordinates.
+            if (resolvedLocation && resolvedLocation !== "Unknown Location" && !resolvedLocation.includes(",")) {
+              setRegData(prev => ({ ...prev, location: resolvedLocation }));
+            } else if (resolvedLocation && resolvedLocation !== "Unknown Location") {
+              // It's a full string like "City, Country", also good
               setRegData(prev => ({ ...prev, location: resolvedLocation }));
             }
             setLocationStatus('ready');
-          } catch (err) { setLocationStatus('ready'); }
+          } catch (err) { 
+            // Fallback is already set to coordinates
+            setLocationStatus('ready'); 
+          }
         },
         () => setLocationStatus('idle'),
         { enableHighAccuracy: true, timeout: 5000 }

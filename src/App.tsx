@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
+import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -66,7 +66,7 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Inherit from named Component and remove redundant constructor for cleaner type resolution and access to this.props/this.state in TypeScript.
+// Fix: Use Component and ReactNode from the import to ensure proper type resolution for this.props and this.state in TypeScript.
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
 
@@ -78,7 +78,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     console.error("ErrorBoundary caught an error", error, errorInfo); 
   }
 
-  render(): React.ReactNode {
+  // Fix: Return type ReactNode for render method.
+  render(): ReactNode {
     const { hasError, error } = this.state;
     const { children } = this.props;
 

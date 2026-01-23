@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
@@ -121,17 +120,20 @@ const OrgSettings: React.FC = () => {
     leafletMap.current.panTo([lat, lng]);
 
     setIsGeocoding(true);
-    // Use coordinate string immediately as a responsive reference
+    // 1. Temporary measure: use coordinates immediately instead of "Unknown Location"
     const coordString = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     setOrg(prev => prev ? ({ ...prev, location: coordString }) : null);
 
     try {
+      // 2. Attempt reverse geocode to get city name
       const locationName = await reverseGeocode(lat, lng);
+      // 3. Only replace coordinates if a valid name is returned (not "Unknown Location")
       if (locationName && locationName !== "Unknown Location") {
           setOrg(prev => prev ? ({ ...prev, location: locationName }) : null);
       }
     } catch (err) {
       console.error("Auto-location resolve failed:", err);
+      // Fallback is already coordinates, so we do nothing here
     } finally {
       setIsGeocoding(false);
     }

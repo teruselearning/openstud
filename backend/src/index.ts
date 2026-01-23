@@ -300,7 +300,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     const isSuper = role === 'Super Admin';
     try {
         const db = getDb();
-        let orgRows, partnersRows, projectsRows, usersRows, speciesRows, individualsRows, languagesRows, configRows;
+        let orgRows, partnersRows, projectsRows, usersRows, speciesRows, individualsRows, languagesRows, configRows, enclosuresRows;
 
         if (isSuper) {
             [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
@@ -309,6 +309,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             [speciesRows] = await db.execute(`SELECT * FROM species`);
             [individualsRows] = await db.execute(`SELECT * FROM individuals`);
+            [enclosuresRows] = await db.execute(`SELECT * FROM enclosures`);
         } else {
             [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
             [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1 AND is_deleted = 0`, [orgId]);
@@ -316,11 +317,13 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             [speciesRows] = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             [individualsRows] = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            [enclosuresRows] = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
         }
         
         [languagesRows] = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
         [configRows] = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
         let settings = configRows[0]?.settings || {};
+        if (typeof settings === 'string') settings = JSON.parse(settings);
 
         res.json({ 
             success: true, 
@@ -331,6 +334,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
                 users: usersRows || [], 
                 species: speciesRows || [], 
                 individuals: individualsRows || [], 
+                enclosures: enclosuresRows || [],
                 languages: languagesRows || [], 
                 settings 
             } 

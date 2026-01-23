@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, NativeStatus, Organization, Project } from '../types';
-import { Plus, Sparkles, Loader2, Camera, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink, FolderOpen, ImageIcon, Info, Calendar, Weight, Activity, Dna, PawPrint } from 'lucide-react';
+import { Plus, Sparkles, Loader2, Camera, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink, FolderOpen, ImageIcon, Info, Calendar, Weight, Activity, Dna, PawPrint, FileSpreadsheet, FileUp } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 interface SpeciesManagerProps {
@@ -15,6 +16,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [loadingAI, setLoadingAI] = useState(false);
   const [loadingImage, setLoadingImage] = useState(false);
   const [imageStatus, setImageStatus] = useState<string>(''); 
@@ -23,6 +25,12 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const [sortBy, setSortBy] = useState<'commonName' | 'scientificName'>('commonName');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
+  // Bulk Upload State
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const [bulkTotal, setBulkTotal] = useState(0);
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
   const [formData, setFormData] = useState<Partial<Species>>({
     commonName: '',
     scientificName: '',
@@ -46,7 +54,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const projs = getProjects();
     setAllProjects(projs);
 
-    // If only one project exists, ensure it is selected even if the user is somehow in 'ALL_PROJECTS' view
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
@@ -102,7 +109,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const isAll = currentProjectId === 'ALL_PROJECTS';
-    // If only one project exists, we ignore the selector and use the only one available
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     if (!targetProjectId) {
@@ -123,6 +129,111 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     setAllSpecies(updated);
     saveSpecies(updated);
     handleCloseForm();
+  };
+
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId);
+    if (!targetProjectId) {
+      alert("Please select a specific project in the navigator before uploading.");
+      return;
+    }
+
+    setIsProcessingBulk(true);
+    setBulkStatus('Reading file...');
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n').filter(l => l.trim().length > 0);
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      const rows = lines.slice(1);
+      setBulkTotal(rows.length);
+      setBulkProgress(0);
+
+      const newSpecies: Species[] = [];
+      const currentList = getSpecies();
+
+      for (let i = 0; i < rows.length; i++) {
+        const values = rows[i].split(',').map(v => v.trim());
+        const data: any = {};
+        headers.forEach((h, idx) => { data[h] = values[idx]; });
+
+        const commonName = data.commonname || data.name;
+        if (!commonName) continue;
+
+        setBulkStatus(`Processing: ${commonName}`);
+        setBulkProgress(i + 1);
+
+        try {
+          // 1. Fetch AI Details
+          const aiData = await fetchSpeciesData(commonName, (data.type || 'Animal') as SpeciesType, org?.location || '');
+          
+          // 2. Fetch/Generate Image
+          let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || commonName);
+          if (!finalImageUrl) {
+            finalImageUrl = await generateSpeciesImage(commonName, aiData?.scientificName || '', (aiData?.type || data.type || 'Animal') as SpeciesType);
+          }
+
+          const speciesEntry: Species = {
+            id: `sp-${Date.now()}-${i}`,
+            projectId: targetProjectId,
+            commonName,
+            scientificName: aiData?.scientificName || data.scientificname || '',
+            type: (aiData?.type || data.type || 'Animal') as SpeciesType,
+            plantClassification: aiData?.plantClassification as PlantClassification || data.plantclassification,
+            conservationStatus: aiData?.conservationStatus || data.conservationstatus || 'Unknown',
+            sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || data.sexualmaturity || 0),
+            averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || data.weight || 0),
+            lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || data.lifeexpectancy || 0),
+            breedingSeasonStart: aiData?.breedingSeasonStart || 1,
+            breedingSeasonEnd: aiData?.breedingSeasonEnd || 12,
+            imageUrl: finalImageUrl || generatePattern(commonName),
+            nativeStatusCountry: (aiData?.nativeStatusCountry as any) || 'Unknown',
+            nativeStatusLocal: (aiData?.nativeStatusLocal as any) || 'Unknown'
+          };
+
+          newSpecies.push(speciesEntry);
+        } catch (err) {
+          console.error(`Failed to enrich ${commonName}`, err);
+          // Fallback basic entry if AI fails
+          newSpecies.push({
+            id: `sp-${Date.now()}-${i}`,
+            projectId: targetProjectId,
+            commonName,
+            scientificName: data.scientificname || '',
+            type: (data.type || 'Animal') as SpeciesType,
+            conservationStatus: data.conservationstatus || 'Unknown',
+            sexualMaturityAgeYears: 0,
+            averageAdultWeightKg: 0,
+            lifeExpectancyYears: 0,
+            imageUrl: generatePattern(commonName)
+          } as Species);
+        }
+      }
+
+      const updated = [...currentList, ...newSpecies];
+      saveSpecies(updated);
+      setAllSpecies(updated);
+      setIsProcessingBulk(false);
+      setShowBulkModal(false);
+      setBulkProgress(0);
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate = () => {
+    const csv = "commonName,scientificName,type,conservationStatus\nSnow Leopard,Panthera uncia,Animal,Vulnerable\nLavender,Lavandula,Plant,Least Concern";
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'openstudbook_species_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
@@ -149,9 +260,55 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <input type="text" placeholder={t('searchSpecies')} className="w-full md:w-64 pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm outline-none focus:ring-2 focus:ring-emerald-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
+          <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold border border-slate-300 shadow-sm transition-all"><FileUp size={18} className="text-emerald-600" /><span>Bulk</span></button>
           <button onClick={() => setShowForm(true)} className="flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all"><Plus size={18} /><span>{t('add')}</span></button>
         </div>
       </div>
+
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Species</h3>
+              <button onClick={() => !isProcessingBulk && setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><XIcon size={24} /></button>
+            </div>
+            
+            {!isProcessingBulk ? (
+              <div className="space-y-6">
+                <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
+                  <h4 className="text-sm font-bold text-emerald-800 mb-1">CSV Import Enrichment</h4>
+                  <p className="text-xs text-emerald-700 leading-relaxed mb-4">Just provide the names. Our AI will automatically research biological data and source images for every entry.</p>
+                  <button onClick={downloadTemplate} className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
+                </div>
+                
+                <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 bg-slate-50 hover:bg-white transition-all group relative">
+                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 mb-4 group-hover:text-emerald-600 transition-colors"><FileUp size={32} /></div>
+                  <p className="font-bold text-slate-800 mb-1">Upload CSV</p>
+                  <p className="text-xs text-slate-400">or drag and drop file here</p>
+                  <input type="file" accept=".csv" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleCsvUpload} />
+                </div>
+              </div>
+            ) : (
+              <div className="py-10 text-center space-y-6">
+                <div className="relative w-24 h-24 mx-auto">
+                   <Loader2 className="w-full h-full text-emerald-600 animate-spin" />
+                   <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles className="text-purple-500 animate-pulse" size={32} />
+                   </div>
+                </div>
+                <div>
+                   <h4 className="font-bold text-slate-900 text-lg">AI Processing in Progress</h4>
+                   <p className="text-sm text-slate-500">{bulkStatus}</p>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2.5">
+                   <div className="bg-emerald-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${(bulkProgress / bulkTotal) * 100}%` }}></div>
+                </div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{bulkProgress} / {bulkTotal} Completed</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden animate-in slide-in-from-top-4 duration-300 mb-6">
