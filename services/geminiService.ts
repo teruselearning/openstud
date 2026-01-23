@@ -40,7 +40,8 @@ const translationSchema = {
 };
 
 const getAiClient = (): GoogleGenAI => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : '';
+  return new GoogleGenAI({ apiKey });
 };
 
 const sanitizeJsonResponse = (text: string): string => {
@@ -171,25 +172,12 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
   try {
     if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
     
-    // Transform to array of objects for easier processing by AI with schema
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
-    
     if (payload.length === 0) return [];
 
     const ai = getAiClient();
     const prompt = `Translate the following interface strings into "${targetLanguage}". 
-    The input is an array of objects containing the English source text in the "v" field.
-    
-    CRITICAL INSTRUCTIONS:
-    1. Preserve all HTML tags (e.g., <div>, <p>, <strong>).
-    2. Preserve all variables in double curly braces (e.g., {{name}}, {{orgName}}, {{code}}, {{year}}).
-    3. Use natural, professional phrasing suitable for a conservation management dashboard.
-    4. Maintain the exact key ("k") for each item in your response.
-    5. IMPORTANT: Do NOT include literal \n (escaped newline characters) in the output strings. Return clean, usable text or HTML.
-    6. Return an array of objects matching the original structure.
-
-    Data to Translate:
-    ${JSON.stringify(payload)}`;
+    Data to Translate: ${JSON.stringify(payload)}`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -204,8 +192,6 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
       const sanitized = sanitizeJsonResponse(response.text);
       try {
         const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
-        
-        // Comprehensive clean up for literal \n strings or actual newline characters
         return parsed.map(item => ({
           ...item,
           v: typeof item.v === 'string' 
