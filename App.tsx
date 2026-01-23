@@ -64,9 +64,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Explicitly extend Component and declare state property to resolve TypeScript member access errors on 'this.state' and 'this.props'
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Explicitly declare state as a class property for robust inference
+// Fixed: Explicitly use React.Component to resolve TypeScript member access errors on 'this.state' and 'this.props'
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
 
   constructor(props: ErrorBoundaryProps) {
@@ -82,19 +81,22 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Inherited state and props members from React.Component are now correctly recognized
-    if (this.state.hasError) {
+    // Fixed: Destructuring state and props to ensure type inference is correctly applied for hasError and children
+    const { hasError, error } = this.state;
+    const { children } = this.props;
+
+    if (hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">
           <AlertCircle size={48} className="text-red-500 mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">Something went wrong.</h2>
           <p className="text-slate-600 mb-6 max-w-md">We couldn't load this section. This might be due to a temporary glitch or missing data.</p>
-          {this.state.error && <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">{this.state.error.toString()}</div>}
+          {error && <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">{error.toString()}</div>}
           <button onClick={() => window.location.reload()} className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 font-medium transition-colors shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Reload Application</button>
         </div>
       );
     }
-    return this.props.children;
+    return children;
   }
 }
 
@@ -309,6 +311,7 @@ const App: React.FC = () => {
         if (result.success && result.data) {
            const { data } = result;
            if (data.org) saveOrg(data.org, true);
+           if (data.partners) saveNetworkPartners(data.partners);
            if (data.settings) { 
               const merged = { ...getSystemSettings(), ...data.settings };
               saveSystemSettings(merged, true); 

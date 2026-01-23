@@ -65,9 +65,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Inherit from Component and declare state property as a class field to resolve TypeScript member access errors on 'this.props' and 'this.state'
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Explicitly declare state for robust TypeScript member access
+// Fixed: Inherit from React.Component and ensure state is correctly initialized to resolve TypeScript member access errors on 'this.props' and 'this.state'
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false };
 
   constructor(props: ErrorBoundaryProps) {
@@ -83,22 +82,25 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Inherited state and props members are now correctly identified by the compiler
-    if (this.state.hasError) {
+    // Fixed: Destructuring state and props to ensure type inference is correctly applied for hasError and children
+    const { hasError, error } = this.state;
+    const { children } = this.props;
+
+    if (hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl m-4 border border-slate-200 shadow-sm">
           <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4">
              <AlertCircle size={32} />
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Something went wrong</h2>
-          <p className="text-slate-600 mb-6 max-w-sm">We couldn't load this section. This might be due to a session timeout or data inconsistency.</p>
+          <p className="text-slate-600 mb-6 max-sm mx-auto">We couldn't load this section. This might be due to a session timeout or data inconsistency.</p>
           <button onClick={() => window.location.reload()} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-black transition-all shadow-lg flex items-center gap-2">
             <RefreshCw size={18} /> Reload Application
           </button>
         </div>
       );
     }
-    return this.props.children;
+    return children;
   }
 }
 
@@ -313,6 +315,7 @@ const App: React.FC = () => {
         if (result.success && result.data) {
            const { data } = result;
            if (data.org) saveOrg(data.org, true);
+           if (data.partners) saveNetworkPartners(data.partners);
            if (data.settings) { 
               const merged = { ...getSystemSettings(), ...data.settings };
               saveSystemSettings(merged, true); 
