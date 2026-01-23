@@ -154,8 +154,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           localStorage.setItem('os_token', data.token);
           saveSession(data.user);
           if (data.organization) saveOrg(data.organization, true);
-          // Force a remote data sync immediately so the UI isn't empty
-          await fetchRemoteData();
+          // Trigger remote data sync in background but don't block login if it takes too long
+          fetchRemoteData().catch(e => console.warn("Background sync failed:", e));
           onLogin(data.user);
        } else {
           const err = await loginResp.json();
@@ -219,7 +219,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
 
       localStorage.setItem('os_token', data.token);
       saveSession(data.user);
-      saveOrg(data.organization, true);
+      if (data.organization) saveOrg(data.organization, true);
       onLogin(data.user);
     } catch(e: any) { setError(e.message); setIsLoading(false); }
   };

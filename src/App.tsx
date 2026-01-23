@@ -65,12 +65,9 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Inherit from React.Component explicitly and ensure generic parameters are correctly applied to fix member access errors on this.props and this.state
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
+// Fixed: Inherit from Component explicitly and use class fields for state to resolve member access errors on this.props and this.state
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
   
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
     return { hasError: true, error }; 
@@ -81,7 +78,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    // Correctly accessing state and props through 'this' on Component
+    // Correctly accessing state and props through inherited members on Component
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl m-4 border border-slate-200 shadow-sm">
@@ -237,56 +234,35 @@ const App: React.FC = () => {
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
 
   useEffect(() => {
-    let isMounted = true;
-    
-    // Safety Timeout: If booting takes too long (e.g. hung promise), force UI render
-    const safetyTimeout = setTimeout(() => {
-      if (isMounted && isLoading) {
-        console.warn("Safety Timeout: App boot taking too long, forcing UI render.");
-        setIsLoading(false);
-      }
-    }, 4500);
-
     const initializeApp = async () => {
-       try {
-         await initHighCapacityStorage();
-         const storedLangs = getLanguages();
-         setLanguages(storedLangs);
-         const session = getSession();
-         const token = localStorage.getItem('os_token');
+       await initHighCapacityStorage();
+       const storedLangs = getLanguages();
+       setLanguages(storedLangs);
+       const session = getSession();
+       const token = localStorage.getItem('os_token');
 
-         if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
-         else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
-         
-         try {
-            const res = await fetchPublicConfig();
-            if (res.success && res.settings) {
+       if (session?.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
+       else setCurrentLangCode(storedLangs.find(l => l.isDefault)?.code || 'en-GB');
+       
+       try {
+          const res = await fetchPublicConfig();
+          if (res.success) {
+             if (res.settings) {
                 const currentLocal = getSystemSettings();
-                const merged = { ...currentLocal, ...res.settings };
+                const merged = { ...currentLocal, ...res.settings, landingPageConfig: { ...currentLocal.landingPageConfig, ...(res.settings.landingPageConfig || {}) } };
                 saveSystemSettings(merged, true); 
                 setSystemSettings(merged);
-            }
-         } catch (e) { console.warn("Network config fetch failed - using local defaults."); }
-         
-         if (session && token) {
-            try { await loadData(session); } catch (e) { 
-              console.error("Session data load failed:", e);
-              logout(); 
-              setUser(null); 
-            }
-         }
-       } catch (err) {
-         console.error("Critical boot failure:", err);
-       } finally {
-         if (isMounted) {
-           clearTimeout(safetyTimeout);
-           setIsLoading(false);
-         }
+             }
+             if (res.languages && res.languages.length > 0) { saveLanguages(res.languages, true); setLanguages(res.languages); }
+          }
+       } catch (e) { console.warn("Public config failed."); }
+       
+       if (session && token) {
+          try { await loadData(session); } catch (e) { logout(); setUser(null); }
        }
+       setIsLoading(false);
     };
-    
     initializeApp();
-    return () => { isMounted = false; clearTimeout(safetyTimeout); };
   }, []);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type });
