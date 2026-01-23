@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext, useRef, Component, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -65,18 +64,20 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Explicitly referencing this.state and this.props to resolve TS errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed: Inherit from React.Component and use class property for state to resolve TS member access errors
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  // Use class field for state initialization
+  state: ErrorBoundaryState = { hasError: false };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
   }
   
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
   render() {
-    // Correctly accessing state and props through 'this'
+    // Correctly accessing state and props through 'this' on React.Component
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">

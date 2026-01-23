@@ -37,7 +37,6 @@ const SuperAdmin: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSpeciesForHolders, setSelectedSpeciesForHolders] = useState<Species | null>(null);
   
   const [selectedTemplate, setSelectedTemplate] = useState<string>('registration');
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate>({ subject: '', bodyHtml: '', enabled: true });
@@ -54,16 +53,6 @@ const SuperAdmin: React.FC = () => {
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [aiFillSuccess, setAiFillSuccess] = useState(false);
   const [translationSearch, setTranslationSearch] = useState('');
-
-  const [showCreateOrg, setShowCreateOrg] = useState(false);
-  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
-  const [newOrgData, setNewOrgData] = useState({
-     orgName: '',
-     adminName: '',
-     adminEmail: '',
-     focus: 'Animals' as OrganizationFocus,
-     location: ''
-  });
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -240,6 +229,11 @@ const SuperAdmin: React.FC = () => {
      o.location.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const filteredSpecies = allSpecies.filter(s => 
+     s.commonName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+     s.scientificName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const filteredTranslationKeys = useMemo(() => {
      if (!editingLang) return [];
      return Object.keys(BASE_TRANSLATIONS).filter(key => 
@@ -337,6 +331,64 @@ const SuperAdmin: React.FC = () => {
                         </div>
                      );
                   })}
+               </div>
+            )}
+
+            {overviewSubTab === 'species_browser' && (
+               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                     <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Species Info</th>
+                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
+                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Managed By</th>
+                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Global Population</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100">
+                        {filteredSpecies.map(sp => {
+                           const project = allProjects.find(p => p.id === sp.projectId);
+                           const org = allOrganizations.find(o => o.id === (project as any)?.org_id || (project as any)?.orgId);
+                           const indCount = allIndividuals.filter(i => i.speciesId === sp.id).length;
+                           
+                           return (
+                              <tr key={sp.id} className="hover:bg-slate-50 transition-colors group">
+                                 <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                       <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
+                                          {sp.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover" /> : <Dna className="w-full h-full p-2 text-slate-300" />}
+                                       </div>
+                                       <div>
+                                          <p className="font-bold text-slate-900">{sp.commonName}</p>
+                                          <p className="text-[10px] text-slate-500 italic font-serif">{sp.scientificName}</p>
+                                       </div>
+                                    </div>
+                                 </td>
+                                 <td className="px-6 py-4">
+                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${sp.type === 'Animal' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{sp.type}</span>
+                                 </td>
+                                 <td className="px-6 py-4">
+                                    <div className="flex flex-col">
+                                       <p className="text-xs font-bold text-slate-700">{org?.name || 'Unknown Org'}</p>
+                                       <p className="text-[10px] text-slate-400 flex items-center gap-1"><Briefcase size={10}/> {project?.name}</p>
+                                    </div>
+                                 </td>
+                                 <td className="px-6 py-4 text-center">
+                                    <div className="inline-flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-lg">
+                                       <Activity size={14} className="text-slate-400"/>
+                                       <span className="text-sm font-black text-slate-700">{indCount}</span>
+                                    </div>
+                                 </td>
+                              </tr>
+                           );
+                        })}
+                        {filteredSpecies.length === 0 && (
+                           <tr>
+                              <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">No global species records found.</td>
+                           </tr>
+                        )}
+                     </tbody>
+                  </table>
                </div>
             )}
          </div>
@@ -602,7 +654,7 @@ const SuperAdmin: React.FC = () => {
       {orgToDelete && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
-               <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><ShieldAlert size={48}/></div>
+               <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={48}/></div>
                <h3 className="text-2xl font-black text-slate-900 mb-2">Permanent Removal</h3>
                <p className="text-slate-500 mb-8 leading-relaxed">This action will permanently destroy <strong>{orgToDelete.name}</strong> and all its associated species, individuals, and user accounts. This cannot be undone.</p>
                <div className="flex gap-3">
@@ -617,8 +669,5 @@ const SuperAdmin: React.FC = () => {
     </div>
   );
 };
-
-// Internal icon lookup for local development environment
-const ShieldAlert = (props: any) => <AlertTriangle {...props} />;
 
 export default SuperAdmin;

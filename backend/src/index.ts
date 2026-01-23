@@ -54,7 +54,6 @@ app.use(morgan('dev'));
 
 /**
  * Optimized Responsive HTML Wrapper for system emails
- * Uses inlined styles for critical elements to ensure compatibility with Gmail/Outlook.
  */
 const wrapEmail = (title: string, content: string) => `
 <!DOCTYPE html>
@@ -97,7 +96,6 @@ const sendMail = async (to: string, subject: string, html: string, isRaw: boolea
           tls: { rejectUnauthorized: false }
         });
         
-        // Ensure the content uses the system wrapper
         const finalHtml = isRaw ? html : wrapEmail(subject, html);
         
         await transporter.sendMail({ 
@@ -155,7 +153,7 @@ const initDatabase = async () => {
             }
         };
 
-        // Migrations
+        // Table Migrations
         await ensureColumn('users', 'name', "VARCHAR(255) NOT NULL DEFAULT ''");
         await ensureColumn('users', 'email', "VARCHAR(255) NOT NULL UNIQUE");
         await ensureColumn('users', 'role', "VARCHAR(50) NOT NULL DEFAULT 'Keeper'");
@@ -185,19 +183,34 @@ const initDatabase = async () => {
         await ensureColumn('organizations', 'is_deleted', "TINYINT(1) DEFAULT 0");
         await ensureColumn('enclosures', 'project_id', "VARCHAR(255)");
 
+        // Schema Health Check: Fix NULL values that should have defaults
+        console.log('[DATABASE] Verifying data integrity (fixing NULL flags)...');
+        await db.execute(`UPDATE organizations SET is_deleted = 0 WHERE is_deleted IS NULL`);
+        await db.execute(`UPDATE organizations SET is_org_public = 0 WHERE is_org_public IS NULL`);
+        await db.execute(`UPDATE organizations SET is_species_public = 0 WHERE is_species_public IS NULL`);
+        await db.execute(`UPDATE organizations SET obscure_location = 0 WHERE obscure_location IS NULL`);
+        await db.execute(`UPDATE organizations SET hide_name = 0 WHERE hide_name IS NULL`);
+        await db.execute(`UPDATE organizations SET allow_breeding_requests = 0 WHERE allow_breeding_requests IS NULL`);
+        await db.execute(`UPDATE organizations SET show_native_status = 1 WHERE show_native_status IS NULL`);
+        await db.execute(`UPDATE organizations SET enable_mfa = 0 WHERE enable_mfa IS NULL`);
+        await db.execute(`UPDATE organizations SET enable_enclosures = 0 WHERE enable_enclosures IS NULL`);
+        await db.execute(`UPDATE users SET status = 'Active' WHERE status IS NULL`);
+        await db.execute(`UPDATE users SET role = 'Keeper' WHERE role IS NULL`);
+        await db.execute(`UPDATE individuals SET is_deceased = 0 WHERE is_deceased IS NULL`);
+
         // Seed Demo Data if empty
         const [users]: any = await db.execute(`SELECT id FROM users LIMIT 1`);
         if (users.length === 0) {
-            console.log('[DATABASE] Seeding demo user...');
+            console.log('[DATABASE] Seeding initial admin user...');
             const hashedPassword = await bcrypt.hash('password', 10);
             await db.execute(`INSERT IGNORE INTO organizations (id, name, location, focus) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals')`);
-            await db.execute(`INSERT IGNORE INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Admin', 'Active', ?)`, [hashedPassword]);
+            await db.execute(`INSERT IGNORE INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Super Admin', 'Active', ?)`, [hashedPassword]);
             await db.execute(`INSERT IGNORE INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Highland Sanctuary', 'General collection management')`);
         }
 
-        console.log('[DATABASE] All schema migrations finished successfully.');
+        console.log('[DATABASE] Initialization finished successfully.');
     } catch (e: any) { 
-        console.error("[DATABASE] Critical migration failure:", e);
+        console.error("[DATABASE] Critical initialization failure:", e);
     }
 };
 
@@ -289,21 +302,58 @@ app.post('/api/register', async (req: any, res: any) => {
 
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
     const orgId = req.user.orgId;
+    const role = req.user.role;
+    const isSuperAdmin = role === 'Super Admin';
     const db = getDb();
+
     try {
         const [orgs]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
-        const [users]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids, preferred_language FROM users WHERE org_id = ?`, [orgId]);
-        const [projects]: any = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
-        const [species]: any = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
-        const [individuals]: any = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
-        const [enclosures]: any = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
-        const [events]: any = await db.execute(`SELECT e.* FROM breeding_events e JOIN species s ON e.species_id = s.id JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
-        const [loans]: any = await db.execute(`SELECT * FROM breeding_loans WHERE partner_org_id = ? OR proposer_org_id = ?`, [orgId, orgId]);
-        const [partnerships]: any = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
         const [partners]: any = await db.execute(`SELECT * FROM organizations WHERE id != ?`, [orgId]);
+        
+        let users, projects, species, individuals, enclosures, events, loans, partnerships;
+
+        if (isSuperAdmin) {
+            // Super Admin gets everything globally
+            [users] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids, preferred_language FROM users`);
+            [projects] = await db.execute(`SELECT * FROM projects`);
+            [species] = await db.execute(`SELECT * FROM species`);
+            [individuals] = await db.execute(`SELECT * FROM individuals`);
+            [enclosures] = await db.execute(`SELECT * FROM enclosures`);
+            [events] = await db.execute(`SELECT * FROM breeding_events`);
+            [loans] = await db.execute(`SELECT * FROM breeding_loans`);
+            [partnerships] = await db.execute(`SELECT * FROM partnerships`);
+        } else {
+            // Regular user gets scoped data
+            [users] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids, preferred_language FROM users WHERE org_id = ?`, [orgId]);
+            [projects] = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
+            [species] = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            [individuals] = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            [enclosures] = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
+            [events] = await db.execute(`SELECT e.* FROM breeding_events e JOIN species s ON e.species_id = s.id JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            [loans] = await db.execute(`SELECT * FROM breeding_loans WHERE partner_org_id = ? OR proposer_org_id = ?`, [orgId, orgId]);
+            [partnerships] = await db.execute(`SELECT * FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
+        }
+
         const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
         const [langRows]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-        res.json({ success: true, data: { org: orgs[0], users, projects, species, individuals, enclosures, breedingEvents: events, breedingLoans: loans, partnerships, partners, settings: configRows[0]?.settings || {}, languages: langRows } });
+
+        res.json({ 
+            success: true, 
+            data: { 
+                org: orgs[0], 
+                users, 
+                projects, 
+                species, 
+                individuals, 
+                enclosures, 
+                breedingEvents: events, 
+                breedingLoans: loans, 
+                partnerships, 
+                partners, 
+                settings: configRows[0]?.settings || {}, 
+                languages: langRows 
+            } 
+        });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -312,7 +362,6 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     let finalHtml = html; let finalSubject = subject;
     const db = getDb();
     
-    // 1. Try to pull custom translation for the template
     if (language && templateKey) {
         const [langRows]: any = await db.execute(`SELECT translations FROM languages WHERE code = ? AND is_deleted = 0`, [language]);
         const translations = langRows[0]?.translations;
@@ -324,19 +373,15 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
         }
     }
 
-    // 2. Perform placeholder replacements
-    // Support both raw {{key}} and HTML-encoded %7B%7Bkey%7D%7D (common in rich text editors)
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
           const rawPattern = new RegExp(`{{${k}}}`, 'g');
           const encodedPattern = new RegExp(`%7B%7B${k}%7D%7D`, 'g');
-          
           finalHtml = finalHtml.replace(rawPattern, String(v)).replace(encodedPattern, String(v));
           finalSubject = finalSubject.replace(rawPattern, String(v)).replace(encodedPattern, String(v));
        });
     }
 
-    // 3. Dispatch email
     const result = await sendMail(to, finalSubject, finalHtml, false);
     if (result.success) res.json({ success: true });
     else res.status(500).json({ error: result.error });
