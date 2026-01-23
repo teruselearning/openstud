@@ -121,18 +121,17 @@ const OrgSettings: React.FC = () => {
     leafletMap.current.panTo([lat, lng]);
 
     setIsGeocoding(true);
-    // REGRESSION FIX: Set coordinates first as a reliable default
+    // Use coordinate string immediately as a responsive reference
     const coordString = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     setOrg(prev => prev ? ({ ...prev, location: coordString }) : null);
 
     try {
-      // Attempt reverse geocoding, but coordinates already exist as fallback
       const locationName = await reverseGeocode(lat, lng);
       if (locationName && locationName !== "Unknown Location") {
           setOrg(prev => prev ? ({ ...prev, location: locationName }) : null);
       }
     } catch (err) {
-      console.error("Auto-location failed:", err);
+      console.error("Auto-location resolve failed:", err);
     } finally {
       setIsGeocoding(false);
     }
@@ -149,7 +148,7 @@ const OrgSettings: React.FC = () => {
         updateMapMarker(latitude, longitude);
       },
       (error) => {
-        alert("Unable to retrieve your location. Please check your browser permissions.");
+        alert("Unable to retrieve your location. Check browser permissions.");
       },
       { enableHighAccuracy: true }
     );

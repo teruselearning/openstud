@@ -56,9 +56,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   useEffect(() => {
     setAllIndividuals(getIndividuals());
     setAllSpecies(getSpecies());
-    setAllProjects(getProjects());
+    const projs = getProjects();
+    setAllProjects(projs);
     setAllEnclosures(getEnclosures());
     setOrg(getOrg());
+
+    // Default project handling for single-project orgs
+    if (!editingId && projs.length === 1 && !formData.projectId) {
+       setFormData(prev => ({ ...prev, projectId: projs[0].id }));
+    }
   }, [currentProjectId]);
 
   useEffect(() => {
@@ -188,7 +194,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     setFormData({ 
       studbookId: `SB-${new Date().getFullYear()}-${Math.random().toString(36).substring(7).toUpperCase()}`, 
       speciesId: '', 
-      projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId,
+      projectId: currentProjectId === 'ALL_PROJECTS' ? (allProjects.length === 1 ? allProjects[0].id : '') : currentProjectId,
       enclosureId: '', 
       name: '', 
       sex: Sex.UNKNOWN, 
@@ -452,8 +458,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              </div>
              
              <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
-                {/* Section 0: Project Scoping (if All Projects view) */}
-                {isAll && (
+                {/* Section 0: Project Scoping (if All Projects view and >1 projects exist) */}
+                {isAll && allProjects.length > 1 && (
                   <div className="space-y-4">
                     <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <FolderOpen size={16}/> Project Selection

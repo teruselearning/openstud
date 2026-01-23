@@ -39,9 +39,10 @@ const translationSchema = {
   }
 };
 
+// Use direct process.env.API_KEY as per coding guidelines
 const getAiClient = (): GoogleGenAI => {
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) ? process.env.API_KEY : '';
-  return new GoogleGenAI({ apiKey });
+  // Fix: Direct use of process.env.API_KEY as per guidelines
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 const sanitizeJsonResponse = (text: string): string => {

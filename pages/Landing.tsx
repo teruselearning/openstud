@@ -129,7 +129,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           const { latitude, longitude } = pos.coords;
-          // REGRESSION FIX: Default to coordinate string immediately for responsiveness
+          // Set coordinates first as a reliable default
           const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
           setRegData(prev => ({ ...prev, latitude, longitude, location: coordString }));
           
@@ -423,7 +423,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         )}
 
         {viewMode === 'register' && regStep === 'verify' && (
-          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+          <div className="w-full max-md animate-in fade-in zoom-in duration-300">
              <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
                 <button onClick={() => setRegStep('details')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← Back to details</button>
                 <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 mb-4"><Key size={24} /></div>

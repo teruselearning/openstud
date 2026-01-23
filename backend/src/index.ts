@@ -102,9 +102,6 @@ const initDatabase = async () => {
 
 // --- Mail Utilities ---
 
-/**
- * Wraps raw HTML content in a beautiful responsive email template
- */
 const wrapEmailHtml = (content: string) => `
 <!DOCTYPE html>
 <html>
@@ -112,76 +109,22 @@ const wrapEmailHtml = (content: string) => `
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { 
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-      background-color: #f8fafc; 
-      margin: 0; 
-      padding: 0; 
-      -webkit-font-smoothing: antialiased;
-    }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
     .wrapper { background-color: #f8fafc; padding: 40px 20px; }
-    .container { 
-      max-width: 600px; 
-      margin: 0 auto; 
-      background-color: #ffffff; 
-      border-radius: 16px; 
-      overflow: hidden; 
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
-      border: 1px solid #e2e8f0; 
-    }
-    .header { 
-      background-color: #059669; 
-      padding: 32px; 
-      text-align: center; 
-    }
-    .logo-text { 
-      color: #ffffff; 
-      font-size: 26px; 
-      font-weight: 800; 
-      letter-spacing: -0.025em; 
-      margin: 0; 
-      text-decoration: none;
-    }
-    .content { 
-      padding: 40px; 
-      color: #334155; 
-      line-height: 1.6; 
-      font-size: 16px; 
-    }
-    .footer { 
-      background-color: #f1f5f9; 
-      padding: 24px; 
-      text-align: center; 
-      color: #64748b; 
-      font-size: 12px; 
-    }
-    p { margin-bottom: 20px; }
-    .btn {
-      display: inline-block;
-      padding: 12px 24px;
-      background-color: #059669;
-      color: #ffffff !important;
-      text-decoration: none;
-      border-radius: 8px;
-      font-weight: 700;
-      margin: 20px 0;
-    }
+    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; }
+    .header { background-color: #059669; padding: 32px; text-align: center; }
+    .logo-text { color: #ffffff; font-size: 24px; font-weight: 800; margin: 0; text-decoration: none; }
+    .content { padding: 40px; color: #334155; line-height: 1.6; font-size: 16px; }
+    .footer { background-color: #f1f5f9; padding: 24px; text-align: center; color: #64748b; font-size: 12px; }
     hr { border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0; }
   </style>
 </head>
 <body>
   <div class="wrapper">
     <div class="container">
-      <div class="header">
-        <div class="logo-text">OpenStudbook</div>
-      </div>
-      <div class="content">
-        ${content}
-      </div>
-      <div class="footer">
-        <p>&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
-        <p>This is an automated system message. Please do not reply directly to this email.</p>
-      </div>
+      <div class="header"><div class="logo-text">OpenStudbook</div></div>
+      <div class="content">${content}</div>
+      <div class="footer"><p>&copy; ${new Date().getFullYear()} OpenStudbook Project. This is an automated message.</p></div>
     </div>
   </div>
 </body>
@@ -196,7 +139,7 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
         if (typeof settings === 'string') settings = JSON.parse(settings);
 
         if (!settings.smtpHost || !settings.smtpUser) {
-            console.warn("[MAIL] SMTP not configured in app settings. Skipping mail send.");
+            console.warn("[MAIL] SMTP not configured. Skipping send.");
             return false;
         }
 
@@ -204,10 +147,7 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
             host: settings.smtpHost,
             port: Number(settings.smtpPort) || 587,
             secure: !!settings.smtpSecure,
-            auth: {
-                user: settings.smtpUser,
-                pass: settings.smtpPass
-            }
+            auth: { user: settings.smtpUser, pass: settings.smtpPass }
         });
 
         let processedSubject = subject;
@@ -219,33 +159,29 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
             processedHtml = processedHtml.replace(regex, val);
         });
 
-        // RESTORE STYLING: Wrap the processed HTML in our styled base template
-        const finalHtml = wrapEmailHtml(processedHtml);
-
         await transporter.sendMail({
             from: `"OpenStudbook" <${settings.smtpUser}>`,
             to,
             subject: processedSubject,
-            html: finalHtml
+            html: wrapEmailHtml(processedHtml)
         });
         
-        console.log(`[MAIL] Styled Email sent successfully to ${to}`);
         return true;
     } catch (e) {
-        console.error("[MAIL] Delivery error:", e);
+        console.error("[MAIL] Error:", e);
         throw e;
     }
 };
 
 const authenticate = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized: No token provided" });
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     (req as any).user = decoded;
     next();
-  } catch (e) { return res.status(401).json({ error: "Unauthorized: Session expired" }); }
+  } catch (e) { return res.status(401).json({ error: "Session expired" }); }
 };
 
 // --- Endpoints ---
@@ -270,7 +206,7 @@ app.post('/api/register/send-code', async (req: any, res: any) => {
         if (rows.length > 0) return res.status(400).json({ error: "Email already in use." });
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expires = Date.now() + (15 * 60 * 1000); // 15 mins
+        const expires = Date.now() + (15 * 60 * 1000);
 
         await db.execute(
             `INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE code = ?, expires_at = ?`,
@@ -279,25 +215,9 @@ app.post('/api/register/send-code', async (req: any, res: any) => {
 
         console.log(`[EMAIL LOG] Verification code for ${cleanEmail}: ${code}`);
         
-        // Fetch Template from settings
-        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
-        let settings = configRows[0]?.settings || {};
-        if (typeof settings === 'string') settings = JSON.parse(settings);
-        
-        const template = settings.emailTemplates?.registration || {
-            subject: "Verify your email - OpenStudbook",
-            bodyHtml: `<p>Please use the following verification code for <strong>{{orgName}}</strong>:</p><div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center; font-family: monospace; font-size: 32px; font-weight: 800; color: #065f46; letter-spacing: 4px;">{{code}}</div><p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>`
-        };
-
-        try {
-            await sendMailInternal(cleanEmail, template.subject, template.bodyHtml, {
-                code,
-                orgName: orgName || "your new organization",
-                year: new Date().getFullYear().toString()
-            });
-        } catch (mailErr) {
-            console.warn("Mail send failed during registration, proceeding with local simulation log only.");
-        }
+        await sendMailInternal(cleanEmail, "Verify your email - OpenStudbook", `<p>Please use the code below for <strong>{{orgName}}</strong>:</p><div style="padding: 20px; background: #f0fdf4; border: 2px dashed #059669; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; font-weight: bold; color: #065f46;">{{code}}</div>`, {
+            code, orgName: orgName || "your organization"
+        });
 
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -310,42 +230,48 @@ app.post('/api/register', async (req: any, res: any) => {
         const cleanEmail = email.toLowerCase().trim();
 
         const [codes]: any = await db.execute(`SELECT * FROM verification_codes WHERE email = ? AND code = ?`, [cleanEmail, code]);
-        if (codes.length === 0) return res.status(400).json({ error: "Invalid verification code." });
-        if (codes[0].expires_at < Date.now()) return res.status(400).json({ error: "Verification code expired." });
+        if (codes.length === 0) return res.status(400).json({ error: "Invalid code." });
+        if (codes[0].expires_at < Date.now()) return res.status(400).json({ error: "Code expired." });
 
         const orgId = `org-${Date.now()}`;
         const userId = `u-${Date.now()}`;
         const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        await db.execute(
-            `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude, obscure_location) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`,
-            [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
-        );
-        await db.execute(
-            `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,
-            [userId, orgId, userName, cleanEmail, hashedPassword]
-        );
-        await db.execute(
-            `INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'General Collection', 'Default project created during registration.')`,
-            [projectId, orgId]
-        );
-        
-        await db.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
+        const conn = await db.getConnection();
+        try {
+            await conn.beginTransaction();
+            await conn.execute(
+                `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude, obscure_location) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`,
+                [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
+            );
+            await conn.execute(
+                `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,
+                [userId, orgId, userName, cleanEmail, hashedPassword]
+            );
+            await conn.execute(
+                `INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'General Collection', 'Default project created during registration.')`,
+                [projectId, orgId]
+            );
+            await conn.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
+            await conn.commit();
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
 
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
         const [userRows]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [userId]);
         const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
 
         res.json({ 
-            success: true, 
-            token, 
+            success: true, token, 
             user: { ...userRows[0], orgId: userRows[0].org_id, avatarUrl: userRows[0].avatar_url, allowedProjectIds: [] },
             organization: orgRows[0]
         });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/login', async (req: any, res: any) => {
@@ -359,11 +285,10 @@ app.post('/api/login', async (req: any, res: any) => {
         if (!isValid) return res.status(401).json({ error: "Invalid credentials" });
         
         const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-        const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
+        const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [user.org_id]);
         
         res.json({ 
-            success: true, 
-            token, 
+            success: true, token, 
             user: { ...user, orgId: user.org_id, avatarUrl: user.avatar_url, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : (user.allowed_project_ids || []) }, 
             organization: orgRows[0] 
         });
@@ -419,99 +344,44 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     try {
         await sendMailInternal(to, subject, html, placeholders);
         res.json({ success: true });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/email/test', authenticate, async (req: any, res: any) => {
-    const { to } = req.body;
-    try {
-        await sendMailInternal(to, "SMTP Configuration Test", "<p>Congratulations! Your OpenStudbook SMTP configuration is working correctly.</p>");
-        res.json({ success: true, message: "SMTP test OK" });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/forgot-password', async (req: any, res: any) => {
-    const { email } = req.body;
-    try {
-        const db = getDb();
-        const [rows]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [email]);
-        if (rows.length === 0) return res.json({ success: true, message: "If account exists, code sent." });
-        
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expires = Date.now() + (60 * 60 * 1000); // 1 hour
-        
-        await db.execute(`UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?`, [code, expires, email]);
-        
-        await sendMailInternal(email, "Password Reset Code", "<p>Your password reset code is: <strong>{{code}}</strong></p>", { code });
-        
-        res.json({ success: true, message: "If account exists, code sent." });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/reset-password', async (req: any, res: any) => {
-    const { email, code, newPassword } = req.body;
-    try {
-        const db = getDb();
-        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = ? AND reset_code = ?`, [email, code]);
-        if (rows.length === 0) return res.status(400).json({ error: "Invalid code" });
-        if (rows[0].reset_expires < Date.now()) return res.status(400).json({ error: "Code expired" });
-        
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await db.execute(`UPDATE users SET password = ?, reset_code = NULL, reset_expires = NULL WHERE email = ?`, [hashedPassword, email]);
-        
-        res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const { id } = req.query;
-    if (!id) return res.status(400).json({ error: "Missing id parameter" });
+    if (!id) return res.status(400).json({ error: "Missing id" });
     
     try {
         const db = getDb();
-        const allowedTables = ['organizations', 'users', 'projects', 'species', 'individuals', 'enclosures', 'languages', 'breeding_events', 'breeding_loans', 'partnerships'];
-        if (!allowedTables.includes(table)) return res.status(400).json({ error: "Invalid table" });
-        
-        // Handle full cascading delete for organizations
         if (table === 'organizations') {
-            const orgId = id;
-            // 1. Delete Individuals and Species linked to Projects belonging to this Org
-            await db.execute(`DELETE FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
-            await db.execute(`DELETE FROM species WHERE project_id IN (SELECT id FROM projects nominated WHERE org_id = ?)`, [orgId]);
-            
-            // 2. Delete Projects, Enclosures, Users belonging directly to this Org
-            await db.execute(`DELETE FROM projects WHERE org_id = ?`, [orgId]);
-            await db.execute(`DELETE FROM enclosures WHERE org_id = ?`, [orgId]);
-            await db.execute(`DELETE FROM users WHERE org_id = ?`, [orgId]);
-            
-            // 3. Clean up breeding loans and partnerships involving this Org
-            await db.execute(`DELETE FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
-            await db.execute(`DELETE FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
-            
-            // 4. Finally delete the Organization record itself
-            await db.execute(`DELETE FROM organizations WHERE id = ?`, [orgId]);
+            const conn = await db.getConnection();
+            try {
+               await conn.beginTransaction();
+               await conn.execute(`DELETE FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [id]);
+               await conn.execute(`DELETE FROM species WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [id]);
+               await conn.execute(`DELETE FROM projects WHERE org_id = ?`, [id]);
+               await conn.execute(`DELETE FROM enclosures WHERE org_id = ?`, [id]);
+               await conn.execute(`DELETE FROM users WHERE org_id = ?`, [id]);
+               await conn.execute(`DELETE FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [id, id]);
+               await conn.execute(`DELETE FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [id, id]);
+               await conn.execute(`DELETE FROM organizations WHERE id = ?`, [id]);
+               await conn.commit();
+            } catch (err) {
+               await conn.rollback();
+               throw err;
+            } finally { conn.release(); }
         } else {
             await db.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
         }
-        
         res.json({ success: true });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
-   if (req.path.startsWith('/api/')) return res.status(404).json({ error: "API route not found" });
+   if (req.path.startsWith('/api/')) return res.status(404).json({ error: "404" });
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });
 
-(async () => { 
-  await initDatabase(); 
-  app.listen(PORT, () => console.log(`Backend server listening on ${PORT}`)); 
-})();
+(async () => { await initDatabase(); app.listen(PORT, () => console.log(`Backend listening on ${PORT}`)); })();

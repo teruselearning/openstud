@@ -44,7 +44,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   useEffect(() => {
     setAllSpecies(getSpecies());
     setOrg(getOrg());
-    setAllProjects(getProjects());
+    const projs = getProjects();
+    setAllProjects(projs);
+
+    // Default project handling for single-project orgs
+    if (!editingId && projs.length === 1 && !formData.projectId) {
+       setFormData(prev => ({ ...prev, projectId: projs[0].id }));
+    }
   }, [currentProjectId]);
 
   const handleAutoFill = async () => {
@@ -90,7 +96,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       commonName: '', scientificName: '', type: 'Animal', conservationStatus: '', sexualMaturityAgeYears: 0, 
       averageAdultWeightKg: 0, lifeExpectancyYears: 0, breedingSeasonStart: 1, breedingSeasonEnd: 12, 
       imageUrl: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
-      projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId
+      projectId: currentProjectId === 'ALL_PROJECTS' ? (allProjects.length === 1 ? allProjects[0].id : '') : currentProjectId
     });
   };
 
@@ -178,7 +184,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} required /></div>
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} required /></div>
-                        {isAll && (
+                        {isAll && allProjects.length > 1 && (
                           <div className="space-y-1">
                             <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
                             <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
@@ -227,7 +233,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <div className="p-5 flex-1 flex flex-col">
               <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
               <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>
-              <div className="mb-4 text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5"><FolderOpen size={12}/> {allProjects.find(p => p.id === species.projectId)?.name || 'Unknown Project'}</div>
+              {allProjects.length > 1 && (
+                <div className="mb-4 text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5"><FolderOpen size={12}/> {allProjects.find(p => p.id === species.projectId)?.name || 'Unknown Project'}</div>
+              )}
               <div className="grid grid-cols-2 gap-3 mt-auto">
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} {t('years')}</span></div>
                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} {t('years')}</span></div>
