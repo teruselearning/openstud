@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import path from 'path';
 import process from 'process';
+import nodemailer from 'nodemailer';
 
 declare const __dirname: string;
 
@@ -64,7 +65,7 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes LONGTEXT, source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS breeding_loans (id VARCHAR(255) PRIMARY KEY, partner_org_id VARCHAR(255), proposer_org_id VARCHAR(255), role VARCHAR(50), start_date VARCHAR(50), end_date VARCHAR(50), status VARCHAR(50), individual_ids JSON, terms LONGTEXT, notification_recipient_id VARCHAR(255), change_request JSON)`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS breeding_loans (id VARCHAR(255) PRIMARY KEY, partner_org_id VARCHAR(255), proposer_org_id VARCHAR(255), role VARCHAR(50), start_date VARCHAR(50), end_date VARCHAR(50), status VARCHAR(50), individual_ids JSON, masonry_id VARCHAR(255), notification_recipient_id VARCHAR(255), change_request JSON, terms LONGTEXT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS partnerships (id VARCHAR(255) PRIMARY KEY, org_id_1 VARCHAR(255), org_id_2 VARCHAR(255), status VARCHAR(50), established_date VARCHAR(50))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS app_config (id VARCHAR(255) PRIMARY KEY, settings JSON)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
@@ -99,6 +100,54 @@ const initDatabase = async () => {
     }
 };
 
+// --- Mail Utilities ---
+
+const sendMailInternal = async (to: string, subject: string, html: string, placeholders: Record<string, string> = {}) => {
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        let settings = rows[0]?.settings || {};
+        if (typeof settings === 'string') settings = JSON.parse(settings);
+
+        if (!settings.smtpHost || !settings.smtpUser) {
+            console.warn("[MAIL] SMTP not configured in app settings. Skipping mail send.");
+            return false;
+        }
+
+        const transporter = nodemailer.createTransport({
+            host: settings.smtpHost,
+            port: Number(settings.smtpPort) || 587,
+            secure: !!settings.smtpSecure,
+            auth: {
+                user: settings.smtpUser,
+                pass: settings.smtpPass
+            }
+        });
+
+        let processedSubject = subject;
+        let processedHtml = html;
+
+        Object.entries(placeholders).forEach(([key, val]) => {
+            const regex = new RegExp(`{{${key}}}`, 'g');
+            processedSubject = processedSubject.replace(regex, val);
+            processedHtml = processedHtml.replace(regex, val);
+        });
+
+        await transporter.sendMail({
+            from: `"OpenStudbook" <${settings.smtpUser}>`,
+            to,
+            subject: processedSubject,
+            html: processedHtml
+        });
+        
+        console.log(`[MAIL] Email sent successfully to ${to}`);
+        return true;
+    } catch (e) {
+        console.error("[MAIL] Delivery error:", e);
+        throw e;
+    }
+};
+
 const authenticate = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized: No token provided" });
@@ -124,7 +173,7 @@ app.get('/api/config', async (req: any, res: any) => {
 });
 
 app.post('/api/register/send-code', async (req: any, res: any) => {
-    const { email } = req.body;
+    const { email, orgName } = req.body;
     try {
         const db = getDb();
         const cleanEmail = email.toLowerCase().trim();
@@ -139,8 +188,28 @@ app.post('/api/register/send-code', async (req: any, res: any) => {
             [cleanEmail, code, expires, code, expires]
         );
 
-        console.log(`[EMAIL SIM] Verification code for ${cleanEmail}: ${code}`);
-        // In a real app, send actual email here.
+        console.log(`[EMAIL LOG] Verification code for ${cleanEmail}: ${code}`);
+        
+        // Fetch Template from settings
+        const [configRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        let settings = configRows[0]?.settings || {};
+        if (typeof settings === 'string') settings = JSON.parse(settings);
+        
+        const template = settings.emailTemplates?.registration || {
+            subject: "Verify your email - OpenStudbook",
+            bodyHtml: "<p>Your verification code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>"
+        };
+
+        try {
+            await sendMailInternal(cleanEmail, template.subject, template.bodyHtml, {
+                code,
+                orgName: orgName || "your new organization",
+                year: new Date().getFullYear().toString()
+            });
+        } catch (mailErr) {
+            console.warn("Mail send failed during registration, proceeding with local simulation log only.");
+        }
+
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -151,7 +220,6 @@ app.post('/api/register', async (req: any, res: any) => {
         const db = getDb();
         const cleanEmail = email.toLowerCase().trim();
 
-        // Verify Code
         const [codes]: any = await db.execute(`SELECT * FROM verification_codes WHERE email = ? AND code = ?`, [cleanEmail, code]);
         if (codes.length === 0) return res.status(400).json({ error: "Invalid verification code." });
         if (codes[0].expires_at < Date.now()) return res.status(400).json({ error: "Verification code expired." });
@@ -161,7 +229,6 @@ app.post('/api/register', async (req: any, res: any) => {
         const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Transactional creation
         await db.execute(
             `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude) VALUES (?, ?, ?, ?, 1, ?, ?)`,
             [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
@@ -175,7 +242,6 @@ app.post('/api/register', async (req: any, res: any) => {
             [projectId, orgId]
         );
         
-        // Clean up code
         await db.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
 
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
@@ -259,10 +325,58 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/forgot-password', (req: any, res: any) => res.json({ success: true, message: "If account exists, code sent." }));
-app.post('/api/reset-password', (req: any, res: any) => res.json({ success: true }));
-app.post('/api/email/send', authenticate, (req: any, res: any) => res.json({ success: true }));
-app.post('/api/email/test', authenticate, (req: any, res: any) => res.json({ success: true, message: "SMTP test OK" }));
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, subject, html, placeholders } = req.body;
+    try {
+        await sendMailInternal(to, subject, html, placeholders);
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const { to } = req.body;
+    try {
+        await sendMailInternal(to, "SMTP Configuration Test", "<p>Congratulations! Your OpenStudbook SMTP configuration is working correctly.</p>");
+        res.json({ success: true, message: "SMTP test OK" });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/forgot-password', async (req: any, res: any) => {
+    const { email } = req.body;
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [email]);
+        if (rows.length === 0) return res.json({ success: true, message: "If account exists, code sent." });
+        
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = Date.now() + (60 * 60 * 1000); // 1 hour
+        
+        await db.execute(`UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?`, [code, expires, email]);
+        
+        await sendMailInternal(email, "Password Reset Code", "<p>Your password reset code is: <strong>{{code}}</strong></p>", { code });
+        
+        res.json({ success: true, message: "If account exists, code sent." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/reset-password', async (req: any, res: any) => {
+    const { email, code, newPassword } = req.body;
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = ? AND reset_code = ?`, [email, code]);
+        if (rows.length === 0) return res.status(400).json({ error: "Invalid code" });
+        if (rows[0].reset_expires < Date.now()) return res.status(400).json({ error: "Code expired" });
+        
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.execute(`UPDATE users SET password = ?, reset_code = NULL, reset_expires = NULL WHERE email = ?`, [hashedPassword, email]);
+        
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
 
 app.use(express.static(path.join(__dirname, '../../dist')));
 app.get('*', (req: any, res: any) => {
