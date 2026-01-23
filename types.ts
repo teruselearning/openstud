@@ -130,6 +130,7 @@ export interface LandingPageConfig {
   showFeatures?: boolean;
   features?: LandingFeature[];
   customContentHtml?: string;
+  registrationBanner?: string;
 }
 
 export interface StaticPageConfig {

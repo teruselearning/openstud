@@ -68,6 +68,7 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS partnerships (id VARCHAR(255) PRIMARY KEY, org_id_1 VARCHAR(255), org_id_2 VARCHAR(255), status VARCHAR(50), established_date VARCHAR(50))`);
         await db.execute(`CREATE TABLE IF NOT EXISTS app_config (id VARCHAR(255) PRIMARY KEY, settings JSON)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS verification_codes (email VARCHAR(255) PRIMARY KEY, code VARCHAR(10) NOT NULL, expires_at BIGINT NOT NULL)`);
         
         // --- Seed Data Logic ---
         const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
@@ -89,7 +90,6 @@ const initDatabase = async () => {
         const [langs]: any = await db.execute(`SELECT code FROM languages LIMIT 1`);
         if (langs.length === 0) {
             console.log('[DATABASE] Seeding core languages...');
-            // We use JSON.stringify for empty translations so JSON columns are valid
             await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-GB', 'English (UK)', 1, ?)`, [JSON.stringify({})]);
             await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-US', 'English (US)', 0, ?)`, [JSON.stringify({})]);
         }
@@ -123,35 +123,62 @@ app.get('/api/config', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/register', async (req: any, res: any) => {
-    const { orgName, userName, email, password, location, focus, latitude, longitude } = req.body;
+app.post('/api/register/send-code', async (req: any, res: any) => {
+    const { email } = req.body;
     try {
         const db = getDb();
+        const cleanEmail = email.toLowerCase().trim();
+        const [rows]: any = await db.execute(`SELECT id FROM users WHERE email = ?`, [cleanEmail]);
+        if (rows.length > 0) return res.status(400).json({ error: "Email already in use." });
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = Date.now() + (15 * 60 * 1000); // 15 mins
+
+        await db.execute(
+            `INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE code = ?, expires_at = ?`,
+            [cleanEmail, code, expires, code, expires]
+        );
+
+        console.log(`[EMAIL SIM] Verification code for ${cleanEmail}: ${code}`);
+        // In a real app, send actual email here.
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/register', async (req: any, res: any) => {
+    const { orgName, userName, email, password, location, focus, latitude, longitude, code } = req.body;
+    try {
+        const db = getDb();
+        const cleanEmail = email.toLowerCase().trim();
+
+        // Verify Code
+        const [codes]: any = await db.execute(`SELECT * FROM verification_codes WHERE email = ? AND code = ?`, [cleanEmail, code]);
+        if (codes.length === 0) return res.status(400).json({ error: "Invalid verification code." });
+        if (codes[0].expires_at < Date.now()) return res.status(400).json({ error: "Verification code expired." });
+
         const orgId = `org-${Date.now()}`;
         const userId = `u-${Date.now()}`;
         const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // 1. Create Organization
+        // Transactional creation
         await db.execute(
             `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude) VALUES (?, ?, ?, ?, 1, ?, ?)`,
             [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
         );
-
-        // 2. Create Admin User
         await db.execute(
             `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,
-            [userId, orgId, userName, email.toLowerCase().trim(), hashedPassword]
+            [userId, orgId, userName, cleanEmail, hashedPassword]
         );
-
-        // 3. Create Default Project
         await db.execute(
             `INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'General Collection', 'Default project created during registration.')`,
             [projectId, orgId]
         );
+        
+        // Clean up code
+        await db.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
 
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
-        
         const [userRows]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [userId]);
         const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
 
@@ -162,8 +189,7 @@ app.post('/api/register', async (req: any, res: any) => {
             organization: orgRows[0]
         });
     } catch (e: any) {
-        console.error("Registration error:", e);
-        res.status(500).json({ error: e.message.includes('Duplicate') ? 'Email already registered.' : e.message });
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -233,7 +259,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Stubs for remaining functional endpoints
 app.post('/api/forgot-password', (req: any, res: any) => res.json({ success: true, message: "If account exists, code sent." }));
 app.post('/api/reset-password', (req: any, res: any) => res.json({ success: true }));
 app.post('/api/email/send', authenticate, (req: any, res: any) => res.json({ success: true }));

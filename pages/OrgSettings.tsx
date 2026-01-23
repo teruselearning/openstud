@@ -4,7 +4,6 @@ import { useLocation, Link } from 'react-router-dom';
 import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
-// Fix: Added missing Dna, PawPrint, Database imports
 import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
@@ -29,16 +28,12 @@ const OrgSettings: React.FC = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
   
-  // Project Management State
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  // Fix: Added missing editingId and setEditingId for project row inline editing
   const [editingId, setEditingId] = useState<string | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [transferTargetId, setTransferTargetId] = useState<string>('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectData, setNewProjectData] = useState({ name: '', description: '' });
 
-  // Data Transfer Modal State
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferSourceId, setTransferSourceId] = useState<string | null>(null);
   const [transferTargetIdModal, setTransferTargetIdModal] = useState<string>('');
@@ -374,13 +369,9 @@ const OrgSettings: React.FC = () => {
          <div className="space-y-8 animate-in fade-in">
             <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">{t('orgName')}</label>
                   <input type="text" name="name" value={org.name} onChange={handleChange} disabled={isDemoOrg} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">{t('foundedYear')}</label>
-                  <input type="number" name="foundedYear" value={org.foundedYear} onChange={handleChange} disabled={isDemoOrg} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-500" />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">{t('locationName')}</label>

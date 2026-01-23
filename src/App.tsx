@@ -65,9 +65,12 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Inherit from Component explicitly and use class fields for state to resolve member access errors on this.props and this.state
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false };
+// Fixed: Inherit from React.Component and use constructor for state to resolve TypeScript member access errors on this.props and this.state
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
   
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
     return { hasError: true, error }; 
@@ -78,7 +81,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Correctly accessing state and props through inherited members on Component
+    // Correctly accessing state and props through inherited members on React.Component
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl m-4 border border-slate-200 shadow-sm">

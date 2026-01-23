@@ -8,7 +8,7 @@ import {
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
   Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
   Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check, Search,
-  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf
+  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf, MessageSquare
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner, Project, Individual, Species, Sex } from '../types';
@@ -540,6 +540,13 @@ const SuperAdmin: React.FC = () => {
                         </label>
                      </div>
                   </div>
+                  
+                  <div className="space-y-1">
+                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><MessageSquare size={14} className="text-blue-500"/> Registration Banner Message</label>
+                     <textarea className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium" rows={3} placeholder="Important note: This is where you set up a new organisation..." value={settings.landingPageConfig?.registrationBanner || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, registrationBanner: e.target.value }})} />
+                     <p className="text-[10px] text-slate-400 italic">This message appears at the top of the organization registration form.</p>
+                  </div>
+
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('heroTitle')}</label><input className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={settings.landingPageConfig?.heroTitle || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, heroTitle: e.target.value }})} /></div>
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('heroSubtitle')}</label><textarea className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium" rows={3} value={settings.landingPageConfig?.heroSubtitle || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, heroSubtitle: e.target.value }})} /></div>
                   <div className="space-y-3 pt-4 border-t border-slate-50">
