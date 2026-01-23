@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
-import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
 import UserManager from './UserManager';
@@ -68,6 +67,9 @@ const OrgSettings: React.FC = () => {
          projectsRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 500);
     }
+    if (locationState.state?.tab) {
+       setActiveTab(locationState.state.tab as Tab);
+    }
   }, [locationState, projects]);
 
   useEffect(() => {
@@ -97,29 +99,53 @@ const OrgSettings: React.FC = () => {
 
       if (!e || !e.latlng) return;
       const { lat, lng } = e.latlng;
-      
-      setOrg(prev => prev ? ({ ...prev, latitude: lat, longitude: lng }) : null);
-
-      if (markerRef.current) {
-        markerRef.current.setLatLng([lat, lng]);
-      } else {
-        markerRef.current = L.marker([lat, lng]).addTo(map);
-      }
-
-      setIsGeocoding(true);
-      try {
-        const locationName = await reverseGeocode(lat, lng);
-        setOrg(prev => prev ? ({ ...prev, location: locationName }) : null);
-      } catch (err) {
-        console.error("Auto-location failed:", err);
-      } finally {
-        setIsGeocoding(false);
-      }
+      updateMapMarker(lat, lng);
     });
     
     setTimeout(() => map.invalidateSize(), 100);
 
   }, [org, activeTab]);
+
+  const updateMapMarker = async (lat: number, lng: number) => {
+    if (!org || !leafletMap.current) return;
+    
+    setOrg(prev => prev ? ({ ...prev, latitude: lat, longitude: lng }) : null);
+
+    if (markerRef.current) {
+      markerRef.current.setLatLng([lat, lng]);
+    } else {
+      markerRef.current = L.marker([lat, lng]).addTo(leafletMap.current);
+    }
+
+    leafletMap.current.panTo([lat, lng]);
+
+    setIsGeocoding(true);
+    try {
+      const locationName = await reverseGeocode(lat, lng);
+      setOrg(prev => prev ? ({ ...prev, location: locationName }) : null);
+    } catch (err) {
+      console.error("Auto-location failed:", err);
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleLocateMe = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        updateMapMarker(latitude, longitude);
+      },
+      (error) => {
+        alert("Unable to retrieve your location. Please check your browser permissions.");
+      },
+      { enableHighAccuracy: true }
+    );
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     if (!org) return;
@@ -383,7 +409,10 @@ const OrgSettings: React.FC = () => {
                 <div className="md:col-span-2 space-y-2">
                    <div className="flex justify-between items-center">
                      <label className="text-sm font-medium text-slate-700">{t('geoLocation')}</label>
-                     {(typeof org.latitude === 'number') && <span className="text-xs text-slate-500 font-mono">Lat: {org.latitude.toFixed(4)}, Lng: {org.longitude?.toFixed(4)}</span>}
+                     <div className="flex items-center gap-4">
+                        <button type="button" onClick={handleLocateMe} disabled={isDemoOrg} className="text-xs font-bold text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 transition-all flex items-center gap-1.5 disabled:opacity-50"><Crosshair size={14}/> Use Current Location</button>
+                        {(typeof org.latitude === 'number') && <span className="text-xs text-slate-500 font-mono">Lat: {org.latitude.toFixed(4)}, Lng: {org.longitude?.toFixed(4)}</span>}
+                     </div>
                    </div>
                    <div className="h-[300px] w-full rounded-lg border border-slate-300 overflow-hidden relative z-0">
                      <div id="map" ref={mapRef} className="h-full w-full"></div>

@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -58,7 +57,8 @@ const initDatabase = async () => {
         const db = getDb();
         
         // --- Table Definitions ---
-        await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 0, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
+        // Changed obscure_location default to 1 (True)
+        await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
@@ -75,8 +75,8 @@ const initDatabase = async () => {
         const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
         if (orgs.length === 0) {
             console.log('[DATABASE] Seeding multiple organizations...');
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals', 1, 1)`);
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public) VALUES ('org-2', 'Oceanic Research Lab', 'Queensland, AU', 'Animals', 1, 1)`);
+            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals', 1, 1, 0)`);
+            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-2', 'Oceanic Research Lab', 'Queensland, AU', 'Animals', 1, 1, 0)`);
             
             const hashed = await bcrypt.hash('password', 10);
             await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Super Admin', 'Active', ?)`, [hashed]);
@@ -197,7 +197,7 @@ app.post('/api/register/send-code', async (req: any, res: any) => {
         
         const template = settings.emailTemplates?.registration || {
             subject: "Verify your email - OpenStudbook",
-            bodyHtml: "<p>Your verification code for <strong>{{orgName}}</strong> is: <strong>{{code}}</strong></p>"
+            bodyHtml: `<p>Please use the following verification code for <strong>{{orgName}}</strong>:</p><div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center; font-family: monospace; font-size: 32px; font-weight: 800; color: #065f46; letter-spacing: 4px;">{{code}}</div><p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>`
         };
 
         try {
@@ -229,8 +229,9 @@ app.post('/api/register', async (req: any, res: any) => {
         const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Explicitly set obscure_location to 1 (true)
         await db.execute(
-            `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude) VALUES (?, ?, ?, ?, 1, ?, ?)`,
+            `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude, obscure_location) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`,
             [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
         );
         await db.execute(
@@ -291,14 +292,14 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
 
         if (isSuper) {
             [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ?`, [orgId]);
+            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ?`);
             [projectsRows] = await db.execute(`SELECT * FROM projects`);
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             [speciesRows] = await db.execute(`SELECT * FROM species`);
             [individualsRows] = await db.execute(`SELECT * FROM individuals`);
         } else {
             [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1`, [orgId]);
+            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1`);
             [projectsRows] = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             [speciesRows] = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
@@ -376,6 +377,25 @@ app.post('/api/reset-password', async (req: any, res: any) => {
         
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Generic generic REST DELETE to handle organizations, users, projects etc. 
+// Added explicit REST route support to avoid 404s on generic table deletions
+app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const { table } = req.params;
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: "Missing id parameter" });
+    
+    try {
+        const db = getDb();
+        const allowedTables = ['organizations', 'users', 'projects', 'species', 'individuals', 'enclosures', 'languages', 'breeding_events', 'breeding_loans', 'partnerships'];
+        if (!allowedTables.includes(table)) return res.status(400).json({ error: "Invalid table" });
+        
+        await db.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.use(express.static(path.join(__dirname, '../../dist')));
