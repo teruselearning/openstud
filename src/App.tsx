@@ -67,7 +67,7 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fixed: Correctly using Component from react and ensuring this access for state/props
+// Fixed: Explicitly referencing this.state and this.props to resolve TS errors
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -79,21 +79,19 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("ErrorBoundary caught an error", error, errorInfo); }
 
   render() {
-    // Correctly using this context to access state and props
-    const { hasError, error } = this.state;
-    const { children } = this.props;
-    if (hasError) {
+    // Correctly referencing this to access state and props
+    if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-slate-50 rounded-xl m-4 border border-slate-200">
           <AlertCircle size={48} className="text-red-500 mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">Something went wrong.</h2>
           <p className="text-slate-600 mb-6 max-w-md">We couldn't load this section. This might be due to a temporary glitch or missing data.</p>
-          {error && <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">{error.toString()}</div>}
+          {this.state.error && <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">{this.state.error.toString()}</div>}
           <button onClick={() => window.location.reload()} className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 font-medium transition-colors shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Reload Application</button>
         </div>
       );
     }
-    return children;
+    return this.props.children;
   }
 }
 

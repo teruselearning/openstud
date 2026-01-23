@@ -52,38 +52,28 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
-// Optimized Responsive HTML Wrapper for system emails
+/**
+ * Optimized Responsive HTML Wrapper for system emails
+ * Uses inlined styles for critical elements to ensure compatibility with Gmail/Outlook.
+ */
 const wrapEmail = (title: string, content: string) => `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
-    .container { max-width: 600px; margin: 20px auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-    .header { background-color: #059669; padding: 32px 24px; text-align: center; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em; text-decoration: none; }
-    .content { padding: 40px 32px; color: #1e293b; line-height: 1.6; }
-    .content h2 { margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700; margin-bottom: 20px; }
-    .footer { background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9; }
-    .footer p { margin: 0; font-size: 12px; color: #94a3b8; }
-    .button-container { text-align: center; margin: 30px 0; }
-    .button { background-color: #059669; color: #ffffff !important; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block; }
-    .code-block { margin: 24px 0; padding: 20px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center; font-family: monospace; font-size: 32px; font-weight: 800; color: #065f46; letter-spacing: 4px; }
-  </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>OpenStudbook</h1>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; color: #1e293b;">
+  <div style="max-width: 600px; margin: 20px auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+    <div style="background-color: #059669; padding: 32px 24px; text-align: center;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em; text-decoration: none;">OpenStudbook</h1>
     </div>
-    <div class="content">
-      <h2>${title}</h2>
+    <div style="padding: 40px 32px; line-height: 1.6;">
+      <h2 style="margin-top: 0; color: #0f172a; font-size: 20px; font-weight: 700; margin-bottom: 20px;">${title}</h2>
       ${content}
     </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
+    <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #f1f5f9;">
+      <p style="margin: 0; font-size: 12px; color: #94a3b8;">&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
       <p style="margin-top: 4px; font-size: 11px; color: #cbd5e1;">Captive Population Management System</p>
     </div>
   </div>
@@ -107,8 +97,7 @@ const sendMail = async (to: string, subject: string, html: string, isRaw: boolea
           tls: { rejectUnauthorized: false }
         });
         
-        // Only wrap if not explicitly raw.
-        // We use inner templates in the DB and wrap them here for consistency.
+        // Ensure the content uses the system wrapper
         const finalHtml = isRaw ? html : wrapEmail(subject, html);
         
         await transporter.sendMail({ 
@@ -264,7 +253,7 @@ app.post('/api/forgot-password', async (req: any, res: any) => {
         const expires = Date.now() + 3600000; // 1 hour
         await db.execute(`UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?`, [code, expires, email]);
 
-        await sendMail(email, "Password Reset Code", `<p>You have requested a password reset. Please enter the following code into the application:</p><div class="code-block">${code}</div><p style="color: #64748b; font-size: 14px;">This code will expire in 1 hour.</p>`);
+        await sendMail(email, "Password Reset Code", `<p>You have requested a password reset. Please enter the following code into the application:</p><div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center; font-family: monospace; font-size: 32px; font-weight: 800; color: #065f46; letter-spacing: 4px;">${code}</div><p style="color: #64748b; font-size: 14px;">This code will expire in 1 hour.</p>`);
         res.json({ success: true, message: "Recovery code sent to your email." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -336,11 +325,14 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     }
 
     // 2. Perform placeholder replacements
+    // Support both raw {{key}} and HTML-encoded %7B%7Bkey%7D%7D (common in rich text editors)
     if (placeholders) {
        Object.entries(placeholders).forEach(([k, v]) => {
-          const placeholder = new RegExp(`{{${k}}}`, 'g');
-          finalHtml = finalHtml.replace(placeholder, String(v));
-          finalSubject = finalSubject.replace(placeholder, String(v));
+          const rawPattern = new RegExp(`{{${k}}}`, 'g');
+          const encodedPattern = new RegExp(`%7B%7B${k}%7D%7D`, 'g');
+          
+          finalHtml = finalHtml.replace(rawPattern, String(v)).replace(encodedPattern, String(v));
+          finalSubject = finalSubject.replace(rawPattern, String(v)).replace(encodedPattern, String(v));
        });
     }
 

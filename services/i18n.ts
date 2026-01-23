@@ -333,15 +333,15 @@ export const BASE_TRANSLATIONS = {
     yourInviteCode: "Your Invite Code",
     partnerVisibilityPrivate: "Species list private",
 
-    // Email Templates Localized - CLEAN INNER CONTENT
+    // Email Templates Localized - CLEAN INNER CONTENT WITH INLINE STYLE FALLBACKS
     emailVerifySubject: "Security Code: OpenStudbook",
-    emailVerifyBody: `<p>Please use the following verification code for <strong>{{orgName}}</strong>:</p><div class="code-block">{{code}}</div><p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>`,
+    emailVerifyBody: `<p>Please use the following verification code for <strong>{{orgName}}</strong>:</p><div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border: 2px dashed #059669; border-radius: 12px; text-align: center; font-family: monospace; font-size: 32px; font-weight: 800; color: #065f46; letter-spacing: 4px;">{{code}}</div><p style="font-size: 14px; color: #64748b;">This code will expire shortly. If you did not request this, please ignore this email.</p>`,
     
     emailInviteSubject: "You've been invited to join {{orgName}}",
-    emailInviteBody: `<p>Hello <strong>{{userName}}</strong>,</p><p>You have been invited to join the management team at <strong>{{orgName}}</strong>. Use the button below to accept your invitation and set up your account password:</p><div class="button-container"><a href="{{inviteUrl}}" class="button">Accept Invitation</a></div><p style="font-size: 14px; color: #64748b;">If the button above does not work, copy and paste this link into your browser:<br><a href="{{inviteUrl}}" style="color: #059669; word-break: break-all;">{{inviteUrl}}</a></p>`,
+    emailInviteBody: `<p>Hello <strong>{{userName}}</strong>,</p><p>You have been invited to join the management team at <strong>{{orgName}}</strong>. Use the button below to accept your invitation and set up your account password:</p><div style="text-align: center; margin: 30px 0;"><a href="{{inviteUrl}}" style="background-color: #059669; color: #ffffff !important; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-block;">Accept Invitation</a></div><p style="font-size: 14px; color: #64748b; margin-top: 24px;">If the button above does not work, copy and paste this link into your browser:<br><a href="{{inviteUrl}}" style="color: #059669; word-break: break-all; text-decoration: underline;">{{inviteUrl}}</a></p>`,
     
     emailNotifySubject: "System Notification from OpenStudbook",
-    emailNotifyBody: `<p>A new event has occurred at <strong>{{orgName}}</strong> that requires your attention:</p><div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border-left: 4px solid #059669; border-radius: 4px;"><p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">{{message}}</p></div><div class="button-container"><a href="{{appUrl}}" class="button" style="background-color: #1e293b;">Open Dashboard</a></div>`
+    emailNotifyBody: `<p>A new event has occurred at <strong>{{orgName}}</strong> that requires your attention:</p><div style="margin: 24px 0; padding: 20px; background-color: #f8fafc; border-left: 4px solid #059669; border-radius: 4px;"><p style="font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">{{message}}</p></div><div style="text-align: center; margin: 30px 0;"><a href="{{appUrl}}" style="background-color: #1e293b; color: #ffffff !important; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block;">Open Dashboard</a></div>`
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
