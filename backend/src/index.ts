@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -57,7 +58,6 @@ const initDatabase = async () => {
         const db = getDb();
         
         // --- Table Definitions ---
-        // Changed obscure_location default to 1 (True)
         await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
@@ -102,6 +102,92 @@ const initDatabase = async () => {
 
 // --- Mail Utilities ---
 
+/**
+ * Wraps raw HTML content in a beautiful responsive email template
+ */
+const wrapEmailHtml = (content: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { 
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+      background-color: #f8fafc; 
+      margin: 0; 
+      padding: 0; 
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper { background-color: #f8fafc; padding: 40px 20px; }
+    .container { 
+      max-width: 600px; 
+      margin: 0 auto; 
+      background-color: #ffffff; 
+      border-radius: 16px; 
+      overflow: hidden; 
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
+      border: 1px solid #e2e8f0; 
+    }
+    .header { 
+      background-color: #059669; 
+      padding: 32px; 
+      text-align: center; 
+    }
+    .logo-text { 
+      color: #ffffff; 
+      font-size: 26px; 
+      font-weight: 800; 
+      letter-spacing: -0.025em; 
+      margin: 0; 
+      text-decoration: none;
+    }
+    .content { 
+      padding: 40px; 
+      color: #334155; 
+      line-height: 1.6; 
+      font-size: 16px; 
+    }
+    .footer { 
+      background-color: #f1f5f9; 
+      padding: 24px; 
+      text-align: center; 
+      color: #64748b; 
+      font-size: 12px; 
+    }
+    p { margin-bottom: 20px; }
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      background-color: #059669;
+      color: #ffffff !important;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 700;
+      margin: 20px 0;
+    }
+    hr { border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="logo-text">OpenStudbook</div>
+      </div>
+      <div class="content">
+        ${content}
+      </div>
+      <div class="footer">
+        <p>&copy; ${new Date().getFullYear()} OpenStudbook Project. All rights reserved.</p>
+        <p>This is an automated system message. Please do not reply directly to this email.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
 const sendMailInternal = async (to: string, subject: string, html: string, placeholders: Record<string, string> = {}) => {
     try {
         const db = getDb();
@@ -133,14 +219,17 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
             processedHtml = processedHtml.replace(regex, val);
         });
 
+        // RESTORE STYLING: Wrap the processed HTML in our styled base template
+        const finalHtml = wrapEmailHtml(processedHtml);
+
         await transporter.sendMail({
             from: `"OpenStudbook" <${settings.smtpUser}>`,
             to,
             subject: processedSubject,
-            html: processedHtml
+            html: finalHtml
         });
         
-        console.log(`[MAIL] Email sent successfully to ${to}`);
+        console.log(`[MAIL] Styled Email sent successfully to ${to}`);
         return true;
     } catch (e) {
         console.error("[MAIL] Delivery error:", e);
@@ -229,7 +318,6 @@ app.post('/api/register', async (req: any, res: any) => {
         const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Explicitly set obscure_location to 1 (true)
         await db.execute(
             `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude, obscure_location) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`,
             [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
@@ -291,15 +379,15 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         let orgRows, partnersRows, projectsRows, usersRows, speciesRows, individualsRows, languagesRows, configRows;
 
         if (isSuper) {
-            [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ?`);
+            [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
+            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_deleted = 0`);
             [projectsRows] = await db.execute(`SELECT * FROM projects`);
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             [speciesRows] = await db.execute(`SELECT * FROM species`);
             [individualsRows] = await db.execute(`SELECT * FROM individuals`);
         } else {
-            [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1`);
+            [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
+            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1 AND is_deleted = 0`);
             [projectsRows] = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
             [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             [speciesRows] = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
@@ -313,13 +401,13 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         res.json({ 
             success: true, 
             data: { 
-                org: orgRows[0], 
-                partners: partnersRows, 
-                projects: projectsRows, 
-                users: usersRows, 
-                species: speciesRows, 
-                individuals: individualsRows, 
-                languages: languagesRows, 
+                org: orgRows[0] || null, 
+                partners: partnersRows || [], 
+                projects: projectsRows || [], 
+                users: usersRows || [], 
+                species: speciesRows || [], 
+                individuals: individualsRows || [], 
+                languages: languagesRows || [], 
                 settings 
             } 
         });
@@ -379,8 +467,6 @@ app.post('/api/reset-password', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// Generic generic REST DELETE to handle organizations, users, projects etc. 
-// Added explicit REST route support to avoid 404s on generic table deletions
 app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const { id } = req.query;
@@ -391,7 +477,28 @@ app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
         const allowedTables = ['organizations', 'users', 'projects', 'species', 'individuals', 'enclosures', 'languages', 'breeding_events', 'breeding_loans', 'partnerships'];
         if (!allowedTables.includes(table)) return res.status(400).json({ error: "Invalid table" });
         
-        await db.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
+        // Handle full cascading delete for organizations
+        if (table === 'organizations') {
+            const orgId = id;
+            // 1. Delete Individuals and Species linked to Projects belonging to this Org
+            await db.execute(`DELETE FROM individuals WHERE project_id IN (SELECT id FROM projects WHERE org_id = ?)`, [orgId]);
+            await db.execute(`DELETE FROM species WHERE project_id IN (SELECT id FROM projects nominated WHERE org_id = ?)`, [orgId]);
+            
+            // 2. Delete Projects, Enclosures, Users belonging directly to this Org
+            await db.execute(`DELETE FROM projects WHERE org_id = ?`, [orgId]);
+            await db.execute(`DELETE FROM enclosures WHERE org_id = ?`, [orgId]);
+            await db.execute(`DELETE FROM users WHERE org_id = ?`, [orgId]);
+            
+            // 3. Clean up breeding loans and partnerships involving this Org
+            await db.execute(`DELETE FROM breeding_loans WHERE proposer_org_id = ? OR partner_org_id = ?`, [orgId, orgId]);
+            await db.execute(`DELETE FROM partnerships WHERE org_id_1 = ? OR org_id_2 = ?`, [orgId, orgId]);
+            
+            // 4. Finally delete the Organization record itself
+            await db.execute(`DELETE FROM organizations WHERE id = ?`, [orgId]);
+        } else {
+            await db.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
+        }
+        
         res.json({ success: true });
     } catch (e: any) {
         res.status(500).json({ error: e.message });

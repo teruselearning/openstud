@@ -129,11 +129,17 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           const { latitude, longitude } = pos.coords;
+          // REGRESSION FIX: Default to coordinate string immediately for responsiveness
+          const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setRegData(prev => ({ ...prev, latitude, longitude, location: coordString }));
+          
           try {
             const resolvedLocation = await reverseGeocode(latitude, longitude);
-            setRegData(prev => ({ ...prev, latitude, longitude, location: resolvedLocation }));
+            if (resolvedLocation && resolvedLocation !== "Unknown Location") {
+              setRegData(prev => ({ ...prev, location: resolvedLocation }));
+            }
             setLocationStatus('ready');
-          } catch (err) { setLocationStatus('idle'); }
+          } catch (err) { setLocationStatus('ready'); }
         },
         () => setLocationStatus('idle'),
         { enableHighAccuracy: true, timeout: 5000 }

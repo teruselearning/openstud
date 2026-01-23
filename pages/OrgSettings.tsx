@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
@@ -120,9 +121,16 @@ const OrgSettings: React.FC = () => {
     leafletMap.current.panTo([lat, lng]);
 
     setIsGeocoding(true);
+    // REGRESSION FIX: Set coordinates first as a reliable default
+    const coordString = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    setOrg(prev => prev ? ({ ...prev, location: coordString }) : null);
+
     try {
+      // Attempt reverse geocoding, but coordinates already exist as fallback
       const locationName = await reverseGeocode(lat, lng);
-      setOrg(prev => prev ? ({ ...prev, location: locationName }) : null);
+      if (locationName && locationName !== "Unknown Location") {
+          setOrg(prev => prev ? ({ ...prev, location: locationName }) : null);
+      }
     } catch (err) {
       console.error("Auto-location failed:", err);
     } finally {
