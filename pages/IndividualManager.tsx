@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
@@ -241,7 +242,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     if (!targetProjectId) {
-      alert("Please select a project for this individual.");
+      alert("Please select a project for this specimen.");
       return;
     }
 
@@ -277,7 +278,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     }
 
     setIsProcessingBulk(true);
-    setBulkStatus('Reading file...');
+    setBulkStatus('Initializing data engine...');
 
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -303,46 +304,57 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         setBulkProgress(i + 1);
 
         try {
-          // 1. Resolve Species
-          const speciesName = data.speciesname || data.species;
+          // Terminology Resolution
+          let kingdom: SpeciesType = 'Animal';
+          const rawKingdom = (data.kingdom || data.type || '').toLowerCase();
+          if (rawKingdom.includes('flora') || rawKingdom.includes('plant')) kingdom = 'Plant';
+
+          // 1. Resolve Species (Priority: Scientific -> Common)
+          const sciName = data.scientificname;
+          const commonName = data.commonname || data.speciesname || data.species;
+          
           let speciesId = '';
           
-          if (speciesName) {
-            let foundSpecies = updatedSpeciesList.find(s => 
-               s.projectId === targetProjectId && 
-               (s.commonName.toLowerCase() === speciesName.toLowerCase() || s.scientificName.toLowerCase() === speciesName.toLowerCase())
-            );
+          // Search local DB
+          let foundSpecies = updatedSpeciesList.find(s => 
+             s.projectId === targetProjectId && 
+             ((sciName && s.scientificName.toLowerCase() === sciName.toLowerCase()) || 
+              (commonName && s.commonName.toLowerCase() === commonName.toLowerCase()))
+          );
 
-            if (!foundSpecies) {
-              setBulkStatus(`Auto-creating Species: ${speciesName}`);
-              const aiData = await fetchSpeciesData(speciesName, 'Animal', org?.location || '');
-              let spImg = await fetchWikimediaImage(aiData?.scientificName || speciesName);
-              if (!spImg) spImg = await generateSpeciesImage(speciesName, aiData?.scientificName || '', 'Animal');
-              
-              const newSp: Species = {
-                id: `sp-auto-${Date.now()}-${i}`,
-                projectId: targetProjectId,
-                commonName: speciesName,
-                scientificName: aiData?.scientificName || '',
-                type: (aiData?.type || 'Animal') as SpeciesType,
-                conservationStatus: aiData?.conservationStatus || 'Unknown',
-                sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),
-                averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || 0),
-                lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || 0),
-                imageUrl: spImg || generatePattern(speciesName)
-              } as Species;
+          if (!foundSpecies) {
+            const lookupName = sciName || commonName;
+            if (!lookupName) throw new Error("Missing species identifier in row " + (i + 1));
 
-              updatedSpeciesList.push(newSp);
-              foundSpecies = newSp;
-            }
-            speciesId = foundSpecies.id;
+            setBulkStatus(`AI Resolving Taxonomy: ${lookupName}`);
+            const aiData = await fetchSpeciesData(lookupName, kingdom, org?.location || '');
+            let spImg = await fetchWikimediaImage(aiData?.scientificName || lookupName);
+            if (!spImg) spImg = await generateSpeciesImage(lookupName, aiData?.scientificName || '', kingdom);
+            
+            const newSp: Species = {
+              id: `sp-auto-${Date.now()}-${i}`,
+              projectId: targetProjectId,
+              commonName: aiData?.commonName || commonName || lookupName,
+              scientificName: aiData?.scientificName || sciName || '',
+              type: kingdom,
+              conservationStatus: aiData?.conservationStatus || 'Unknown',
+              sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),
+              averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || 0),
+              lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || 0),
+              imageUrl: spImg || generatePattern(lookupName)
+            } as Species;
+
+            updatedSpeciesList.push(newSp);
+            foundSpecies = newSp;
           }
+          speciesId = foundSpecies.id;
 
-          // 2. Process Remote Image if provided
+          // 2. Process Image (Local, External, or GDrive)
           let profileImg = '';
-          if (data.imageurl) {
-            setBulkStatus(`Fetching image for ${name}...`);
-            const processed = await urlToBase64(data.imageurl);
+          const url = data.imageurl || data.image;
+          if (url) {
+            setBulkStatus(`Fetching and encoding media for ${name}...`);
+            const processed = await urlToBase64(url);
             if (processed) profileImg = processed;
           }
           if (!profileImg) profileImg = generatePattern(name);
@@ -351,11 +363,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             id: `ind-${Date.now()}-${i}`,
             projectId: targetProjectId,
             speciesId: speciesId,
-            studbookId: data.studbookid || `SB-AUTO-${Date.now()}-${i}`,
+            studbookId: data.studbookid || `SB-BULK-${Date.now()}-${i}`,
             name,
             sex: (data.sex || Sex.UNKNOWN) as Sex,
-            birthDate: data.birthdate || '',
-            weightKg: Number(data.weightkg || 0),
+            birthDate: data.birthdate || data.planteddate || '',
+            weightKg: Number(data.weightkg || data.weight || 0),
             notes: data.notes || '',
             imageUrl: profileImg,
             source: 'Bred in house'
@@ -382,12 +394,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   };
 
   const downloadTemplate = () => {
-    const csv = "name,studbookId,speciesName,sex,birthDate,weightKg,imageUrl,notes\nLeo,SB-123,Lion,Male,2022-01-01,150,https://example.com/lion.jpg,Rescued individual\nNala,SB-124,Lion,Female,2022-05-10,120,,Healthy adult";
+    const csv = "name,studbookId,kingdom,scientificName,commonName,sex,birthDate,weightKg,imageUrl,notes\nLeo,SB-X1,Fauna,Panthera leo,Lion,Male,2022-01-01,150,https://drive.google.com/uc?export=view&id=1jPKQXrAy4iK0CGjdLfgCiOfc-BUtWMrQ,GDrive Link Test\nDaisy,SB-P1,Flora,,English Daisy,Unknown,2023-05-10,0.2,,Fallback to common name";
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'openstudbook_individuals_template.csv';
+    a.download = 'openstudbook_specimens_template.csv';
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -435,15 +447,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Individuals</h3>
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Specimen Registry</h3>
               <button onClick={() => !isProcessingBulk && setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><XIcon size={24} /></button>
             </div>
             
             {!isProcessingBulk ? (
               <div className="space-y-6">
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
-                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Smart CSV Resolution</h4>
-                  <p className="text-xs text-indigo-700 leading-relaxed mb-4">Provide species names and remote image URLs. We'll auto-resolve missing species via AI and process all images for local storage.</p>
+                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Smart Taxonomy Engine</h4>
+                  <p className="text-xs text-indigo-700 leading-relaxed mb-4">Provide scientific or common names. Our AI will automatically resolve and create missing taxonomic records. Supports public image URLs including Google Drive direct links.</p>
                   <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
                 </div>
                 
@@ -463,7 +475,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                    </div>
                 </div>
                 <div>
-                   <h4 className="font-bold text-slate-900 text-lg">Processing Records</h4>
+                   <h4 className="font-bold text-slate-900 text-lg">Encoding Specimen Records</h4>
                    <p className="text-sm text-slate-500">{bulkStatus}</p>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5">
@@ -521,7 +533,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           {filtered.length === 0 && (
              <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400">
                 <PawPrint size={48} className="mb-4 opacity-20" />
-                <p className="text-lg font-bold">No individuals found.</p>
+                <p className="text-lg font-bold">No specimens found.</p>
                 <p className="text-sm">Try adjusting your filters or search term.</p>
              </div>
           )}
@@ -533,8 +545,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                <th className="px-6 py-4">Individual</th>
-                <th className="px-6 py-4">Species</th>
+                <th className="px-6 py-4">Specimen</th>
+                <th className="px-6 py-4">Taxon</th>
                 <th className="px-6 py-4">Sex</th>
                 <th className="px-6 py-4">Studbook ID</th>
                 <th className="px-6 py-4 text-right">Actions</th>
@@ -592,7 +604,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                 </div>
                 <div className="p-4 space-y-4">
                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resident Species</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resident Taxa</p>
                       {getResidentsOfEnclosure(activeEnclosureFromMap).grouped.length > 0 ? (
                          <div className="space-y-1.5">
                             {getResidentsOfEnclosure(activeEnclosureFromMap).grouped.map(({ species, count }) => (
@@ -622,7 +634,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   <MapPin size={32} />
                </div>
                <p className="text-slate-700 bg-white/90 backdrop-blur-sm px-6 py-2 rounded-full font-bold shadow-lg border border-slate-100">
-                  {filtered.length === 0 ? "No individuals match your filters" : t('noLocationDataMessage')}
+                  {filtered.length === 0 ? "No specimens match your filters" : t('noLocationDataMessage')}
                </p>
             </div>
           )}
@@ -669,17 +681,17 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                 {/* Section 1: Identity */}
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <UserIcon size={16}/> {t('identityStatusTitle')}
+                    <UserIcon size={16}/> Identity & Taxonomy
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="relative" ref={speciesDropdownRef}>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Species <span className="text-red-500">*</span></label>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Taxon <span className="text-red-500">*</span></label>
                         <input 
                           className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400" 
                           value={speciesSearchQuery} 
                           onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} 
                           onFocus={() => setIsSpeciesDropdownOpen(true)} 
-                          placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search species..."} 
+                          placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search taxon..."} 
                           required 
                           disabled={isAll && allProjects.length > 1 && !formData.projectId}
                         />
@@ -695,7 +707,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">Name <span className="text-red-500">*</span></label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Individual name" required />
+                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Specimen name" required />
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">Sex</label>
@@ -763,7 +775,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <option value="">Unknown</option>
                           {potentialSires.map(i => <option key={i.id} value={i.id}>{i.name} ({i.studbookId})</option>)}
                         </select>
-                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential sires.</p>}
+                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a taxon first to browse potential sires.</p>}
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">{t('dam')}</label>
@@ -776,7 +788,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <option value="">Unknown</option>
                           {potentialDams.map(i => <option key={i.id} value={i.id}>{i.name} ({i.studbookId})</option>)}
                         </select>
-                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential dams.</p>}
+                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a taxon first to browse potential dams.</p>}
                     </div>
                   </div>
                 </div>
@@ -785,7 +797,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                    <button type="button" onClick={handleCloseForm} className="px-8 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancel</button>
                    <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-10 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-100 transform active:scale-95 transition-all">
                      {isSubmitting ? <Loader2 size={20} className="animate-spin"/> : <Save size={20}/>} 
-                     {editingId ? "Update Record" : "Register Individual"}
+                     {editingId ? "Update Record" : "Register Specimen"}
                    </button>
                 </div>
              </form>

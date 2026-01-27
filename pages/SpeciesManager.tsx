@@ -112,7 +112,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     if (!targetProjectId) {
-       alert("Please select a specific project for this species.");
+       alert("Please select a specific project for this taxon.");
        return;
     }
 
@@ -165,17 +165,20 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         const commonName = data.commonname || data.name;
         if (!commonName) continue;
 
-        setBulkStatus(`Processing: ${commonName}`);
+        setBulkStatus(`Researching: ${commonName}`);
         setBulkProgress(i + 1);
 
+        // Terminology Mapping: Fauna -> Animal, Flora -> Plant
+        let kingdom: SpeciesType = 'Animal';
+        const rawKingdom = (data.kingdom || data.type || '').toLowerCase();
+        if (rawKingdom.includes('flora') || rawKingdom.includes('plant')) kingdom = 'Plant';
+
         try {
-          // 1. Fetch AI Details
-          const aiData = await fetchSpeciesData(commonName, (data.type || 'Animal') as SpeciesType, org?.location || '');
+          const aiData = await fetchSpeciesData(commonName, kingdom, org?.location || '');
           
-          // 2. Fetch/Generate Image
           let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || commonName);
           if (!finalImageUrl) {
-            finalImageUrl = await generateSpeciesImage(commonName, aiData?.scientificName || '', (aiData?.type || data.type || 'Animal') as SpeciesType);
+            finalImageUrl = await generateSpeciesImage(commonName, aiData?.scientificName || '', kingdom);
           }
 
           const speciesEntry: Species = {
@@ -183,7 +186,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             projectId: targetProjectId,
             commonName,
             scientificName: aiData?.scientificName || data.scientificname || '',
-            type: (aiData?.type || data.type || 'Animal') as SpeciesType,
+            type: kingdom,
             plantClassification: aiData?.plantClassification as PlantClassification || data.plantclassification,
             conservationStatus: aiData?.conservationStatus || data.conservationstatus || 'Unknown',
             sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || data.sexualmaturity || 0),
@@ -199,13 +202,12 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           newSpecies.push(speciesEntry);
         } catch (err) {
           console.error(`Failed to enrich ${commonName}`, err);
-          // Fallback basic entry if AI fails
           newSpecies.push({
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
             commonName,
             scientificName: data.scientificname || '',
-            type: (data.type || 'Animal') as SpeciesType,
+            type: kingdom,
             conservationStatus: data.conservationstatus || 'Unknown',
             sexualMaturityAgeYears: 0,
             averageAdultWeightKg: 0,
@@ -226,12 +228,12 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   };
 
   const downloadTemplate = () => {
-    const csv = "commonName,scientificName,type,conservationStatus\nSnow Leopard,Panthera uncia,Animal,Vulnerable\nLavender,Lavandula,Plant,Least Concern";
+    const csv = "commonName,scientificName,kingdom,conservationStatus\nSnow Leopard,Panthera uncia,Fauna,Vulnerable\nLavender,Lavandula,Flora,Least Concern";
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'openstudbook_species_template.csv';
+    a.download = 'openstudbook_taxonomy_template.csv';
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -269,15 +271,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Species</h3>
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Taxa</h3>
               <button onClick={() => !isProcessingBulk && setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><XIcon size={24} /></button>
             </div>
             
             {!isProcessingBulk ? (
               <div className="space-y-6">
                 <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
-                  <h4 className="text-sm font-bold text-emerald-800 mb-1">CSV Import Enrichment</h4>
-                  <p className="text-xs text-emerald-700 leading-relaxed mb-4">Just provide the names. Our AI will automatically research biological data and source images for every entry.</p>
+                  <h4 className="text-sm font-bold text-emerald-800 mb-1">Professional Data Ingestion</h4>
+                  <p className="text-xs text-emerald-700 leading-relaxed mb-4">Provide names and Kingdoms (Fauna/Flora). Our AI pipeline will research biological profiles and scientific illustrations for every entry.</p>
                   <button onClick={downloadTemplate} className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
                 </div>
                 
@@ -297,7 +299,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                    </div>
                 </div>
                 <div>
-                   <h4 className="font-bold text-slate-900 text-lg">AI Processing in Progress</h4>
+                   <h4 className="font-bold text-slate-900 text-lg">Gemini Researching Taxonomy</h4>
                    <p className="text-sm text-slate-500">{bulkStatus}</p>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5">
@@ -337,8 +339,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                <div className="md:col-span-8 space-y-6">
                   <div className="space-y-4">
                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> {t('coreTaxonomy')}</h4>
-                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Complete Profile</button>
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Scientific Taxonomy</h4>
+                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Taxon Profile</button>
                      </div>
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} required /></div>
@@ -357,7 +359,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      </div>
                   </div>
                   <div className="space-y-4 pt-4 border-t border-slate-100">
-                     <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> {t('biologicalMetrics')}</h4>
+                     <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> Biological Metrics</h4>
                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{formData.type === 'Plant' ? t('maturityFlowering') : t('sexualMaturity')}</label><input type="number" step="0.1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.sexualMaturityAgeYears} onChange={e => setFormData({...formData, sexualMaturityAgeYears: parseFloat(e.target.value)})} /></div>
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('lifeExpectancy')}</label><input type="number" step="1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.lifeExpectancyYears} onChange={e => setFormData({...formData, lifeExpectancyYears: parseFloat(e.target.value)})} /></div>
@@ -387,7 +389,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <div className="h-52 bg-slate-200 relative overflow-hidden">
                <img src={species.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
                <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || t('unknownStatus')}</div>
-               <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type}</div>
+               <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
             </div>
             <div className="p-5 flex-1 flex flex-col">
               <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
