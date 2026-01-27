@@ -65,9 +65,12 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Use the named Component import with generics to ensure this.props is correctly typed
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false };
+// Fix: Use React.Component explicitly with generic arguments to ensure this.props.children is accessible.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
     return { hasError: true, error }; 
