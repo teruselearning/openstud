@@ -65,13 +65,9 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Use Component and ReactNode from the import and an explicit constructor to ensure proper type resolution for this.props and this.state in TypeScript.
+// Fix: Use standard Component inheritance and remove constructor to resolve property 'props' and 'state' access issues.
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Fix: Explicitly initialize state in constructor to help TypeScript identify props and state properties on the instance.
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
     return { hasError: true, error }; 
@@ -81,7 +77,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     console.error("ErrorBoundary caught an error", error, errorInfo); 
   }
 
-  // Fix: Explicitly return ReactNode for render method and ensure this.props/this.state are resolved.
   render(): ReactNode {
     const { hasError, error } = this.state;
     const { children } = this.props;

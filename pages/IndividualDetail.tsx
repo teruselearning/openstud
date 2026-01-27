@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg, getEnclosures } from '../services/storage';
@@ -159,10 +158,12 @@ const IndividualDetail: React.FC = () => {
                     <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Studbook ID</span>
                     <span className="text-sm font-mono font-bold text-slate-700">{individual.studbookId}</span>
                   </div>
-                  <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Sex</span>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${individual.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : individual.sex === Sex.FEMALE ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'}`}>{individual.sex}</span>
-                  </div>
+                  {(!(isPlant && individual.sex === Sex.UNKNOWN)) && (
+                    <div className="flex items-center justify-between py-2 border-b border-slate-50">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Sex</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${individual.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : individual.sex === Sex.FEMALE ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'}`}>{individual.sex}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between py-2">
                     <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{isPlant ? 'Planted' : 'Birth Date'}</span>
                     <span className="text-sm font-bold text-slate-700">{individual.birthDate || 'Unknown'}</span>
@@ -208,19 +209,22 @@ const IndividualDetail: React.FC = () => {
              </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                   <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><Baby size={20} className="text-blue-500" /> Parentage</h3>
-                   <div className="space-y-4 flex-1">
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">S</div>
-                         <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sire</p><p className="text-sm font-bold text-slate-900">{individual.sireId || 'Unknown'}</p></div>
-                      </div>
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center font-bold">D</div>
-                         <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dam</p><p className="text-sm font-bold text-slate-900">{individual.damId || 'Unknown'}</p></div>
+                {/* Fixed: Show parentage only for Animals OR if parents are set for Plants */}
+                {(species?.type === 'Animal' || individual.sireId || individual.damId) && (
+                   <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><Baby size={20} className="text-blue-500" /> Parentage</h3>
+                      <div className="space-y-4 flex-1">
+                         <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">S</div>
+                            <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sire</p><p className="text-sm font-bold text-slate-900">{individual.sireId || 'Unknown'}</p></div>
+                         </div>
+                         <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center font-bold">D</div>
+                            <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dam</p><p className="text-sm font-bold text-slate-900">{individual.damId || 'Unknown'}</p></div>
+                         </div>
                       </div>
                    </div>
-                </div>
+                )}
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                    <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><MapPin size={20} className="text-red-500" /> Location</h3>
                    <div className="h-40 w-full rounded-lg bg-slate-100 overflow-hidden relative border border-slate-200">
@@ -359,7 +363,7 @@ const IndividualDetail: React.FC = () => {
       {/* Health Modal */}
       {showHealthModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+           <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                  <h3 className="font-bold">New Medical Record</h3>
                  <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>

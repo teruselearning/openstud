@@ -1,4 +1,3 @@
-
 import { LanguageConfig } from "../types";
 
 export const BASE_TRANSLATIONS = {
@@ -176,6 +175,8 @@ export const BASE_TRANSLATIONS = {
     invasive: "Invasive",
     unassigned: "Unassigned",
     assignedToOther: "Assigned to another area",
+    indivSubtitleAnimal: "Manage and track your fauna population.",
+    indivSubtitlePlant: "Manage and track your botanical collections.",
     
     // Breeding
     breedingEvents: "Breeding Events",

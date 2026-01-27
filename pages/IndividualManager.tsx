@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
@@ -122,7 +121,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const projectIndividuals = isAll ? allIndividuals : allIndividuals.filter(ind => ind.projectId === currentProjectId);
   const filtered = projectIndividuals.filter(ind => {
-    const matchesSearch = ind.name.toLowerCase().includes(searchTerm.toLowerCase()) || ind.studbookId.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (ind.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (ind.studbookId || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
     const matchesStatus = filterStatus === 'all' || (filterStatus === 'deceased' ? ind.isDeceased : !ind.isDeceased);
     return matchesSearch && matchesSpecies && matchesStatus;
@@ -323,8 +322,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           );
 
           if (!foundSpecies) {
-            const lookupName = sciName || commonName;
-            if (!lookupName) throw new Error("Missing species identifier in row " + (i + 1));
+            // Fix: Fallback to scientific name if common name is missing
+            const lookupName = commonName || sciName;
+            if (!lookupName) throw new Error("Missing species identifier (Common or Scientific Name) in row " + (i + 1));
 
             setBulkStatus(`AI Resolving Taxonomy: ${lookupName}`);
             const aiData = await fetchSpeciesData(lookupName, kingdom, org?.location || '');
@@ -334,8 +334,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             const newSp: Species = {
               id: `sp-auto-${Date.now()}-${i}`,
               projectId: targetProjectId,
-              commonName: aiData?.commonName || commonName || lookupName,
-              scientificName: aiData?.scientificName || sciName || '',
+              commonName: commonName || aiData?.commonName || sciName || lookupName,
+              scientificName: sciName || aiData?.scientificName || '',
               type: kingdom,
               conservationStatus: aiData?.conservationStatus || 'Unknown',
               sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),
@@ -394,7 +394,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   };
 
   const downloadTemplate = () => {
-    const csv = "name,studbookId,kingdom,scientificName,commonName,sex,birthDate,weightKg,imageUrl,notes\nLeo,SB-X1,Fauna,Panthera leo,Lion,Male,2022-01-01,150,https://drive.google.com/uc?export=view&id=1jPKQXrAy4iK0CGjdLfgCiOfc-BUtWMrQ,GDrive Link Test\nDaisy,SB-P1,Flora,,English Daisy,Unknown,2023-05-10,0.2,,Fallback to common name";
+    const csv = "name,studbookId,kingdom,scientificName,commonName,sex,birthDate,weightKg,imageUrl,notes\nLeo,SB-X1,Fauna,Panthera leo,Lion,Male,2022-01-01,150,https://drive.google.com/uc?export=view&id=1jPKQXrAy4iK0CGjdLfgCiOfc-BUtWMrQ,GDrive Link Test\nDaisy,SB-P1,Flora,Bellis perennis,English Daisy,Unknown,2023-05-10,0.2,,Test specimen";
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -454,8 +454,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             {!isProcessingBulk ? (
               <div className="space-y-6">
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
-                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Smart Taxonomy Engine</h4>
-                  <p className="text-xs text-indigo-700 leading-relaxed mb-4">Provide scientific or common names. Our AI will automatically resolve and create missing taxonomic records. Supports public image URLs including Google Drive direct links.</p>
+                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Required Columns (*):</h4>
+                  <ul className="text-xs text-indigo-700 list-disc list-inside mb-4 space-y-1">
+                    <li><strong>Name</strong>* (Specimen name)</li>
+                    <li><strong>Kingdom</strong>* (Fauna or Flora)</li>
+                    <li><strong>Common Name</strong> OR <strong>Scientific Name</strong>*</li>
+                  </ul>
+                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Optional Columns:</h4>
+                  <p className="text-xs text-indigo-700 leading-relaxed mb-4">Studbook ID, Sex, Birth Date, Weight, Image URL (Public/GDrive), Notes.</p>
                   <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
                 </div>
                 
@@ -511,11 +517,17 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filtered.map(ind => {
             const sp = allSpecies.find(s => s.id === ind.speciesId);
+            const isFlora = sp?.type === 'Plant';
+            const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
+            
             return (
               <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col">
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
-                  <img src={ind.imageUrl || sp?.imageUrl || generatePattern(ind.name)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
-                  <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
+                  <img src={displayImg} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
+                  {/* Fixed: Conditional sex pill for flora - hide Unknown */}
+                  {(!(isFlora && ind.sex === Sex.UNKNOWN)) && (
+                    <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
+                  )}
                 </Link>
                 <div className="p-4 flex-1">
                   <Link to={`/individuals/${ind.id}`} className="block">

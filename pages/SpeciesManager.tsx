@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
@@ -163,29 +162,32 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         headers.forEach((h, idx) => { data[h] = values[idx]; });
 
         const commonName = data.commonname || data.name;
-        if (!commonName) continue;
+        const scientificName = data.scientificname;
+        
+        // Fix: Use scientific name if common name is missing
+        const primaryIdentifier = commonName || scientificName;
+        if (!primaryIdentifier) continue;
 
-        setBulkStatus(`Researching: ${commonName}`);
+        setBulkStatus(`Researching: ${primaryIdentifier}`);
         setBulkProgress(i + 1);
 
-        // Terminology Mapping: Fauna -> Animal, Flora -> Plant
         let kingdom: SpeciesType = 'Animal';
         const rawKingdom = (data.kingdom || data.type || '').toLowerCase();
         if (rawKingdom.includes('flora') || rawKingdom.includes('plant')) kingdom = 'Plant';
 
         try {
-          const aiData = await fetchSpeciesData(commonName, kingdom, org?.location || '');
+          const aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '');
           
-          let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || commonName);
+          let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || primaryIdentifier);
           if (!finalImageUrl) {
-            finalImageUrl = await generateSpeciesImage(commonName, aiData?.scientificName || '', kingdom);
+            finalImageUrl = await generateSpeciesImage(primaryIdentifier, aiData?.scientificName || '', kingdom);
           }
 
           const speciesEntry: Species = {
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
-            commonName,
-            scientificName: aiData?.scientificName || data.scientificname || '',
+            commonName: commonName || aiData?.commonName || scientificName,
+            scientificName: scientificName || aiData?.scientificName || '',
             type: kingdom,
             plantClassification: aiData?.plantClassification as PlantClassification || data.plantclassification,
             conservationStatus: aiData?.conservationStatus || data.conservationstatus || 'Unknown',
@@ -194,25 +196,25 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || data.lifeexpectancy || 0),
             breedingSeasonStart: aiData?.breedingSeasonStart || 1,
             breedingSeasonEnd: aiData?.breedingSeasonEnd || 12,
-            imageUrl: finalImageUrl || generatePattern(commonName),
+            imageUrl: finalImageUrl || generatePattern(primaryIdentifier),
             nativeStatusCountry: (aiData?.nativeStatusCountry as any) || 'Unknown',
             nativeStatusLocal: (aiData?.nativeStatusLocal as any) || 'Unknown'
           };
 
           newSpecies.push(speciesEntry);
         } catch (err) {
-          console.error(`Failed to enrich ${commonName}`, err);
+          console.error(`Failed to enrich ${primaryIdentifier}`, err);
           newSpecies.push({
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
-            commonName,
-            scientificName: data.scientificname || '',
+            commonName: commonName || scientificName,
+            scientificName: scientificName || '',
             type: kingdom,
             conservationStatus: data.conservationstatus || 'Unknown',
             sexualMaturityAgeYears: 0,
             averageAdultWeightKg: 0,
             lifeExpectancyYears: 0,
-            imageUrl: generatePattern(commonName)
+            imageUrl: generatePattern(primaryIdentifier)
           } as Species);
         }
       }
@@ -278,8 +280,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             {!isProcessingBulk ? (
               <div className="space-y-6">
                 <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl">
-                  <h4 className="text-sm font-bold text-emerald-800 mb-1">Professional Data Ingestion</h4>
-                  <p className="text-xs text-emerald-700 leading-relaxed mb-4">Provide names and Kingdoms (Fauna/Flora). Our AI pipeline will research biological profiles and scientific illustrations for every entry.</p>
+                  <h4 className="text-sm font-bold text-emerald-800 mb-1">Required Columns:</h4>
+                  <ul className="text-xs text-emerald-700 list-disc list-inside mb-4 space-y-1">
+                    <li><strong>Common Name</strong> OR <strong>Scientific Name</strong></li>
+                    <li><strong>Kingdom</strong> (Fauna or Flora)</li>
+                  </ul>
+                  <h4 className="text-sm font-bold text-emerald-800 mb-1">Optional Columns:</h4>
+                  <p className="text-xs text-emerald-700 leading-relaxed mb-4">Conservation Status, Maturity, Life Expectancy. AI will attempt to autofill any missing metadata.</p>
                   <button onClick={downloadTemplate} className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
                 </div>
                 
