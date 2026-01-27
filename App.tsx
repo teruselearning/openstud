@@ -65,8 +65,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Explicitly use Component with generics and ensure named import is used for better TypeScript inference
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fix: Explicitly extend React.Component with generics to ensure this.props is correctly identified by the compiler
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
@@ -79,7 +79,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   render(): ReactNode {
     const { hasError, error } = this.state;
-    // Fix: Access props from this context to ensure children is correctly defined on ErrorBoundary instance
+    // Fix: Access children from this.props after ensuring correct inheritance from React.Component
     const { children } = this.props;
 
     if (hasError) {

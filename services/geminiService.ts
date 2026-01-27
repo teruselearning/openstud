@@ -85,25 +85,39 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
     
     // Normalize Google Drive Links (view -> download)
     if (targetUrl.includes('drive.google.com')) {
-       const urlObj = new URL(targetUrl);
-       const id = urlObj.searchParams.get('id') || targetUrl.split('/d/')[1]?.split('/')[0];
+       // Extract ID from various GDrive URL formats
+       const idMatch = targetUrl.match(/[-\w]{25,}/);
+       const id = idMatch ? idMatch[0] : null;
+       
        if (id) {
-          targetUrl = `https://drive.google.com/uc?export=download&id=${id}`;
+          // Use the confirm=t bypass for larger files and direct export
+          targetUrl = `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
        }
     }
 
-    const response = await fetch(targetUrl);
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    // Try to fetch to encode to Base64 for database persistence
+    try {
+      const response = await fetch(targetUrl);
+      if (response.ok) {
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (fetchErr) {
+      // Fallback: If fetch is blocked by CORS (common with GDrive), 
+      // return the targetUrl directly so <img> tags can still render it.
+      console.warn("Base64 fetch blocked by CORS, falling back to direct URL.");
+      return targetUrl;
+    }
+    
+    return targetUrl;
   } catch (e) {
-    console.error("Base64 conversion failed:", e);
-    return null;
+    console.error("URL processing failed:", e);
+    return url; // Final fallback: return whatever we were given
   }
 };
 

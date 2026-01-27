@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck, FileUp, FileSpreadsheet, Sparkles, Download, Leaf } from 'lucide-react';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck, FileUp, FileSpreadsheet, Sparkles, Download, Leaf, CheckSquare, Square, Trash } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -28,6 +28,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   // Bulk Upload State
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkTotal, setBulkTotal] = useState(0);
@@ -205,6 +208,37 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     }
   }, [viewMode, filtered, allEnclosures, showEnclosuresOnMap]);
 
+  const toggleSelection = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map(i => i.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} specimen records?`)) return;
+    
+    setIsSubmitting(true);
+    try {
+      const updated = allIndividuals.filter(i => !selectedIds.has(i.id));
+      setAllIndividuals(updated);
+      await saveIndividuals(updated);
+      setSelectedIds(new Set());
+    } catch (e) {
+      alert("Delete failed. Please check connection.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleOpenNewForm = () => {
     setEditingId(null);
     setReturnToId(null);
@@ -269,7 +303,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         };
         
         const updated = [...allSpecies, newSp];
-        await saveSpecies(updated); // CRITICAL: Await the sync here
+        await saveSpecies(updated); // CRITICAL: Syncing definition
         setAllSpecies(updated);
         
         setFormData({ ...formData, speciesId: newSp.id });
@@ -343,9 +377,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       setBulkTotal(rows.length);
       setBulkProgress(0);
 
-      const newIndividuals: Individual[] = [];
+      const localIndividuals = [...getIndividuals()];
       const updatedSpeciesList = [...getSpecies()];
-      const currentIndividuals = getIndividuals();
 
       for (let i = 0; i < rows.length; i++) {
         const values = rows[i].split(',').map(v => v.trim());
@@ -353,22 +386,18 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         headers.forEach((h, idx) => { data[h] = values[idx]; });
 
         const name = data.name || `Indiv ${i + 1}`;
+        const sbookId = data.studbookid || `SB-BULK-${Date.now()}-${i}`;
         setBulkStatus(`Processing: ${name}`);
         setBulkProgress(i + 1);
 
         try {
-          // Terminology Resolution
           let kingdom: SpeciesType = 'Animal';
           const rawKingdom = (data.kingdom || data.type || '').toLowerCase();
           if (rawKingdom.includes('flora') || rawKingdom.includes('plant')) kingdom = 'Plant';
 
-          // 1. Resolve Species (Priority: Scientific -> Common)
           const sciName = data.scientificname;
           const commonName = data.commonname || data.speciesname || data.species;
           
-          let speciesId = '';
-          
-          // Search local DB
           let foundSpecies = updatedSpeciesList.find(s => 
              s.projectId === targetProjectId && 
              ((sciName && s.scientificName.toLowerCase() === sciName.toLowerCase()) || 
@@ -377,9 +406,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
           if (!foundSpecies) {
             const lookupName = commonName || sciName;
-            if (!lookupName) throw new Error("Missing species identifier (Common or Scientific Name) in row " + (i + 1));
+            if (!lookupName) throw new Error("Missing species identifier in row " + (i + 1));
 
-            setBulkStatus(`AI Resolving Taxonomy: ${lookupName}`);
+            setBulkStatus(`AI Resolving Species: ${lookupName}`);
             const aiData = await fetchSpeciesData(lookupName, kingdom, org?.location || '');
             let spImg = await fetchWikimediaImage(aiData?.scientificName || lookupName);
             if (!spImg) spImg = await generateSpeciesImage(lookupName, aiData?.scientificName || '', kingdom);
@@ -400,23 +429,24 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             updatedSpeciesList.push(newSp);
             foundSpecies = newSp;
           }
-          speciesId = foundSpecies.id;
 
-          // 2. Process Image (Local, External, or GDrive)
           let profileImg = '';
           const url = data.imageurl || data.image;
           if (url) {
-            setBulkStatus(`Fetching and encoding media for ${name}...`);
+            setBulkStatus(`Processing media for ${name}...`);
             const processed = await urlToBase64(url);
             if (processed) profileImg = processed;
           }
           if (!profileImg) profileImg = generatePattern(name);
 
+          // IDEMPOTENCY CHECK: Find existing by Studbook ID
+          const existingIdx = localIndividuals.findIndex(ind => ind.studbookId === sbookId && ind.projectId === targetProjectId);
+          
           const indEntry: Individual = {
-            id: `ind-${Date.now()}-${i}`,
+            id: existingIdx !== -1 ? localIndividuals[existingIdx].id : `ind-${Date.now()}-${i}`,
             projectId: targetProjectId,
-            speciesId: speciesId,
-            studbookId: data.studbookid || `SB-BULK-${Date.now()}-${i}`,
+            speciesId: foundSpecies.id,
+            studbookId: sbookId,
             name,
             sex: (data.sex || Sex.UNKNOWN) as Sex,
             birthDate: data.birthdate || data.planteddate || '',
@@ -426,20 +456,23 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             source: 'Bred in house'
           };
 
-          newIndividuals.push(indEntry);
+          if (existingIdx !== -1) {
+             localIndividuals[existingIdx] = { ...localIndividuals[existingIdx], ...indEntry };
+          } else {
+             localIndividuals.push(indEntry);
+          }
         } catch (err) {
           console.error(`Failed to process row ${i}`, err);
         }
       }
 
-      // CRITICAL: First sync the species definitions
+      // CRITICAL: Sync species first to satisfy FK constraints in DB
       await saveSpecies(updatedSpeciesList);
       setAllSpecies(updatedSpeciesList);
       
-      // Then sync the specimens that depend on them
-      const finalInds = [...currentIndividuals, ...newIndividuals];
-      await saveIndividuals(finalInds);
-      setAllIndividuals(finalInds);
+      // Then sync the specimens
+      await saveIndividuals(localIndividuals);
+      setAllIndividuals(localIndividuals);
 
       setIsProcessingBulk(false);
       setShowBulkModal(false);
@@ -482,7 +515,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const isFlora = selectedSpecies?.type === 'Plant';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
@@ -494,33 +527,51 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="List view"><List size={18} /></button>
             <button onClick={() => setViewMode('map')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'map' ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`} title="Map view"><MapIcon size={18} /></button>
           </div>
-          <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold border border-slate-300 shadow-sm transition-all"><FileUp size={18} className="text-emerald-600" /><span>Bulk</span></button>
+          <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold border border-slate-300 shadow-sm transition-all"><FileUp size={18} className="text-emerald-600" /><span>Import</span></button>
           <button onClick={handleOpenNewForm} className="flex-1 md:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm">
             <Plus size={18} /><span>{t('add')}</span>
           </button>
         </div>
       </div>
 
+      {/* Selection Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3000] animate-in slide-in-from-bottom-10 duration-500">
+           <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-8 border border-white/10">
+              <div className="flex items-center gap-3">
+                 <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-bold">{selectedIds.size}</div>
+                 <span className="text-sm font-bold uppercase tracking-widest text-slate-300">Specimens Selected</span>
+              </div>
+              <div className="flex gap-2">
+                 <button onClick={handleBulkDelete} disabled={isSubmitting} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50">
+                    <Trash2 size={18}/> {isSubmitting ? 'Deleting...' : 'Delete Selection'}
+                 </button>
+                 <button onClick={() => setSelectedIds(new Set())} className="px-4 py-2 text-slate-400 hover:text-white transition-colors text-sm font-bold">Cancel</button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {showBulkModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Specimen Registry</h3>
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Specimens</h3>
               <button onClick={() => !isProcessingBulk && setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><XIcon size={24} /></button>
             </div>
             
             {!isProcessingBulk ? (
               <div className="space-y-6">
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
+                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Update Policy:</h4>
+                  <p className="text-xs text-indigo-700 mb-4 italic">If a specimen with the same Studbook ID exists in this project, it will be updated with the spreadsheet data.</p>
                   <h4 className="text-sm font-bold text-indigo-800 mb-1">Required Columns (*):</h4>
                   <ul className="text-xs text-indigo-700 list-disc list-inside mb-4 space-y-1">
                     <li><strong>Name</strong>* (Specimen name)</li>
                     <li><strong>Kingdom</strong>* (Fauna or Flora)</li>
                     <li><strong>Common Name</strong> OR <strong>Scientific Name</strong>*</li>
                   </ul>
-                  <h4 className="text-sm font-bold text-indigo-800 mb-1">Optional Columns:</h4>
-                  <p className="text-xs text-indigo-700 leading-relaxed mb-4">Studbook ID, Sex, Birth Date, Weight, Image URL (Public/GDrive), Notes.</p>
-                  <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download CSV Template</button>
+                  <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-700 flex items-center gap-1.5 hover:underline"><Download size={14}/> Download Template</button>
                 </div>
                 
                 <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 bg-slate-50 hover:bg-white transition-all group relative">
@@ -539,7 +590,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                    </div>
                 </div>
                 <div>
-                   <h4 className="font-bold text-slate-900 text-lg">Encoding Specimen Records</h4>
+                   <h4 className="font-bold text-slate-900 text-lg">Processing Records</h4>
                    <p className="text-sm text-slate-500">{bulkStatus}</p>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5">
@@ -577,9 +628,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             const sp = allSpecies.find(s => s.id === ind.speciesId);
             const isPlant = sp?.type === 'Plant';
             const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
+            const isSelected = selectedIds.has(ind.id);
             
             return (
-              <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col">
+              <div key={ind.id} className={`bg-white rounded-2xl border transition-all group flex flex-col relative ${isSelected ? 'ring-4 ring-emerald-500 border-emerald-500 shadow-xl' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
+                <div className="absolute top-2 right-2 z-20">
+                   <button onClick={() => toggleSelection(ind.id)} className={`p-1.5 rounded-lg border transition-all ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white/80 border-slate-200 text-slate-400 group-hover:opacity-100 opacity-0 backdrop-blur-sm'}`}>
+                      <CheckCircle size={18} />
+                   </button>
+                </div>
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
                   <img src={displayImg} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
                   {(!(isPlant && ind.sex === Sex.UNKNOWN)) && (
@@ -599,13 +656,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               </div>
             );
           })}
-          {filtered.length === 0 && (
-             <div className="col-span-full py-20 bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400">
-                <PawPrint size={48} className="mb-4 opacity-20" />
-                <p className="text-lg font-bold">No specimens found.</p>
-                <p className="text-sm">Try adjusting your filters or search term.</p>
-             </div>
-          )}
         </div>
       )}
 
@@ -614,6 +664,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                <th className="px-4 py-4 w-10">
+                   <button onClick={toggleSelectAll} className="p-1 hover:bg-slate-200 rounded transition-colors">
+                      {selectedIds.size === filtered.length && filtered.length > 0 ? <CheckSquare size={18} className="text-emerald-600"/> : <Square size={18}/>}
+                   </button>
+                </th>
                 <th className="px-6 py-4">Specimen</th>
                 <th className="px-6 py-4">Species</th>
                 <th className="px-6 py-4">Sex</th>
@@ -623,7 +678,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(ind => (
-                <tr key={ind.id} className="hover:bg-slate-50 transition-colors group">
+                <tr key={ind.id} className={`hover:bg-slate-50 transition-colors group ${selectedIds.has(ind.id) ? 'bg-emerald-50/50' : ''}`}>
+                  <td className="px-4 py-4">
+                     <button onClick={() => toggleSelection(ind.id)} className={`p-1 rounded transition-colors ${selectedIds.has(ind.id) ? 'text-emerald-600' : 'text-slate-300'}`}>
+                        {selectedIds.has(ind.id) ? <CheckSquare size={18}/> : <Square size={18}/>}
+                     </button>
+                  </td>
                   <td className="px-6 py-4">
                     <Link to={`/individuals/${ind.id}`} className="font-bold text-slate-900 hover:text-emerald-700 transition-colors">
                       {ind.name}
@@ -642,9 +702,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && (
-             <div className="py-20 text-center text-slate-400 italic">No records to display.</div>
-          )}
         </div>
       )}
 
