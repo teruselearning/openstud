@@ -78,37 +78,46 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
 };
 
 export const urlToBase64 = async (url: string): Promise<string | null> => {
+  if (!url) return null;
+  
+  let targetUrl = url.trim();
+  console.group(`[MEDIA PROCESSING] URL: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`);
+  
   try {
-    if (!url) return null;
-    
-    let targetUrl = url.trim();
-    console.group(`[MEDIA PROCESSING] ${targetUrl.substring(0, 50)}...`);
-    
-    // Normalize Google Drive Links
-    if (targetUrl.includes('drive.google.com')) {
+    // 1. Check for Google Drive links
+    if (targetUrl.includes('drive.google.com') || targetUrl.includes('docs.google.com/file/d/')) {
+       console.log("Detected Google Drive link. Extracting ID...");
+       // This regex handles various GDrive share link formats
        const idMatch = targetUrl.match(/[-\w]{25,}/);
        const id = idMatch ? idMatch[0] : null;
        
        if (id) {
-          console.log(`Detected GDrive ID: ${id}`);
-          // Using the thumbnail API with high-res setting is generally more reliable for browsers
+          console.log(`Extracted GDrive ID: ${id}`);
+          // Construction of the thumbnail URL is the most reliable way to display GDrive images in a browser without custom proxying
           targetUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
-          console.log(`Transformed to Thumbnail URL: ${targetUrl}`);
+          console.log(`Constructed Thumbnail URL: ${targetUrl}`);
+          
+          // Return early for GDrive to avoid CORS issues with fetch attempts. 
+          // Browser will handle the direct <img> request.
+          console.groupEnd();
+          return targetUrl;
        } else {
-          console.warn("Detected GDrive domain but could not extract a file ID.");
+          console.warn("Could not extract file ID from GDrive URL.");
        }
     }
 
-    // Try to fetch for local encoding
-    try {
-      // For GDrive, we skip the fetch attempt if we are in a browser context that might block it
-      // Instead we return the URL and let the <img> tag handle it natively.
-      if (targetUrl.includes('google.com')) {
-         console.log("Returning direct GDrive URL (skipping Base64 to bypass CORS).");
-         console.groupEnd();
-         return targetUrl;
-      }
+    // 2. Fallback for other URLs: try to encode as Base64 for local database persistence
+    // If it's already a Data URL, return it
+    if (targetUrl.startsWith('data:')) {
+       console.log("Input is already a Data URL.");
+       console.groupEnd();
+       return targetUrl;
+    }
 
+    // For standard web images, attempt a fetch to convert to base64
+    // This allows the app to work offline once sync is complete
+    try {
+      console.log("Attempting to fetch and convert to Base64...");
       const response = await fetch(targetUrl);
       if (response.ok) {
         const blob = await response.blob();
@@ -118,20 +127,20 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
           reader.onerror = reject;
           reader.readAsDataURL(blob);
         });
-        console.log("Successfully encoded to Base64.");
+        console.log("Successfully converted to Base64.");
         console.groupEnd();
         return base64;
       } else {
-        console.warn(`Fetch returned status ${response.status}. Returning direct URL.`);
+        console.warn(`Fetch failed with status ${response.status}. Using direct URL.`);
       }
     } catch (fetchErr) {
-      console.warn("Fetch/CORS error during media processing. Falling back to direct URL.");
+      console.warn("CORS/Network error during fetch. Using direct URL fallback.");
     }
     
     console.groupEnd();
     return targetUrl;
   } catch (e) {
-    console.error("Critical URL processing failure:", e);
+    console.error("Critical failure processing media URL:", e);
     console.groupEnd();
     return url;
   }

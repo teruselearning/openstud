@@ -10,23 +10,35 @@ const apiRequest = async (endpoint: string, method: string, body?: any, retries 
     if (cleanToken) {
         headers['Authorization'] = `Bearer ${cleanToken}`;
     }
+    
+    // Add cache-busting to GET requests
+    let finalUrl = `${API_BASE_URL}${endpoint}`;
+    if (method.toUpperCase() === 'GET') {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      finalUrl = `${finalUrl}${sep}_t=${Date.now()}`;
+    }
+
     const config: RequestInit = {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
       mode: 'cors'
     };
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    
+    const response = await fetch(finalUrl, config);
+    
     if (response.status === 401) {
        localStorage.removeItem('os_token');
        localStorage.removeItem('os_session');
        const errorData = await response.json().catch(() => ({}));
        throw new Error(errorData.error || "Session expired. Please log in again.");
     }
+    
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
        throw new Error(`Server Error: Unexpected response format (${response.status}).`);
     }
+    
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'API Request Failed');
     return data;
@@ -95,14 +107,12 @@ const fromDbInd = (i: any): Individual => ({
   dnaSequence: i.dna_sequence, 
   notes: i.notes, 
   source: i.source, 
-  // Fix: Use correct camelCase property name from Individual interface
   sourceDetails: i.source_details, 
   latitude: i.latitude, 
   longitude: i.longitude, 
   isDeceased: !!i.is_deceased, 
   deathDate: i.death_date, 
   loanStatus: i.loan_status, 
-  // Fix: Map snake_case from DB to camelCase properties in Individual interface
   transferredToOrgId: i.transferred_to_org_id, 
   transferDate: i.transfer_date, 
   transferNote: i.transfer_note, 
@@ -128,7 +138,6 @@ const fromDbLoan = (l: any): BreedingLoan => ({
   status: l.status, 
   individualIds: safeParse(l.individual_ids, []), 
   terms: l.terms, 
-  // Fix: Map snake_case to correct camelCase properties in BreedingLoan interface
   notificationRecipientId: l.notification_recipient_id, 
   changeRequest: safeParse(l.change_request, null) 
 });
@@ -149,7 +158,6 @@ const sanitizeNum = (val: any, fallback: any = 0) => {
     return isNaN(n) ? fallback : n;
 };
 
-// Fix: Correct property access for Organization object in mapOrgToDb
 export const mapOrgToDb = (o: Organization) => ({ id: o.id, name: o.name, location: o.location, latitude: o.latitude ?? null, longitude: o.longitude ?? null, founded_year: sanitizeNum(o.foundedYear, 2024), description: o.description, focus: o.focus, is_org_public: o.isOrgPublic, is_species_public: o.isSpeciesPublic, obscure_location: o.obscureLocation, hide_name: o.hideName ?? false, allow_breeding_requests: o.allowBreedingRequests, breeding_request_contact_id: o.breedingRequestContactId || null, show_native_status: o.showNativeStatus ?? true, dashboard_block: o.dashboardBlock, enable_mfa: o.enableMfa ?? false, enable_enclosures: o.enableEnclosures ?? false, is_deleted: o.deleted || false });
 export const mapProjectToDb = (p: Project) => ({ id: p.id, name: p.name, description: p.description || null, org_id: p.orgId || null });
 
@@ -165,7 +173,8 @@ export const mapIndToDb = (i: Individual) => ({
   id: i.id, 
   project_id: i.projectId, 
   species_id: i.speciesId, 
-  enclosure_id: i.enclosure_id || null, 
+  // Fix: Correct camelCase property names in Individual object
+  enclosure_id: i.enclosureId || null, 
   studbook_id: i.studbookId, 
   name: i.name, 
   sex: i.sex, 
@@ -198,7 +207,6 @@ export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users
 export const syncPushProjects = async (projects: Project[]) => apiRequest('/rest/v1/projects', 'POST', projects.map(mapProjectToDb));
 export const syncPushSpecies = async (species: Species[]) => apiRequest('/rest/v1/species', 'POST', species.map(mapSpeciesToDb));
 export const syncPushIndividuals = async (individuals: Individual[]) => {
-  // First pass: upload without parents to satisfy FK constraints if parents are also being created
   const pass1Data = individuals.map(i => ({ ...mapIndToDb(i), sire_id: null, dam_id: null }));
   await apiRequest('/rest/v1/individuals', 'POST', pass1Data);
   const indWithParents = individuals.filter(i => i.sireId || i.damId);
@@ -206,9 +214,9 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
+// Fix: Correct camelCase property names in BreedingEvent mapping
+export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
-// Fix: Correct property access for BreedingLoan object in syncPushBreedingLoans
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
@@ -220,7 +228,10 @@ export const syncDeleteOrganization = async (id: string) => syncDeleteRecord('or
 export const syncPermanentDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
 export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/languages?code=${code}`, 'DELETE');
 
-export const syncDeleteRecord = async (table: string, id: string) => apiRequest(`/rest/v1/${table}?id=${id}`, 'DELETE');
+export const syncDeleteRecord = async (table: string, id: string) => {
+  console.log(`[SYNC DELETE] Deleting ${id} from ${table}...`);
+  return apiRequest(`/rest/v1/${table}?id=${id}`, 'DELETE');
+};
 
 export const fetchPublicConfig = async () => {
    try {
@@ -236,8 +247,7 @@ export const fetchPublicConfig = async () => {
 
 export const fetchRemoteData = async () => {
   try {
-    // Add cache busting parameter
-    const response = await apiRequest(`/api/sync?t=${Date.now()}`, 'GET');
+    const response = await apiRequest(`/api/sync`, 'GET');
     const raw = response.success ? response.data : response;
     const results = {
        org: raw.org ? fromDbOrg(raw.org) : null,

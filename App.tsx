@@ -65,7 +65,7 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Use React.Component explicitly with generic arguments to ensure this.props.children is accessible.
+// Fix: Correctly define ErrorBoundary as a class component and access state/props properly
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -81,8 +81,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render(): ReactNode {
+    // Fix: Access state and props from this
     const { hasError, error } = this.state;
-    // Fix: Access children from this.props now that we extend Component directly
     const { children } = this.props;
 
     if (hasError) {
