@@ -111,7 +111,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     if (!targetProjectId) {
-       alert("Please select a specific project for this taxon.");
+       alert("Please select a specific project for this species.");
        return;
     }
 
@@ -164,7 +164,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         const commonName = data.commonname || data.name;
         const scientificName = data.scientificname;
         
-        // Fix: Use scientific name if common name is missing
         const primaryIdentifier = commonName || scientificName;
         if (!primaryIdentifier) continue;
 
@@ -235,7 +234,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'openstudbook_taxonomy_template.csv';
+    a.download = 'openstudbook_species_template.csv';
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -273,7 +272,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Taxa</h3>
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><FileSpreadsheet size={24} className="text-emerald-600" /> Bulk Import Species</h3>
               <button onClick={() => !isProcessingBulk && setShowBulkModal(false)} className="text-slate-400 hover:text-slate-600"><XIcon size={24} /></button>
             </div>
             
@@ -306,7 +305,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                    </div>
                 </div>
                 <div>
-                   <h4 className="font-bold text-slate-900 text-lg">Gemini Researching Taxonomy</h4>
+                   <h4 className="font-bold text-slate-900 text-lg">Researching Species Data</h4>
                    <p className="text-sm text-slate-500">{bulkStatus}</p>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5">
@@ -347,7 +346,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                   <div className="space-y-4">
                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Scientific Taxonomy</h4>
-                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Taxon Profile</button>
+                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile</button>
                      </div>
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} required /></div>

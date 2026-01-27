@@ -1,5 +1,4 @@
-
-import React, { ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
+import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -66,8 +65,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Explicitly use React.Component with generics to ensure props and state are correctly typed and accessible.
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fix: Explicitly use Component with generics and ensure named import is used for better TypeScript inference
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
@@ -80,6 +79,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   render(): ReactNode {
     const { hasError, error } = this.state;
+    // Fix: Access props from this context to ensure children is correctly defined on ErrorBoundary instance
     const { children } = this.props;
 
     if (hasError) {

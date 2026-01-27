@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
 import { checkAndIncrementAiUsage } from "./storage";
@@ -23,10 +22,6 @@ const speciesSchema = {
   required: ["scientificName", "conservationStatus", "type"],
 };
 
-/**
- * Schema for dictionary translations
- * Using an array of objects with short keys to minimize token usage and enforce structure
- */
 const translationSchema = {
   type: Type.ARRAY,
   items: {
@@ -39,25 +34,20 @@ const translationSchema = {
   }
 };
 
-// Use direct process.env.API_KEY as per coding guidelines
 const getAiClient = (): GoogleGenAI => {
-  // Fix: Direct use of process.env.API_KEY as per guidelines
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 const sanitizeJsonResponse = (text: string): string => {
   if (!text) return "";
   let clean = text.trim();
-  // Strip markdown markers if present
   if (clean.startsWith("```")) {
     clean = clean.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "");
   }
-  // Find boundaries
   const firstBrace = clean.indexOf('{');
   const firstBracket = clean.indexOf('[');
   let start = -1;
   let end = -1;
-
   if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
     start = firstBrace;
     end = clean.lastIndexOf('}');
@@ -65,7 +55,6 @@ const sanitizeJsonResponse = (text: string): string => {
     start = firstBracket;
     end = clean.lastIndexOf(']');
   }
-
   if (start !== -1 && end !== -1 && end > start) {
     return clean.substring(start, end + 1);
   }
@@ -90,7 +79,20 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
 
 export const urlToBase64 = async (url: string): Promise<string | null> => {
   try {
-    const response = await fetch(url);
+    if (!url) return null;
+    
+    let targetUrl = url.trim();
+    
+    // Normalize Google Drive Links (view -> download)
+    if (targetUrl.includes('drive.google.com')) {
+       const urlObj = new URL(targetUrl);
+       const id = urlObj.searchParams.get('id') || targetUrl.split('/d/')[1]?.split('/')[0];
+       if (id) {
+          targetUrl = `https://drive.google.com/uc?export=download&id=${id}`;
+       }
+    }
+
+    const response = await fetch(targetUrl);
     if (!response.ok) return null;
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
@@ -166,20 +168,13 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
   }
 };
 
-/**
- * Translates a dictionary of strings into a target language.
- */
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<{k: string, v: string}[]> => {
   try {
     if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
-    
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
     if (payload.length === 0) return [];
-
     const ai = getAiClient();
-    const prompt = `Translate the following interface strings into "${targetLanguage}". 
-    Data to Translate: ${JSON.stringify(payload)}`;
-
+    const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
@@ -188,16 +183,13 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
         responseSchema: translationSchema
       }
     });
-
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
       try {
         const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
         return parsed.map(item => ({
           ...item,
-          v: typeof item.v === 'string' 
-             ? item.v.replace(/\\n/g, ' ').replace(/\n/g, ' ').trim() 
-             : item.v
+          v: typeof item.v === 'string' ? item.v.replace(/\\n/g, ' ').replace(/\n/g, ' ').trim() : item.v
         }));
       } catch (parseErr) {
         console.error("Failed to parse AI translation JSON:", sanitized);

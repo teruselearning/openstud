@@ -247,7 +247,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const handleCreateNewSpecies = async () => {
     if (!newSpeciesData.commonName || !newSpeciesData.scientificName) {
-        alert("Please fill in common and scientific names for the new taxon.");
+        alert("Please fill in common and scientific names for the new species.");
         return;
     }
     
@@ -269,7 +269,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         };
         
         const updated = [...allSpecies, newSp];
-        saveSpecies(updated);
+        await saveSpecies(updated); // CRITICAL: Await the sync here
         setAllSpecies(updated);
         
         setFormData({ ...formData, speciesId: newSp.id });
@@ -277,6 +277,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         setShowNewSpeciesForm(false);
     } catch (e) {
         console.error(e);
+        alert("Failed to save new species. Please check connection.");
     } finally {
         setIsSubmitting(false);
     }
@@ -295,23 +296,28 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
     setIsSubmitting(true);
     
-    const entry: Individual = {
-        ...formData as Individual,
-        id: editingId || `ind-${Date.now()}`,
-        projectId: targetProjectId,
-        weightKg: Number(formData.weightKg || 0)
-    };
-    
-    const updated = editingId ? allIndividuals.map(i => i.id === editingId ? entry : i) : [...allIndividuals, entry];
-    setAllIndividuals(updated);
-    saveIndividuals(updated);
-    setIsSubmitting(false);
-    
-    if (returnToId) navigate(`/individuals/${returnToId}`);
-    else setShowForm(false);
-    
-    setEditingId(null);
-    setReturnToId(null);
+    try {
+        const entry: Individual = {
+            ...formData as Individual,
+            id: editingId || `ind-${Date.now()}`,
+            projectId: targetProjectId,
+            weightKg: Number(formData.weightKg || 0)
+        };
+        
+        const updated = editingId ? allIndividuals.map(i => i.id === editingId ? entry : i) : [...allIndividuals, entry];
+        setAllIndividuals(updated);
+        await saveIndividuals(updated); // Syncing
+        
+        if (returnToId) navigate(`/individuals/${returnToId}`);
+        else setShowForm(false);
+        
+        setEditingId(null);
+        setReturnToId(null);
+    } catch (err: any) {
+        alert("Database Error: Could not save individual. Ensure the species is registered first.");
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -426,11 +432,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         }
       }
 
-      saveSpecies(updatedSpeciesList);
+      // CRITICAL: First sync the species definitions
+      await saveSpecies(updatedSpeciesList);
       setAllSpecies(updatedSpeciesList);
       
+      // Then sync the specimens that depend on them
       const finalInds = [...currentIndividuals, ...newIndividuals];
-      saveIndividuals(finalInds);
+      await saveIndividuals(finalInds);
       setAllIndividuals(finalInds);
 
       setIsProcessingBulk(false);
@@ -470,7 +478,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
      return { residents, grouped: Object.values(grouped) };
   };
 
-  // Restored: Determine if the currently selected species is a plant
   const selectedSpecies = allSpecies.find(s => s.id === formData.speciesId);
   const isFlora = selectedSpecies?.type === 'Plant';
 
@@ -608,7 +615,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                 <th className="px-6 py-4">Specimen</th>
-                <th className="px-6 py-4">Taxon</th>
+                <th className="px-6 py-4">Species</th>
                 <th className="px-6 py-4">Sex</th>
                 <th className="px-6 py-4">Studbook ID</th>
                 <th className="px-6 py-4 text-right">Actions</th>
@@ -666,7 +673,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                 </div>
                 <div className="p-4 space-y-4">
                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resident Taxa</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resident Species</p>
                       {getResidentsOfEnclosure(activeEnclosureFromMap).grouped.length > 0 ? (
                          <div className="space-y-1.5">
                             {getResidentsOfEnclosure(activeEnclosureFromMap).grouped.map(({ species, count }) => (
@@ -717,7 +724,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              </div>
              
              <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
-                {/* Section 0: Project Scoping (if All Projects view and >1 projects exist) */}
                 {isAll && allProjects.length > 1 && (
                   <div className="space-y-4">
                     <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -740,11 +746,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                 )}
 
-                {/* Section 1: Identity */}
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <UserIcon size={16}/> Identity & Taxonomy
+                      <UserIcon size={16}/> Identity & Species
                     </h4>
                     {!editingId && (
                       <button 
@@ -752,14 +757,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                         onClick={() => setShowNewSpeciesForm(!showNewSpeciesForm)} 
                         className={`text-xs font-bold px-3 py-1 rounded-full transition-colors ${showNewSpeciesForm ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
                       >
-                        {showNewSpeciesForm ? 'Select Existing Taxon' : '+ Add New Taxon'}
+                        {showNewSpeciesForm ? 'Select Existing Species' : '+ Add New Species'}
                       </button>
                     )}
                   </div>
 
                   {showNewSpeciesForm ? (
                     <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 space-y-4 animate-in slide-in-from-top-2">
-                       <h5 className="text-xs font-black text-indigo-700 uppercase">Quick Taxon Registration</h5>
+                       <h5 className="text-xs font-black text-indigo-700 uppercase">Quick Species Registration</h5>
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                              <label className="text-[10px] font-bold text-indigo-400 uppercase">Common Name</label>
@@ -777,18 +782,18 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                              </select>
                           </div>
                        </div>
-                       <button type="button" onClick={handleCreateNewSpecies} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm transition-all">Register Taxon</button>
+                       <button type="button" onClick={handleCreateNewSpecies} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm transition-all">Register Species</button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="relative" ref={speciesDropdownRef}>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Taxon <span className="text-red-500">*</span></label>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Species <span className="text-red-500">*</span></label>
                           <input 
                             className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400" 
                             value={speciesSearchQuery} 
                             onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} 
                             onFocus={() => setIsSpeciesDropdownOpen(true)} 
-                            placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search taxon..."} 
+                            placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search species..."} 
                             required 
                             disabled={isAll && allProjects.length > 1 && !formData.projectId}
                           />
@@ -830,7 +835,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   )}
                 </div>
 
-                {/* Section 2: Environment & Location */}
                 <div className="space-y-4 pt-6 border-t border-slate-100">
                   <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                     <MapPin size={16}/> Environment & Geolocation
@@ -862,7 +866,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </div>
                 </div>
 
-                {/* Section 3: Lineage */}
                 <div className="space-y-4 pt-6 border-t border-slate-100">
                   <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                     <Dna size={16}/> {t('parentageTitle')}
@@ -879,7 +882,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <option value="">Unknown</option>
                           {potentialSires.map(i => <option key={i.id} value={i.id}>{i.name} ({i.studbookId})</option>)}
                         </select>
-                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a taxon first to browse potential sires.</p>}
+                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential sires.</p>}
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-700 block mb-1">{t('dam')}</label>
@@ -892,7 +895,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <option value="">Unknown</option>
                           {potentialDams.map(i => <option key={i.id} value={i.id}>{i.name} ({i.studbookId})</option>)}
                         </select>
-                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a taxon first to browse potential dams.</p>}
+                        {!formData.speciesId && <p className="text-[10px] text-amber-600 mt-1 italic">Select a species first to browse potential dams.</p>}
                     </div>
                   </div>
                 </div>
