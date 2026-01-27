@@ -1,3 +1,4 @@
+
 import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -66,8 +67,8 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Use standard Component inheritance and remove constructor to resolve property 'props' and 'state' access issues.
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fix: Explicitly use React.Component with generics to ensure props and state are correctly typed and accessible.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
@@ -155,7 +156,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
                className="w-full p-2 pl-3 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium disabled:opacity-50"
                disabled={!isAdmin && projects.length <= 1}
              >
-               {hasGlobalAccess && (
+               {hasGlobalAccess && projects.length > 1 && (
                  <option value="ALL_PROJECTS">🌐 All Projects</option>
                )}
                {projects.length > 0 ? (
@@ -233,6 +234,12 @@ const App: React.FC = () => {
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
   const [showSetupWizard, setShowSetupWizard] = useState(false);
+
+  const handleProjectChange = (id: string) => { 
+    setCurrentProjectIdState(id); 
+    saveCurrentProjectId(id); 
+    calculateFeatureVisibility(id); 
+  };
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -328,10 +335,14 @@ const App: React.FC = () => {
            setProjects(pjs);
            if (pjs.length > 0) {
               const currentId = getCurrentProjectId();
-              calculateFeatureVisibility(currentId || pjs[0].id);
+              // If only one project exists, force user away from 'ALL_PROJECTS' if they were there
+              if (pjs.length === 1 && (currentId === 'ALL_PROJECTS' || !currentId)) {
+                 handleProjectChange(pjs[0].id);
+              } else {
+                 calculateFeatureVisibility(currentId || pjs[0].id);
+              }
            }
            
-           // Wizard Trigger Check: If no species exist and user is Admin, show wizard
            const session = getSession();
            if (session && session.role === UserRole.ADMIN && (!data.species || data.species.length === 0)) {
               setShowSetupWizard(true);
@@ -361,6 +372,13 @@ const App: React.FC = () => {
         savedPid = availableProjects.length > 0 ? availableProjects[0].id : '';
         saveCurrentProjectId(savedPid);
     }
+    
+    // Safety check for single-project Orgs
+    if (availableProjects.length === 1 && (savedPid === 'ALL_PROJECTS' || !savedPid)) {
+       savedPid = availableProjects[0].id;
+       saveCurrentProjectId(savedPid);
+    }
+
     setProjects(availableProjects);
     setCurrentProjectIdState(savedPid);
     calculateFeatureVisibility(savedPid);
@@ -369,7 +387,6 @@ const App: React.FC = () => {
 
   const handleLogin = (u: User) => loadData(u);
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
-  const handleProjectChange = (id: string) => { setCurrentProjectIdState(id); saveCurrentProjectId(id); calculateFeatureVisibility(id); };
 
   const handleCreateProject = () => {
     if (!newProjectName) return;

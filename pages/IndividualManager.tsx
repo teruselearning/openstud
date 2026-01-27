@@ -2,8 +2,8 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
-import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure, Project } from '../types';
-import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck, FileUp, FileSpreadsheet, Sparkles, Download } from 'lucide-react';
+import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
+import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck, FileUp, FileSpreadsheet, Sparkles, Download, Leaf } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -54,6 +54,15 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const speciesDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Inline Species Creation State
+  const [showNewSpeciesForm, setShowNewSpeciesForm] = useState(false);
+  const [newSpeciesData, setNewSpeciesData] = useState<Partial<Species>>({
+    commonName: '',
+    scientificName: '',
+    type: 'Animal',
+    conservationStatus: 'Unknown'
+  });
 
   const [formData, setFormData] = useState<Partial<Individual>>({
     speciesId: '', projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId, enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
@@ -216,6 +225,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     });
     setSpeciesSearchQuery('');
     setShowForm(true);
+    setShowNewSpeciesForm(false);
   };
 
   const handleEdit = (ind: Individual) => {
@@ -225,6 +235,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const sp = allSpecies.find(s => s.id === ind.speciesId);
     setSpeciesSearchQuery(sp?.commonName || '');
     setShowForm(true);
+    setShowNewSpeciesForm(false);
   };
 
   const handleCloseForm = () => {
@@ -232,6 +243,43 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     if (returnToId) navigate(`/individuals/${returnToId}`);
     setEditingId(null);
     setReturnToId(null);
+  };
+
+  const handleCreateNewSpecies = async () => {
+    if (!newSpeciesData.commonName || !newSpeciesData.scientificName) {
+        alert("Please fill in common and scientific names for the new taxon.");
+        return;
+    }
+    
+    setIsSubmitting(true);
+    const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
+    
+    try {
+        const newSp: Species = {
+            id: `sp-${Date.now()}`,
+            projectId: targetProjectId as string,
+            commonName: newSpeciesData.commonName,
+            scientificName: newSpeciesData.scientificName,
+            type: newSpeciesData.type as SpeciesType,
+            conservationStatus: newSpeciesData.conservationStatus || 'Unknown',
+            sexualMaturityAgeYears: 0,
+            averageAdultWeightKg: 0,
+            lifeExpectancyYears: 0,
+            imageUrl: generatePattern(newSpeciesData.commonName)
+        };
+        
+        const updated = [...allSpecies, newSp];
+        saveSpecies(updated);
+        setAllSpecies(updated);
+        
+        setFormData({ ...formData, speciesId: newSp.id });
+        setSpeciesSearchQuery(newSp.commonName);
+        setShowNewSpeciesForm(false);
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -322,7 +370,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           );
 
           if (!foundSpecies) {
-            // Fix: Fallback to scientific name if common name is missing
             const lookupName = commonName || sciName;
             if (!lookupName) throw new Error("Missing species identifier (Common or Scientific Name) in row " + (i + 1));
 
@@ -423,6 +470,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
      return { residents, grouped: Object.values(grouped) };
   };
 
+  // Restored: Determine if the currently selected species is a plant
+  const selectedSpecies = allSpecies.find(s => s.id === formData.speciesId);
+  const isFlora = selectedSpecies?.type === 'Plant';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -517,15 +568,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filtered.map(ind => {
             const sp = allSpecies.find(s => s.id === ind.speciesId);
-            const isFlora = sp?.type === 'Plant';
+            const isPlant = sp?.type === 'Plant';
             const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
             
             return (
               <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col">
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
                   <img src={displayImg} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
-                  {/* Fixed: Conditional sex pill for flora - hide Unknown */}
-                  {(!(isFlora && ind.sex === Sex.UNKNOWN)) && (
+                  {(!(isPlant && ind.sex === Sex.UNKNOWN)) && (
                     <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
                   )}
                 </Link>
@@ -692,50 +742,92 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
                 {/* Section 1: Identity */}
                 <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <UserIcon size={16}/> Identity & Taxonomy
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="relative" ref={speciesDropdownRef}>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Taxon <span className="text-red-500">*</span></label>
-                        <input 
-                          className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400" 
-                          value={speciesSearchQuery} 
-                          onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} 
-                          onFocus={() => setIsSpeciesDropdownOpen(true)} 
-                          placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search taxon..."} 
-                          required 
-                          disabled={isAll && allProjects.length > 1 && !formData.projectId}
-                        />
-                        {isSpeciesDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-auto">
-                              {speciesSearchResults.map(s => <button key={s.id} type="button" className="w-full text-left p-3 hover:bg-slate-50 border-b last:border-0" onClick={() => { setFormData({...formData, speciesId: s.id}); setSpeciesSearchQuery(s.commonName); setIsSpeciesDropdownOpen(false); }}>{s.commonName}</button>)}
-                          </div>
-                        )}
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Studbook ID <span className="text-red-500">*</span></label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none font-mono text-sm" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Name <span className="text-red-500">*</span></label>
-                        <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Specimen name" required />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Sex</label>
-                        <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}>
-                          {Object.values(Sex).map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Birth Date</label>
-                        <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Current Weight (Kg)</label>
-                        <input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} />
-                    </div>
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <UserIcon size={16}/> Identity & Taxonomy
+                    </h4>
+                    {!editingId && (
+                      <button 
+                        type="button" 
+                        onClick={() => setShowNewSpeciesForm(!showNewSpeciesForm)} 
+                        className={`text-xs font-bold px-3 py-1 rounded-full transition-colors ${showNewSpeciesForm ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+                      >
+                        {showNewSpeciesForm ? 'Select Existing Taxon' : '+ Add New Taxon'}
+                      </button>
+                    )}
                   </div>
+
+                  {showNewSpeciesForm ? (
+                    <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 space-y-4 animate-in slide-in-from-top-2">
+                       <h5 className="text-xs font-black text-indigo-700 uppercase">Quick Taxon Registration</h5>
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                             <label className="text-[10px] font-bold text-indigo-400 uppercase">Common Name</label>
+                             <input className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm" value={newSpeciesData.commonName} onChange={e => setNewSpeciesData({...newSpeciesData, commonName: e.target.value})} placeholder="e.g. Red Panda" />
+                          </div>
+                          <div>
+                             <label className="text-[10px] font-bold text-indigo-400 uppercase">Scientific Name</label>
+                             <input className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm italic" value={newSpeciesData.scientificName} onChange={e => setNewSpeciesData({...newSpeciesData, scientificName: e.target.value})} placeholder="e.g. Ailurus fulgens" />
+                          </div>
+                          <div>
+                             <label className="text-[10px] font-bold text-indigo-400 uppercase">Kingdom</label>
+                             <select className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white" value={newSpeciesData.type} onChange={e => setNewSpeciesData({...newSpeciesData, type: e.target.value as SpeciesType})}>
+                                <option value="Animal">Fauna</option>
+                                <option value="Plant">Flora</option>
+                             </select>
+                          </div>
+                       </div>
+                       <button type="button" onClick={handleCreateNewSpecies} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm transition-all">Register Taxon</button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="relative" ref={speciesDropdownRef}>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Taxon <span className="text-red-500">*</span></label>
+                          <input 
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400" 
+                            value={speciesSearchQuery} 
+                            onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} 
+                            onFocus={() => setIsSpeciesDropdownOpen(true)} 
+                            placeholder={(isAll && allProjects.length > 1 && !formData.projectId) ? "Select project first" : "Search taxon..."} 
+                            required 
+                            disabled={isAll && allProjects.length > 1 && !formData.projectId}
+                          />
+                          {isSpeciesDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 z-50 bg-white border border-slate-200 rounded-lg shadow-xl mt-1 max-h-48 overflow-auto">
+                                {speciesSearchResults.map(s => <button key={s.id} type="button" className="w-full text-left p-3 hover:bg-slate-50 border-b last:border-0" onClick={() => { setFormData({...formData, speciesId: s.id}); setSpeciesSearchQuery(s.commonName); setIsSpeciesDropdownOpen(false); }}>{s.commonName}</button>)}
+                            </div>
+                          )}
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Studbook ID <span className="text-red-500">*</span></label>
+                          <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none font-mono text-sm" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Name <span className="text-red-500">*</span></label>
+                          <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Specimen name" required />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">{isFlora ? 'Classification' : 'Sex'}</label>
+                          {isFlora ? (
+                             <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 font-medium">
+                                {selectedSpecies?.plantClassification || 'Unknown'}
+                             </div>
+                          ) : (
+                            <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}>
+                              {Object.values(Sex).map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          )}
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">{isFlora ? 'Date Planted' : 'Birth Date'}</label>
+                          <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">Current Weight (Kg)</label>
+                          <input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Section 2: Environment & Location */}
@@ -745,7 +837,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                        <label className="text-xs font-bold text-slate-700 block mb-1">Current Enclosure</label>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Current {org?.focus === 'Plants' ? 'Area' : 'Enclosure'}</label>
                         <select 
                           className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" 
                           value={formData.enclosureId} 

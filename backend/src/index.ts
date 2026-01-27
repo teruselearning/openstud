@@ -342,6 +342,50 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// --- REST v1 Generic Handlers (For Sync Persistence) ---
+
+app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const { table } = req.params;
+    const body = req.body;
+    const data = Array.isArray(body) ? body : [body];
+    
+    if (data.length === 0) return res.json({ success: true });
+
+    try {
+        const db = getDb();
+        for (const item of data) {
+            const keys = Object.keys(item);
+            const values = Object.values(item).map(v => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v);
+            
+            const placeholders = keys.map(() => '?').join(', ');
+            const updates = keys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
+            
+            const sql = `INSERT INTO \`${table}\` (\`${keys.join('`, `')}\`) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updates}`;
+            await db.execute(sql, values);
+        }
+        res.json({ success: true });
+    } catch (e: any) { 
+        console.error(`[REST POST] Error on table ${table}:`, e.message);
+        res.status(500).json({ error: e.message }); 
+    }
+});
+
+app.get('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const { table } = req.params;
+    const { id } = req.query;
+    try {
+        const db = getDb();
+        let sql = `SELECT * FROM \`${table}\``;
+        const params = [];
+        if (id) {
+           sql += ` WHERE id = ?`;
+           params.push(id);
+        }
+        const [rows]: any = await db.execute(sql, params);
+        res.json(rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     const { to, subject, html, placeholders } = req.body;
     try {
