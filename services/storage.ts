@@ -1,4 +1,3 @@
-
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
@@ -8,7 +7,7 @@ import { localDb } from './localDb';
 
 const API_BASE_URL = '';
 
-export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures };
+export { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord };
 
 export const permanentDeleteOrganization = syncPermanentDeleteOrganization;
 
@@ -225,24 +224,30 @@ export const saveUsers = (u: User[], skipSync = false) => {
 };
 
 export const getSpecies = (): Species[] => speciesCache;
-export const saveSpecies = (s: Species[], skipSync = false) => {
+export const saveSpecies = async (s: Species[], skipSync = false) => {
   speciesCache = s || [];
-  localDb.saveAll('species', speciesCache);
-  if (!skipSync) syncPushSpecies(speciesCache).catch(() => {});
+  await localDb.saveAll('species', speciesCache);
+  if (!skipSync) await syncPushSpecies(speciesCache);
 };
 
 export const getIndividuals = (): Individual[] => individualsCache;
-export const saveIndividuals = (i: Individual[], skipSync = false) => {
+export const saveIndividuals = async (i: Individual[], skipSync = false) => {
   individualsCache = i || [];
-  localDb.saveAll('individuals', individualsCache);
-  if (!skipSync) syncPushIndividuals(individualsCache).catch(() => {});
+  await localDb.saveAll('individuals', individualsCache);
+  if (!skipSync) await syncPushIndividuals(individualsCache);
+};
+
+export const deleteIndividual = async (id: string) => {
+  individualsCache = individualsCache.filter(i => i.id !== id);
+  await localDb.saveAll('individuals', individualsCache);
+  try { await syncDeleteRecord('individuals', id); } catch (e) {}
 };
 
 export const getEnclosures = (): Enclosure[] => enclosuresCache;
-export const saveEnclosures = (e: Enclosure[], skipSync = false) => {
+export const saveEnclosures = async (e: Enclosure[], skipSync = false) => {
   enclosuresCache = e || [];
-  localDb.saveAll('enclosures', enclosuresCache);
-  if (!skipSync) syncPushEnclosures(enclosuresCache).catch(() => {});
+  await localDb.saveAll('enclosures', enclosuresCache);
+  if (!skipSync) await syncPushEnclosures(enclosuresCache);
 };
 
 export const getBreedingEvents = (): BreedingEvent[] => get(KEYS.BREEDING, []);

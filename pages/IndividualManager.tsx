@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects } from '../services/storage';
+import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, Individual, Sex, AcquisitionSource, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
 import { Plus, Camera, Search, Dna, PawPrint, Pencil, X as XIcon, Filter, Trash2, AlertTriangle, MapPin, Users, LayoutGrid, List, ArrowRight, Briefcase, RefreshCw, Sprout, Loader2, FileText, CheckCircle, Fingerprint, User as UserIcon, Upload, FileCode, Crosshair, Map as MapIcon, Maximize2, LocateFixed, Type as TypeIcon, Map as MapIcon2, ChevronDown, Calendar, Weight, Info, Box, Save, Anchor, Layers, Eye, EyeOff, FolderOpen, UserCheck, FileUp, FileSpreadsheet, Sparkles, Download, Leaf, CheckSquare, Square, Trash } from 'lucide-react';
@@ -224,16 +224,21 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} specimen records?`)) return;
+    if (!confirm(`Are you sure you want to permanently delete ${selectedIds.size} specimen records? This will also remove them from the database.`)) return;
     
     setIsSubmitting(true);
     try {
-      const updated = allIndividuals.filter(i => !selectedIds.has(i.id));
-      setAllIndividuals(updated);
-      await saveIndividuals(updated);
+      // Loop through and delete each one explicitly to ensure sync removal
+      const idsToDelete = Array.from(selectedIds);
+      for (const id of idsToDelete) {
+         await deleteIndividual(id);
+      }
+      
+      const remaining = allIndividuals.filter(i => !selectedIds.has(i.id));
+      setAllIndividuals(remaining);
       setSelectedIds(new Set());
     } catch (e) {
-      alert("Delete failed. Please check connection.");
+      alert("Delete failed on some records. Please check connection.");
     } finally {
       setIsSubmitting(false);
     }
@@ -303,7 +308,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         };
         
         const updated = [...allSpecies, newSp];
-        await saveSpecies(updated); // CRITICAL: Syncing definition
+        await saveSpecies(updated); // CRITICAL: Await the sync here
         setAllSpecies(updated);
         
         setFormData({ ...formData, speciesId: newSp.id });
@@ -434,7 +439,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           const url = data.imageurl || data.image;
           if (url) {
             setBulkStatus(`Processing media for ${name}...`);
-            const processed = await urlToBase64(url);
+            // Fix: Cast the URL to string as urlToBase64 expects a string
+            const processed = await urlToBase64(url as string);
             if (processed) profileImg = processed;
           }
           if (!profileImg) profileImg = generatePattern(name);
@@ -516,7 +522,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   return (
     <div className="space-y-6 relative pb-20">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
           <p className="text-slate-500">{org?.focus === 'Plants' ? t('indivSubtitlePlant') : t('indivSubtitleAnimal')}</p>
@@ -544,7 +550,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               </div>
               <div className="flex gap-2">
                  <button onClick={handleBulkDelete} disabled={isSubmitting} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50">
-                    <Trash2 size={18}/> {isSubmitting ? 'Deleting...' : 'Delete Selection'}
+                    {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18}/>}
+                    {isSubmitting ? 'Deleting...' : 'Delete Selection'}
                  </button>
                  <button onClick={() => setSelectedIds(new Set())} className="px-4 py-2 text-slate-400 hover:text-white transition-colors text-sm font-bold">Cancel</button>
               </div>

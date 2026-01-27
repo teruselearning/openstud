@@ -83,23 +83,28 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
     
     let targetUrl = url.trim();
     
-    // Normalize Google Drive Links (view -> download)
+    // Normalize Google Drive Links (view -> thumbnail API)
+    // The thumbnail API is much more reliable for display in web browsers than uc?export=view
     if (targetUrl.includes('drive.google.com')) {
-       // Extract ID from various GDrive URL formats
        const idMatch = targetUrl.match(/[-\w]{25,}/);
        const id = idMatch ? idMatch[0] : null;
-       
        if (id) {
-          // Use the confirm=t bypass for larger files and direct export
-          targetUrl = `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
+          // Use sz=w1000 to get a high-res version of the file preview
+          targetUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
        }
     }
 
     // Try to fetch to encode to Base64 for database persistence
+    // This often fails for GDrive due to CORS, which is okay, we'll return the URL as fallback.
     try {
-      const response = await fetch(targetUrl);
-      if (response.ok) {
-        const blob = await response.blob();
+      const response = await fetch(targetUrl, { mode: 'no-cors' });
+      // mode: 'no-cors' means we can't read the body but the browser can use it for <img> tags
+      // If we can't get a real base64, we just return the URL
+      if (targetUrl.includes('google.com')) return targetUrl;
+
+      const responseWithCors = await fetch(targetUrl);
+      if (responseWithCors.ok) {
+        const blob = await responseWithCors.blob();
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -108,16 +113,14 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
         });
       }
     } catch (fetchErr) {
-      // Fallback: If fetch is blocked by CORS (common with GDrive), 
-      // return the targetUrl directly so <img> tags can still render it.
-      console.warn("Base64 fetch blocked by CORS, falling back to direct URL.");
+      // Return URL directly so <img> tags can render it if fetch is blocked
       return targetUrl;
     }
     
     return targetUrl;
   } catch (e) {
     console.error("URL processing failed:", e);
-    return url; // Final fallback: return whatever we were given
+    return url;
   }
 };
 
