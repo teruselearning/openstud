@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
-import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen, Weight, Scale, Ruler } from 'lucide-react';
+import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen, Weight, Scale, Ruler, Trash } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -91,6 +91,34 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     return matchesSearch && matchesSpecies && matchesStatus;
   });
 
+  const toggleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
+    setSelectedIds(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filtered.map(i => i.id)));
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} records? This cannot be undone.`)) return;
+    
+    setIsSubmitting(true);
+    // Fix: Explicitly type idsToDelete as string[] to ensure 'id' is a string when passed to deleteIndividual
+    const idsToDelete: string[] = Array.from(selectedIds);
+    for (const id of idsToDelete) {
+      // Fix: 'id' is now correctly typed as string
+      await deleteIndividual(id);
+    }
+    
+    setAllIndividuals(getIndividuals());
+    setSelectedIds(new Set());
+    setIsSubmitting(false);
+  };
+
   const availableSpeciesForForm = allSpecies.filter(s => {
     if (allProjects.length === 1) return s.projectId === allProjects[0].id;
     return isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId;
@@ -139,10 +167,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     try {
         const primaryName = (newSpeciesData.commonName || newSpeciesData.scientificName) as string;
         const kingdom = newSpeciesData.type as SpeciesType;
+        
+        // 1. Research Data
         const aiData = await fetchSpeciesData(primaryName, kingdom, org?.location || '');
 
-        let spImg = await fetchWikimediaImage(aiData?.scientificName || primaryName) || '';
-        if (!spImg) spImg = await generateSpeciesImage(primaryName, aiData?.scientificName || '', kingdom) || '';
+        // 2. Resolve Image (Wikimedia First, AI Fallback)
+        let spImg = await fetchWikimediaImage(aiData?.scientificName || primaryName);
+        if (!spImg) spImg = await fetchWikimediaImage(newSpeciesData.commonName || '');
+        if (!spImg) spImg = await generateSpeciesImage(primaryName, aiData?.scientificName || '', kingdom);
 
         const newSp: Species = {
             id: `sp-${Date.now()}`,
@@ -215,11 +247,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-4 items-center">
+        <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
+        <button onClick={handleSelectAll} className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 bg-white transition-all whitespace-nowrap">
+           {selectedIds.size === filtered.length && filtered.length > 0 ? 'Deselect All' : 'Select All'}
+        </button>
       </div>
 
       {viewMode === 'grid' && (
@@ -227,21 +262,94 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           {filtered.map(ind => {
             const sp = allSpecies.find(s => s.id === ind.speciesId);
             const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
+            const isSelected = selectedIds.has(ind.id);
             return (
-              <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group flex flex-col relative">
+              <div key={ind.id} className={`bg-white rounded-2xl border transition-all group flex flex-col relative ${isSelected ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
+                <div className="absolute top-3 left-3 z-20">
+                   <button onClick={() => toggleSelect(ind.id)} className={`p-1 rounded-md transition-all shadow-sm ${isSelected ? 'bg-emerald-600 text-white' : 'bg-white/80 text-slate-400 border border-slate-200 opacity-0 group-hover:opacity-100'}`}>
+                      {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
+                   </button>
+                </div>
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
                   <img src={displayImg} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
-                  <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
+                  <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
                 </Link>
                 <div className="p-4 flex-1">
                   <Link to={`/individuals/${ind.id}`} className="block">
                     <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">{ind.name}</h3>
                   </Link>
                   <p className="text-xs text-slate-500 mb-2 truncate">{sp?.commonName}</p>
+                  <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">{ind.studbookId}</p>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {viewMode === 'list' && (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+           <table className="w-full text-left">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                 <tr>
+                    <th className="px-6 py-4 w-10"></th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Specimen</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Species</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">ID</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sex</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                 </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                 {filtered.map(ind => {
+                    const sp = allSpecies.find(s => s.id === ind.speciesId);
+                    const isSelected = selectedIds.has(ind.id);
+                    return (
+                       <tr key={ind.id} className={`hover:bg-slate-50 transition-colors group ${isSelected ? 'bg-emerald-50/50' : ''}`}>
+                          <td className="px-6 py-4">
+                             <button onClick={() => toggleSelect(ind.id)} className={`transition-all ${isSelected ? 'text-emerald-600' : 'text-slate-300'}`}>
+                                {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
+                             </button>
+                          </td>
+                          <td className="px-6 py-4">
+                             <Link to={`/individuals/${ind.id}`} className="font-bold text-slate-900 hover:text-emerald-700 transition-colors">{ind.name}</Link>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{sp?.commonName}</td>
+                          <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{ind.studbookId}</td>
+                          <td className="px-6 py-4">
+                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${ind.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : ind.sex === Sex.FEMALE ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'}`}>{ind.sex}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                             <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => navigate(`/individuals/${ind.id}`)} className="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg transition-colors"><Eye size={16}/></button>
+                                <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg transition-colors"><Pencil size={16}/></button>
+                             </div>
+                          </td>
+                       </tr>
+                    );
+                 })}
+              </tbody>
+           </table>
+        </div>
+      )}
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[3000] bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-10 duration-300 border border-white/10 backdrop-blur-md">
+           <div className="flex items-center gap-3 pr-6 border-r border-white/20">
+              <span className="bg-emerald-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black">{selectedIds.size}</span>
+              <span className="text-sm font-bold uppercase tracking-widest text-slate-300">Selected</span>
+           </div>
+           <div className="flex items-center gap-4">
+              <button onClick={handleBulkDelete} className="flex items-center gap-2 hover:text-red-400 transition-colors text-sm font-bold uppercase tracking-widest">
+                 <Trash size={16}/>
+                 Delete
+              </button>
+              <button onClick={() => setSelectedIds(new Set())} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-bold uppercase tracking-widest">
+                 <XIcon size={16}/>
+                 Cancel
+              </button>
+           </div>
         </div>
       )}
 

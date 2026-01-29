@@ -1,15 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
-import { checkAndIncrementAiUsage } from "./storage";
+import { checkAndIncrementAiUsage, generatePattern } from "./storage";
 
 /**
  * OpenStudbook AI Model Configuration
  * ----------------------------------
  * Text/Data: gemini-3-flash-preview (High RPM, Reliable)
- * Images: gemini-3-pro-image-preview (High Quality, requires user API key)
+ * Images: gemini-2.5-flash-image (High speed)
  */
 const TEXT_MODEL = 'gemini-3-flash-preview';
-const IMAGE_MODEL = 'gemini-3-pro-image-preview';
+const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 // Schema for species data
 const speciesSchema = {
@@ -57,16 +57,8 @@ export const ensureApiKeySelection = async () => {
 
 const getAiClient = (): GoogleGenAI => {
   const apiKey = process.env.API_KEY;
-  
-  if (apiKey) {
-    const maskedKey = `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`;
-    console.log(`%c[GEMINI API CONFIG] Using Model: ${TEXT_MODEL} | API Key Active: ${maskedKey}`, "color: #10b981; font-weight: bold;");
-  } else {
-    console.error("%c[GEMINI API CONFIG] API KEY IS MISSING!", "color: #ef4444; font-weight: bold; font-size: 14px;");
-  }
-
   if (!apiKey || apiKey.trim() === "") {
-    throw new Error("Gemini API Key not configured. If this persists, please select an API key via the key selection dialog.");
+    throw new Error("Gemini API Key not configured. Please select an API key via the key selection dialog.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -76,17 +68,15 @@ const handleAiError = async (error: any) => {
   let message = error.message || "An unknown AI error occurred.";
   
   if (message.includes("503") || message.toLowerCase().includes("overloaded") || message.toLowerCase().includes("unavailable")) {
-    throw new Error("The AI model is temporarily overloaded by Google. This is common during peak times. Please wait about 15 seconds and try again.");
+    throw new Error("The AI model is temporarily overloaded by Google. Please wait about 15 seconds and try again.");
   }
 
   if (message.includes("Requested entity was not found.")) {
-    console.warn("API Key might be invalid or from a non-paid project for Pro models.");
-    if (window.aistudio) await window.aistudio.openSelectKey();
     throw new Error("API Key issue detected. Pro models require an API key from a paid GCP project.");
   }
   
   if (message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
-    throw new Error("API Quota reached. Please try again in a few minutes.");
+    throw new Error("API Quota reached. Please try again in a few minutes or switch to a paid API key.");
   }
 
   throw error;
@@ -158,12 +148,14 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
 };
 
 export const fetchWikimediaImage = async (query: string): Promise<string | null> => {
+  if (!query) return null;
   try {
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(query)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
     const response = await fetch(searchUrl);
     const data = await response.json();
     const pages = data?.query?.pages;
-    if (!pages) return null;
+    if (!pages || pages["-1"]) return null; // -1 means page not found
+    
     const pageId = Object.keys(pages)[0];
     const imageUrl = pages[pageId]?.thumbnail?.source;
     if (imageUrl) return await urlToBase64(imageUrl);
@@ -203,19 +195,11 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
       throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
     }
     
-    await ensureApiKeySelection();
     const ai = getAiClient();
-    
     const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, textbook style, white background, professional biological drawing quality.`;
     const response = await ai.models.generateContent({
       model: IMAGE_MODEL,
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: "1K"
-        }
-      }
+      contents: { parts: [{ text: prompt }] }
     });
 
     for (const candidate of response.candidates) {
@@ -225,7 +209,8 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
     }
     return null;
   } catch (error) {
-    return handleAiError(error);
+    console.warn("AI Image generation failed (likely quota or region). Falling back to pattern.", error);
+    return generatePattern(commonName);
   }
 };
 
