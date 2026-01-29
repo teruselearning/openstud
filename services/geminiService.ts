@@ -76,7 +76,7 @@ const handleAiError = async (error: any) => {
   }
   
   if (message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
-    throw new Error("API Quota reached. Please try again in a few minutes or switch to a paid API key.");
+    throw new Error("Gemini API Quota reached. Try using Wikimedia Search or wait a few minutes.");
   }
 
   throw error;
@@ -147,20 +147,26 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
   }
 };
 
+/**
+ * Enhanced Wikimedia Search
+ * Uses a generator search to handle redirects and fuzzy titles.
+ */
 export const fetchWikimediaImage = async (query: string): Promise<string | null> => {
-  if (!query) return null;
+  if (!query || query.trim().length < 2) return null;
   try {
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(query)}&prop=pageimages&format=json&pithumbsize=1000&origin=*`;
+    // Use generator=search to find the best match for the query (common or scientific name)
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&pithumbsize=1000&origin=*`;
     const response = await fetch(searchUrl);
     const data = await response.json();
     const pages = data?.query?.pages;
-    if (!pages || pages["-1"]) return null; // -1 means page not found
+    if (!pages) return null;
     
     const pageId = Object.keys(pages)[0];
     const imageUrl = pages[pageId]?.thumbnail?.source;
     if (imageUrl) return await urlToBase64(imageUrl);
     return null;
   } catch (e) {
+    console.warn(`Wikimedia search failed for ${query}:`, e);
     return null;
   }
 };
@@ -202,14 +208,15 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
       contents: { parts: [{ text: prompt }] }
     });
 
-    for (const candidate of response.candidates) {
-      for (const part of candidate.content.parts) {
+    if (response.candidates && response.candidates[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
     return null;
-  } catch (error) {
-    console.warn("AI Image generation failed (likely quota or region). Falling back to pattern.", error);
+  } catch (error: any) {
+    console.warn("AI Image generation failed. Likely Quota. Falling back to pattern.", error.message);
+    // Silent fail to pattern to keep the app usable
     return generatePattern(commonName);
   }
 };

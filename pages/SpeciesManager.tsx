@@ -1,9 +1,7 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
-// Added FolderOpen to lucide-react imports to fix the error on line 341
 import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen } from 'lucide-react';
 import { LanguageContext } from '../App';
 
@@ -64,7 +62,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const lookupName = formData.commonName || formData.scientificName || '';
     setLoadingAI(true);
     setLoadingImage(true);
-    setImageStatus('FETCHING DATA...');
+    setImageStatus('RESEARCHING BIOLOGY...');
+    
     try {
       const data = await fetchSpeciesData(lookupName, formData.type as SpeciesType, org?.location || '');
       if (data) {
@@ -74,13 +73,23 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           nativeStatusLocal: (data.nativeStatusLocal as any) || 'Unknown'
         }));
       }
-      setImageStatus('SEARCHING WIKIMEDIA...');
-      let finalImageUrl = await fetchWikimediaImage(data?.scientificName || lookupName);
+
+      // 1. Try Wikimedia with Scientific Name first (most reliable)
+      setImageStatus('WIKIMEDIA (LATIN)...');
+      let finalImageUrl = await fetchWikimediaImage(data?.scientificName || formData.scientificName || '');
+      
+      // 2. Try Wikimedia with Common Name
       if (!finalImageUrl) {
-        setImageStatus('GENERATING AI ILLUSTRATION...');
-        await ensureApiKeySelection();
+        setImageStatus('WIKIMEDIA (COMMON)...');
+        finalImageUrl = await fetchWikimediaImage(data?.commonName || formData.commonName || lookupName);
+      }
+      
+      // 3. Fallback to Gemini AI if both Wikimedia attempts fail
+      if (!finalImageUrl) {
+        setImageStatus('GEMINI AI DRAWING...');
         finalImageUrl = await generateSpeciesImage(lookupName, data?.scientificName || '', (data?.type || formData.type) as SpeciesType);
       }
+      
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
     } catch (e: any) { 
         console.error("AI Error:", e);
@@ -94,7 +103,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
      setLoadingImage(true);
      setImageStatus('GENERATING...');
      try {
-        await ensureApiKeySelection();
         const url = await generateSpeciesImage(lookupName, formData.scientificName || lookupName, formData.type as SpeciesType);
         if (url) setFormData(prev => ({ ...prev, imageUrl: url }));
      } catch (e: any) { alert("Image generation failed: " + e.message); } finally { setImageStatus(''); setLoadingImage(false); }
@@ -190,7 +198,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
         try {
           const aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '');
-          let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || primaryIdentifier);
+          
+          // Better Bulk Image Resolve
+          let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || scientificName || '');
+          if (!finalImageUrl) finalImageUrl = await fetchWikimediaImage(primaryIdentifier);
           if (!finalImageUrl) {
             finalImageUrl = await generateSpeciesImage(primaryIdentifier, aiData?.scientificName || '', kingdom);
           }

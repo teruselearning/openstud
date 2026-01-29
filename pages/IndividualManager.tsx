@@ -104,19 +104,26 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} records? This cannot be undone.`)) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} records? This action is irreversible.`)) return;
     
     setIsSubmitting(true);
-    // Fix: Explicitly type idsToDelete as string[] to ensure 'id' is a string when passed to deleteIndividual
     const idsToDelete: string[] = Array.from(selectedIds);
-    for (const id of idsToDelete) {
-      // Fix: 'id' is now correctly typed as string
-      await deleteIndividual(id);
-    }
     
-    setAllIndividuals(getIndividuals());
-    setSelectedIds(new Set());
-    setIsSubmitting(false);
+    try {
+      for (const id of idsToDelete) {
+        await deleteIndividual(id);
+      }
+      
+      const updated = getIndividuals();
+      setAllIndividuals(updated);
+      setSelectedIds(new Set());
+      alert(`Successfully deleted ${idsToDelete.length} records.`);
+    } catch (err) {
+      console.error("Bulk delete failed", err);
+      alert("One or more deletions failed. Please refresh and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const availableSpeciesForForm = allSpecies.filter(s => {
@@ -264,10 +271,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
             const isSelected = selectedIds.has(ind.id);
             return (
-              <div key={ind.id} className={`bg-white rounded-2xl border transition-all group flex flex-col relative ${isSelected ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
+              <div key={ind.id} className={`bg-white rounded-2xl border transition-all group flex flex-col relative ${isSelected ? 'ring-2 ring-emerald-500 border-emerald-500 shadow-lg' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
                 <div className="absolute top-3 left-3 z-20">
-                   <button onClick={() => toggleSelect(ind.id)} className={`p-1 rounded-md transition-all shadow-sm ${isSelected ? 'bg-emerald-600 text-white' : 'bg-white/80 text-slate-400 border border-slate-200 opacity-0 group-hover:opacity-100'}`}>
-                      {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
+                   <button onClick={() => toggleSelect(ind.id)} className={`p-1.5 rounded-md transition-all shadow-md border ${isSelected ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white/90 text-slate-400 border-slate-200 opacity-100'}`}>
+                      {isSelected ? <CheckSquare size={20}/> : <Square size={20}/>}
                    </button>
                 </div>
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
@@ -307,7 +314,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     return (
                        <tr key={ind.id} className={`hover:bg-slate-50 transition-colors group ${isSelected ? 'bg-emerald-50/50' : ''}`}>
                           <td className="px-6 py-4">
-                             <button onClick={() => toggleSelect(ind.id)} className={`transition-all ${isSelected ? 'text-emerald-600' : 'text-slate-300'}`}>
+                             <button onClick={() => toggleSelect(ind.id)} className={`transition-all ${isSelected ? 'text-emerald-600' : 'text-slate-300 hover:text-slate-400'}`}>
                                 {isSelected ? <CheckSquare size={18}/> : <Square size={18}/>}
                              </button>
                           </td>
@@ -343,7 +350,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
            <div className="flex items-center gap-4">
               <button onClick={handleBulkDelete} className="flex items-center gap-2 hover:text-red-400 transition-colors text-sm font-bold uppercase tracking-widest">
                  <Trash size={16}/>
-                 Delete
+                 Delete Records
               </button>
               <button onClick={() => setSelectedIds(new Set())} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-bold uppercase tracking-widest">
                  <XIcon size={16}/>
