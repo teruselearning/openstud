@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
-import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
+import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, NativeStatus, Organization, Project } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Download, Upload, CheckCircle, AlertCircle, Pencil, Trash2, LayoutGrid, List, ArrowDownAZ, ArrowUpAZ, Search, MapPin, Check, X as XIcon, AlertTriangle, HelpCircle, ExternalLink, FolderOpen, ImageIcon, Info, Calendar, Weight, Activity, Dna, PawPrint, FileSpreadsheet, FileUp } from 'lucide-react';
 import { LanguageContext } from '../App';
@@ -155,6 +155,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
       const newSpecies: Species[] = [];
       const currentList = getSpecies();
+      
+      // Local cache to avoid repeating AI calls for identical names in the same batch
+      const batchCache = new Map<string, Partial<Species>>();
 
       for (let i = 0; i < rows.length; i++) {
         const values = rows[i].split(',').map(v => v.trim());
@@ -175,7 +178,16 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         if (rawKingdom.includes('flora') || rawKingdom.includes('plant')) kingdom = 'Plant';
 
         try {
-          const aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '');
+          const cacheKey = `${primaryIdentifier.toLowerCase()}-${kingdom}`;
+          let aiData = batchCache.get(cacheKey);
+
+          if (!aiData) {
+            // GEMINI RATE LIMIT PROTECTION: Wait 4 seconds between requests to respect free tier RPM (approx 15 calls per min)
+            await new Promise(resolve => setTimeout(resolve, 4000));
+            
+            aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '') as Partial<Species>;
+            batchCache.set(cacheKey, aiData);
+          }
           
           let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || primaryIdentifier);
           if (!finalImageUrl) {

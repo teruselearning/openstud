@@ -3,7 +3,6 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project } from '../types';
-// Fix: Added Map as MapIcon and Maximize2 to lucide-react imports
 import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen } from 'lucide-react';
 import { LanguageContext } from '../App';
 
@@ -20,6 +19,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const { t } = useContext(LanguageContext);
   const navigate = useNavigate();
   const location = useLocation();
+  const locState = location.state as any;
+
   const [allIndividuals, setAllIndividuals] = useState<Individual[]>([]);
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
@@ -29,16 +30,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
-  // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Bulk Upload State
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkTotal, setBulkTotal] = useState(0);
   const [bulkStatus, setBulkStatus] = useState('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
 
-  // Map State
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
@@ -46,12 +44,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [showEnclosuresOnMap, setShowEnclosuresOnMap] = useState(true);
   const [activeEnclosureFromMap, setActiveEnclosureFromMap] = useState<Enclosure | null>(null);
 
-  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSpeciesId, setFilterSpeciesId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('current');
 
-  // Form State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [returnToId, setReturnToId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,7 +55,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const speciesDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Inline Species Creation State
   const [showNewSpeciesForm, setShowNewSpeciesForm] = useState(false);
   const [newSpeciesData, setNewSpeciesData] = useState<Partial<Species>>({
     commonName: '',
@@ -86,11 +81,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   }, [currentProjectId, editingId]);
 
   useEffect(() => {
-    if (location.state?.editId && allIndividuals.length > 0) {
-      const indToEdit = allIndividuals.find(i => i.id === location.state.editId);
+    if (locState?.editId && allIndividuals.length > 0) {
+      const indToEdit = allIndividuals.find(i => i.id === locState.editId);
       if (indToEdit) {
         setEditingId(indToEdit.id);
-        setReturnToId(location.state.fromId || null);
+        setReturnToId(locState.fromId || null);
         setFormData({ ...indToEdit });
         const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
         setSpeciesSearchQuery(sp?.commonName || '');
@@ -98,9 +93,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         window.history.replaceState({}, document.title);
       }
     }
-  }, [location.state, allIndividuals, allSpecies]);
+  }, [locState, allIndividuals, allSpecies]);
 
-  // Main Map Controller
   useEffect(() => {
     if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
       const initialLat = typeof org?.latitude === 'number' ? org.latitude : 0;
@@ -146,7 +140,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   });
   const speciesSearchResults = availableSpeciesForForm.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
 
-  // Map Data Updater
   useEffect(() => {
     if (viewMode === 'map' && mapInstanceRef.current) {
       const map = mapInstanceRef.current;
@@ -156,7 +149,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       if (markersLayer) markersLayer.clearLayers();
       if (enclosuresLayer) enclosuresLayer.clearLayers();
 
-      // Draw Individuals
       filtered.forEach(ind => {
         if (typeof ind.latitude === 'number' && typeof ind.longitude === 'number') {
           const icon = L.divIcon({
@@ -176,7 +168,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         }
       });
 
-      // Draw Enclosures
       if (showEnclosuresOnMap && enclosuresLayer) {
         allEnclosures.forEach(enc => {
           if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
@@ -200,7 +191,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                poly.bindTooltip(enc.name, {
                  permanent: false,
                  direction: 'center',
-                 className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700'
+                 className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer'
                });
             }
           }
@@ -229,24 +220,21 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     if (!confirm(`Are you sure you want to permanently delete ${count} specimen records?`)) return;
     
     setIsSubmitting(true);
-    console.log(`[BULK DELETE] Starting deletion of ${count} records:`, Array.from(selectedIds));
+    console.log(`[BULK DELETE] Starting deletion of ${count} records...`);
     
     try {
-      // 1. Process deletions individually to ensure backend sync
-      // Fix: Cast id to string to ensure type safety with deleteIndividual
-      for (const id of Array.from(selectedIds)) {
+      const idsToDelete = Array.from(selectedIds);
+      for (const id of idsToDelete) {
          await deleteIndividual(id as string);
       }
       
-      // 2. Synchronize local state from the persistent storage
       const freshIndividuals = getIndividuals();
       setAllIndividuals(freshIndividuals);
       setSelectedIds(new Set());
-      
-      console.log(`[BULK DELETE] Success. Total specimens in project: ${freshIndividuals.length}`);
+      console.log(`[BULK DELETE] Success. Records remaining: ${freshIndividuals.length}`);
     } catch (e) {
-      console.error("[BULK DELETE] Failed during execution:", e);
-      alert("Delete failed on some records. Please check connection.");
+      console.error("[BULK DELETE] Error:", e);
+      alert("Delete failed on some records. Please check your connection.");
     } finally {
       setIsSubmitting(false);
     }
@@ -393,6 +381,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
       const localIndividuals = [...getIndividuals()];
       const updatedSpeciesList = [...getSpecies()];
+      
+      // Local cache for the current session to avoid redundant AI calls
+      const batchSpeciesCache = new Map<string, Species>();
 
       for (let i = 0; i < rows.length; i++) {
         const values = rows[i].split(',').map(v => v.trim());
@@ -404,7 +395,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         
         setBulkStatus(`Processing: ${name}`);
         setBulkProgress(i + 1);
-        console.log(`[BULK IMPORT] Row ${i+1}: ${name} (${sbookId})`);
 
         try {
           let kingdom: SpeciesType = 'Animal';
@@ -413,8 +403,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
           const sciName = data.scientificname;
           const commonName = String(data.commonname || data.speciesname || data.species || '');
+          const lookupKey = (commonName || sciName || '').toLowerCase();
           
-          let foundSpecies = updatedSpeciesList.find(s => 
+          let foundSpecies = batchSpeciesCache.get(lookupKey) || updatedSpeciesList.find(s => 
              s.projectId === targetProjectId && 
              ((sciName && s.scientificName.toLowerCase() === sciName.toLowerCase()) || 
               (commonName && s.commonName.toLowerCase() === commonName.toLowerCase()))
@@ -425,6 +416,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             if (!lookupName) throw new Error("Missing species identifier in row " + (i + 1));
 
             setBulkStatus(`AI Resolving Species: ${lookupName}`);
+            
+            // GEMINI RATE LIMIT PROTECTION: Wait 4 seconds between requests to respect free tier RPM
+            await new Promise(resolve => setTimeout(resolve, 4000));
+
             const aiData = await fetchSpeciesData(lookupName, kingdom, org?.location || '');
             let spImg = await fetchWikimediaImage(aiData?.scientificName || lookupName);
             if (!spImg) spImg = await generateSpeciesImage(lookupName, aiData?.scientificName || '', kingdom);
@@ -444,6 +439,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
             updatedSpeciesList.push(newSp);
             foundSpecies = newSp;
+            batchSpeciesCache.set(lookupKey, newSp);
           }
 
           let profileImg = '';
@@ -455,7 +451,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           }
           if (!profileImg) profileImg = generatePattern(name);
 
-          // IDEMPOTENCY CHECK: Find existing by Studbook ID
           const existingIdx = localIndividuals.findIndex(ind => ind.studbookId === sbookId && ind.projectId === targetProjectId);
           
           const indEntry: Individual = {
@@ -473,7 +468,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           };
 
           if (existingIdx !== -1) {
-             console.log(`[BULK IMPORT] Updating existing specimen ${sbookId}`);
              localIndividuals[existingIdx] = { ...localIndividuals[existingIdx], ...indEntry };
           } else {
              localIndividuals.push(indEntry);
@@ -483,14 +477,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         }
       }
 
-      // Sync and Update UI
       await saveSpecies(updatedSpeciesList);
       setAllSpecies(updatedSpeciesList);
       
       await saveIndividuals(localIndividuals);
       setAllIndividuals(localIndividuals);
 
-      console.log("[BULK IMPORT] Process completed successfully.");
+      console.log("[BULK IMPORT] Completed.");
       setIsProcessingBulk(false);
       setShowBulkModal(false);
       setBulkProgress(0);
@@ -679,25 +672,25 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
       {viewMode === 'list' && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                <th className="px-4 py-4 w-10">
+              <tr>
+                <th className="px-6 py-4 w-10">
                    <button onClick={toggleSelectAll} className="p-1 hover:bg-slate-200 rounded transition-colors">
                       {selectedIds.size === filtered.length && filtered.length > 0 ? <CheckSquare size={18} className="text-emerald-600"/> : <Square size={18}/>}
                    </button>
                 </th>
-                <th className="px-6 py-4">Specimen</th>
-                <th className="px-6 py-4">Species</th>
-                <th className="px-6 py-4">Sex</th>
-                <th className="px-6 py-4">Studbook ID</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Specimen</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Species</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Sex</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Studbook ID</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(ind => (
                 <tr key={ind.id} className={`hover:bg-slate-50 transition-colors group ${selectedIds.has(ind.id) ? 'bg-emerald-50/50' : ''}`}>
-                  <td className="px-4 py-4">
+                  <td className="px-6 py-4">
                      <button onClick={() => toggleSelection(ind.id)} className={`p-1 rounded transition-colors ${selectedIds.has(ind.id) ? 'text-emerald-600' : 'text-slate-300'}`}>
                         {selectedIds.has(ind.id) ? <CheckSquare size={18}/> : <Square size={18}/>}
                      </button>
@@ -764,7 +757,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                    </div>
                    <button 
                      onClick={() => navigate('/enclosures', { state: { editId: activeEnclosureFromMap.id } })}
-                     className="w-full text-center py-2 bg-slate-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-standard transition-colors flex items-center justify-center gap-2"
+                     className="w-full text-center py-2 bg-slate-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
                    >
                      Manage {org?.focus === 'Plants' ? 'Area' : 'Enclosure'} <ChevronDown size={14} className="-rotate-90" />
                    </button>

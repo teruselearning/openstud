@@ -65,11 +65,14 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Correctly define ErrorBoundary as a class component and access state/props properly
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+/**
+ * Fix: Use direct Component inheritance for ErrorBoundary to ensure props and state are correctly typed and accessible in render().
+ */
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
@@ -81,7 +84,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render(): ReactNode {
-    // Fix: Access state and props from this
     const { hasError, error } = this.state;
     const { children } = this.props;
 

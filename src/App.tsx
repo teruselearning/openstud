@@ -66,11 +66,15 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-// Fix: Correctly define ErrorBoundary as a class component and access state/props properly
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+/**
+ * Fix: Changed from React.Component to direct Component extension and explicitly declared class properties
+ * to ensure that TypeScript correctly identifies 'props' and 'state'.
+ */
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
@@ -82,7 +86,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render(): ReactNode {
-    // Fix: Access state and props from this
     const { hasError, error } = this.state;
     const { children } = this.props;
 
@@ -92,7 +95,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <AlertCircle size={48} className="text-red-500 mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">Something went wrong.</h2>
           <p className="text-slate-600 mb-6 max-w-md">We couldn't load this section. This might be due to a temporary glitch or missing data.</p>
-          {error && <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-w-md overflow-auto">{error.toString()}</div>}
+          {error && <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs font-mono rounded text-left w-full max-md overflow-auto">{error.toString()}</div>}
           <button onClick={() => window.location.reload()} className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 font-medium transition-colors shadow-sm flex items-center gap-2"><RefreshCw size={18} /> Reload Application</button>
         </div>
       );
