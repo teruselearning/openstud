@@ -144,6 +144,66 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   });
   const speciesSearchResults = availableSpeciesForForm.filter(s => s.commonName.toLowerCase().includes(speciesSearchQuery.toLowerCase()));
 
+  useEffect(() => {
+    if (viewMode === 'map' && mapInstanceRef.current) {
+      const map = mapInstanceRef.current;
+      const markersLayer = markersLayerRef.current;
+      const enclosuresLayer = enclosuresLayerRef.current;
+      
+      if (markersLayer) markersLayer.clearLayers();
+      if (enclosuresLayer) enclosuresLayer.clearLayers();
+
+      filtered.forEach(ind => {
+        if (typeof ind.latitude === 'number' && typeof ind.longitude === 'number') {
+          const icon = L.divIcon({
+            html: `<div class="w-4 h-4 rounded-full border-2 border-white shadow-md" style="background-color: ${ind.sex === Sex.MALE ? '#3b82f6' : ind.sex === Sex.FEMALE ? '#ec4899' : '#64748b'}"></div>`,
+            className: '',
+            iconSize: [16, 16]
+          });
+          
+          const marker = L.marker([ind.latitude, ind.longitude], { icon }).addTo(markersLayer);
+          marker.bindPopup(`
+            <div class="p-1">
+              <h4 class="font-bold text-sm m-0">${ind.name}</h4>
+              <p class="text-[10px] text-slate-500 m-0 uppercase font-mono">${ind.studbookId}</p>
+              <button onclick="window.location.hash='#/individuals/${ind.id}'" class="mt-2 w-full text-[10px] bg-emerald-600 text-white py-1 rounded font-bold uppercase tracking-widest">View Profile</button>
+            </div>
+          `);
+        }
+      });
+
+      if (showEnclosuresOnMap && enclosuresLayer) {
+        allEnclosures.forEach(enc => {
+          if (enc.boundary && Array.isArray(enc.boundary) && enc.boundary.length > 0) {
+            const validPoints = enc.boundary.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number');
+            
+            if (validPoints.length >= 3) {
+               const poly = L.polygon(validPoints.map(p => [p.lat, p.lng]), {
+                 color: '#9333ea',
+                 fillColor: '#9333ea',
+                 fillOpacity: 0.15,
+                 weight: 2,
+                 dashArray: '5, 5'
+               }).addTo(enclosuresLayer);
+
+               poly.on('click', (e: any) => {
+                  L.DomEvent.stopPropagation(e);
+                  setActiveEnclosureFromMap(enc);
+                  map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1 });
+               });
+
+               poly.bindTooltip(enc.name, {
+                 permanent: false,
+                 direction: 'center',
+                 className: 'bg-white/90 border-none shadow-sm px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700 cursor-pointer'
+               });
+            }
+          }
+        });
+      }
+    }
+  }, [viewMode, filtered, allEnclosures, showEnclosuresOnMap]);
+
   const toggleSelection = (id: string) => {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id);
@@ -233,10 +293,16 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         const primaryName = (newSpeciesData.commonName || newSpeciesData.scientificName) as string;
         const kingdom = newSpeciesData.type as SpeciesType;
         
+        // Use gemini-3-flash-preview for biological data
         let aiData: any = {};
         try {
            aiData = await fetchSpeciesData(primaryName, kingdom, org?.location || '');
-        } catch(e) { console.warn("Quick Add: AI Data enrichment failed, using minimal record.", e); }
+        } catch(e: any) { 
+           console.warn("Quick Add: AI Data enrichment failed.", e); 
+           if (e.message?.toLowerCase().includes('quota')) {
+              alert("Gemini API limit hit during data research. Minimal record will be created.");
+           }
+        }
 
         let spImg = '';
         try {
@@ -270,9 +336,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     } catch (e: any) {
         console.error(e);
         let msg = "Failed to register species.";
-        if (e.message?.includes("INTERNAL_LIMIT")) {
-          msg = "Internal AI limit reached. Please check Organization Settings.";
-        }
+        if (e.message?.includes("INTERNAL_LIMIT")) msg = "Internal limit reached.";
         alert(msg);
     } finally {
         setIsAiLoading(false);
@@ -355,7 +419,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[4000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
              <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                <div className="flex items-center gap-3">
@@ -389,11 +453,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                              <label className="text-[10px] font-bold text-indigo-400 uppercase">{t('commonName')}</label>
-                             <input className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm" value={newSpeciesData.commonName} onChange={e => setNewSpeciesData({...newSpeciesData, commonName: e.target.value})} placeholder="e.g. Red Panda" />
+                             <input className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm" value={newSpeciesData.commonName} onChange={e => setNewSpeciesData({...newSpeciesData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} />
                           </div>
                           <div>
                              <label className="text-[10px] font-bold text-indigo-400 uppercase">{t('scientificName')}</label>
-                             <input className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm italic" value={newSpeciesData.scientificName} onChange={e => setNewSpeciesData({...newSpeciesData, scientificName: e.target.value})} placeholder="e.g. Ailurus fulgens" />
+                             <input className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm italic" value={newSpeciesData.scientificName} onChange={e => setNewSpeciesData({...newSpeciesData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} />
                           </div>
                           <div>
                              <label className="text-[10px] font-bold text-indigo-400 uppercase">{t('type')}</label>

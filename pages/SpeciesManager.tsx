@@ -82,12 +82,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
     } catch (e: any) { 
         console.error("AI Error:", e);
-        let msg = "AI Service Error: " + e.message;
-        if (e.message?.includes("INTERNAL_LIMIT")) {
-          msg = "Organization AI Monthly Limit reached (internal counter). This can be increased by an admin.";
-        } else if (e.message?.toLowerCase().includes('quota')) {
-          msg = "Gemini API Quota reached. Please try again in a few minutes.";
-        }
+        const msg = e.message?.toLowerCase().includes('quota') ? "Gemini API Quota reached. Please wait a moment and try again." : "AI Service Error: " + e.message;
         alert(msg); 
     } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
   };
@@ -201,7 +196,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           let aiData = batchCache.get(cacheKey);
 
           if (!aiData) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Delay for rate limiting on bulk
+            await new Promise(resolve => setTimeout(resolve, 2000));
             aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '') as Partial<Species>;
             batchCache.set(cacheKey, aiData);
           }
@@ -348,8 +344,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl animate-in zoom-in duration-200 flex flex-col max-h-[95vh]">
+        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl animate-in zoom-in duration-200 flex flex-col max-h-[95vh] relative overflow-hidden">
             <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center rounded-t-2xl">
                <div className="flex items-center gap-2">
                   <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Plus size={20}/></div>

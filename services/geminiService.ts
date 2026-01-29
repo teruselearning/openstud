@@ -37,12 +37,12 @@ const translationSchema = {
 const getAiClient = (): GoogleGenAI => {
   const apiKey = process.env.API_KEY;
   
-  // Debug Logging for User
+  // Debug Logging for User verification
   if (apiKey) {
-    const maskedKey = `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}`;
-    console.log(`[GEMINI] API Key detected: ${maskedKey}`);
+    const maskedKey = `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`;
+    console.log(`[GEMINI] Using API Key: ${maskedKey} (Source: Frontend .env)`);
   } else {
-    console.error("[GEMINI] API Key is MISSING from process.env.API_KEY. Ensure it is in your root .env file.");
+    console.error("[GEMINI] No API Key detected in process.env.API_KEY. Please check your root .env file.");
   }
 
   if (!apiKey || apiKey.trim() === "") {
@@ -92,49 +92,27 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
 
 export const urlToBase64 = async (url: string): Promise<string | null> => {
   if (!url) return null;
-  
   let targetUrl = url.trim();
-  console.group(`[MEDIA PROCESSING] Processing URL: ${targetUrl.substring(0, 100)}...`);
-  
   try {
     const isGoogleDrive = /drive\.google\.com|drive\.usercontent\.google\.com/.test(targetUrl);
     if (isGoogleDrive) {
        const idMatch = targetUrl.match(/[-\w]{25,}/);
        const id = idMatch ? idMatch[0] : null;
-       if (id) {
-          const reliableImageUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
-          console.groupEnd();
-          return reliableImageUrl;
-       }
+       if (id) return `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
     }
-
-    if (targetUrl.startsWith('data:')) {
-       console.groupEnd();
-       return targetUrl;
+    if (targetUrl.startsWith('data:')) return targetUrl;
+    const response = await fetch(targetUrl);
+    if (response.ok) {
+      const blob = await response.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
     }
-
-    try {
-      const response = await fetch(targetUrl);
-      if (response.ok) {
-        const blob = await response.blob();
-        const base64: string = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        console.groupEnd();
-        return base64;
-      }
-    } catch (fetchErr) {
-      console.warn("Could not convert to Base64 (CORS or Network). Returning raw URL.");
-    }
-    
-    console.groupEnd();
     return targetUrl;
   } catch (e) {
-    console.error("Media processing critical failure:", e);
-    console.groupEnd();
     return url;
   }
 };
@@ -151,7 +129,6 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
     if (imageUrl) return await urlToBase64(imageUrl);
     return null;
   } catch (e) {
-    console.error("Wikimedia fetch failed:", e);
     return null;
   }
 };
@@ -159,12 +136,12 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
     if (!checkAndIncrementAiUsage()) {
-      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached (1000/mo). Check Organization Settings.");
+      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
     }
     const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Provide biological data for "${commonName}" (Type: ${type}). Org location: ${locationContext}. Return ONLY JSON.`,
+      contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,
@@ -184,10 +161,10 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
   try {
     if (!checkAndIncrementAiUsage()) {
-      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached (1000/mo).");
+      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
     }
     const ai = getAiClient();
-    const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, isolated on white background, textbook style, 4k.`;
+    const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, textbook style, white background, high quality.`;
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: prompt }] }
@@ -223,16 +200,11 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     });
     if (response.text) {
       const sanitized = sanitizeJsonResponse(response.text);
-      try {
-        const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
-        return parsed.map(item => ({
-          ...item,
-          v: typeof item.v === 'string' ? item.v.replace(/\\n/g, ' ').replace(/\n/g, ' ').trim() : item.v
-        }));
-      } catch (parseErr) {
-        console.error("Failed to parse AI translation JSON:", sanitized);
-        throw new Error("Invalid response format from translation service.");
-      }
+      const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
+      return parsed.map(item => ({
+        ...item,
+        v: typeof item.v === 'string' ? item.v.replace(/\\n/g, ' ').replace(/\n/g, ' ').trim() : item.v
+      }));
     }
     return [];
   } catch (e) { 
