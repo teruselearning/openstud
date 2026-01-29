@@ -89,15 +89,26 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
   console.group(`[MEDIA PROCESSING] Processing URL: ${targetUrl.substring(0, 100)}...`);
   
   try {
-    if (targetUrl.includes('google.com') || targetUrl.includes('googleusercontent.com')) {
-       console.log("Detected Google-hosted content. Bypassing programmatic fetch to avoid 429/CORS.");
+    // Detect all variants of Google Drive URLs
+    const isGoogleDrive = /drive\.google\.com|drive\.usercontent\.google\.com/.test(targetUrl);
+    
+    if (isGoogleDrive) {
+       console.log("Detected Google Drive content. Extracting ID...");
+       // Extract ID using a robust regex that catches alphanumeric plus hyphens/underscores
+       // Usually between 'id=' and '&' or just at the end, or in /d/ID/ format
        const idMatch = targetUrl.match(/[-\w]{25,}/);
        const id = idMatch ? idMatch[0] : null;
-       if (id && targetUrl.includes('drive.google.com')) {
-          targetUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
+       
+       if (id) {
+          console.log(`Successfully extracted Google Drive ID: ${id}`);
+          // Using the thumbnail endpoint is the standard "hack" to bypass the 
+          // "Download / Virus Scan" interstitial pages for images.
+          const reliableImageUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
+          console.groupEnd();
+          return reliableImageUrl;
+       } else {
+          console.warn("Found Google Drive URL but could not extract a valid 25+ char ID.");
        }
-       console.groupEnd();
-       return targetUrl;
     }
 
     if (targetUrl.startsWith('data:')) {
@@ -105,6 +116,7 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
        return targetUrl;
     }
 
+    // For non-Google URLs, try to fetch and convert to Base64 (to avoid CORS issues later)
     try {
       const response = await fetch(targetUrl);
       if (response.ok) {
