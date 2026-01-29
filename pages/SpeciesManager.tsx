@@ -59,12 +59,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   }, [currentProjectId, editingId]);
 
   const handleAutoFill = async () => {
-    if (!formData.commonName) return;
+    if (!formData.commonName && !formData.scientificName) return;
+    const lookupName = formData.commonName || formData.scientificName || '';
     setLoadingAI(true);
     setLoadingImage(true);
     setImageStatus('FETCHING DATA...');
     try {
-      const data = await fetchSpeciesData(formData.commonName, formData.type as SpeciesType, org?.location || '');
+      const data = await fetchSpeciesData(lookupName, formData.type as SpeciesType, org?.location || '');
       if (data) {
         setFormData(prev => ({ 
           ...prev, ...data, type: (data.type || prev.type || 'Animal') as SpeciesType,
@@ -73,21 +74,22 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         }));
       }
       setImageStatus('SEARCHING WIKIMEDIA...');
-      let finalImageUrl = await fetchWikimediaImage(data?.scientificName || formData.commonName);
+      let finalImageUrl = await fetchWikimediaImage(data?.scientificName || lookupName);
       if (!finalImageUrl) {
         setImageStatus('GENERATING AI ILLUSTRATION...');
-        finalImageUrl = await generateSpeciesImage(formData.commonName, data?.scientificName || '', (data?.type || formData.type) as SpeciesType);
+        finalImageUrl = await generateSpeciesImage(lookupName, data?.scientificName || '', (data?.type || formData.type) as SpeciesType);
       }
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
     } catch (e: any) { alert("AI Service Error: " + e.message); } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
   };
 
   const handleGenerateAIImage = async () => {
-     if (!formData.commonName || !formData.scientificName) return;
+     const lookupName = formData.commonName || formData.scientificName;
+     if (!lookupName) return;
      setLoadingImage(true);
      setImageStatus('GENERATING...');
      try {
-        const url = await generateSpeciesImage(formData.commonName, formData.scientificName, formData.type as SpeciesType);
+        const url = await generateSpeciesImage(lookupName, formData.scientificName || lookupName, formData.type as SpeciesType);
         if (url) setFormData(prev => ({ ...prev, imageUrl: url }));
      } catch (e: any) { alert("Image generation failed: " + e.message); } finally { setImageStatus(''); setLoadingImage(false); }
   };
@@ -115,11 +117,19 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
        return;
     }
 
+    if (!formData.commonName && !formData.scientificName) {
+       alert("Please provide at least a Common Name or a Scientific Name.");
+       return;
+    }
+
+    const primaryName = formData.commonName || formData.scientificName || 'Unknown';
     const finalSpecies: Species = {
        ...formData as Species,
        id: editingId || `sp-${Date.now()}`,
        projectId: targetProjectId,
-       imageUrl: formData.imageUrl || generatePattern(formData.commonName || 'Sp'),
+       commonName: primaryName,
+       scientificName: formData.scientificName || primaryName,
+       imageUrl: formData.imageUrl || generatePattern(primaryName),
        sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
        averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
        lifeExpectancyYears: Number(formData.lifeExpectancyYears || 0)
@@ -148,7 +158,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       const text = event.target?.result as string;
       const lines = text.split('\n').filter(l => l.trim().length > 0);
       
-      // Fix: Robust header normalization
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s_]/g, ''));
       
       const rows = lines.slice(1);
@@ -158,7 +167,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       const newSpecies: Species[] = [];
       const currentList = getSpecies();
       
-      // Local cache to avoid repeating AI calls for identical names in the same batch
       const batchCache = new Map<string, Partial<Species>>();
 
       for (let i = 0; i < rows.length; i++) {
@@ -184,9 +192,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           let aiData = batchCache.get(cacheKey);
 
           if (!aiData) {
-            // GEMINI RATE LIMIT PROTECTION: Wait 4 seconds between requests to respect free tier RPM (approx 15 calls per min)
-            await new Promise(resolve => setTimeout(resolve, 4000));
-            
+            await new Promise(resolve => setTimeout(resolve, 3000));
             aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '') as Partial<Species>;
             batchCache.set(cacheKey, aiData);
           }
@@ -200,7 +206,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
             commonName: commonName || aiData?.commonName || scientificName || 'Unknown Species',
-            scientificName: scientificName || aiData?.scientificName || 'Unknown',
+            scientificName: scientificName || aiData?.scientificName || commonName || 'Unknown',
             type: kingdom,
             plantClassification: (aiData?.plantClassification as PlantClassification) || data.plantclassification,
             conservationStatus: aiData?.conservationStatus || data.conservationstatus || 'Unknown',
@@ -221,7 +227,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
             commonName: commonName || scientificName || 'Unknown Species',
-            scientificName: scientificName || 'Unknown',
+            scientificName: scientificName || commonName || 'Unknown',
             type: kingdom,
             conservationStatus: data.conservationstatus || 'Unknown',
             sexualMaturityAgeYears: 0,
@@ -352,7 +358,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                      </div>
                      <div className="grid grid-cols-2 gap-2 mt-2">
                         <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-medium shadow-sm"><Camera size={14} /> {t('upload')}<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setFormData({...formData, imageUrl: r.result as string}); r.readAsDataURL(f); } }} /></label>
-                        <button type="button" onClick={handleGenerateAIImage} disabled={loadingImage || !formData.commonName} className="bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-sm disabled:opacity-50"><Sparkles size={14} /> {t('aiGenerate')}</button>
+                        <button type="button" onClick={handleGenerateAIImage} disabled={loadingImage || (!formData.commonName && !formData.scientificName)} className="bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-sm disabled:opacity-50"><Sparkles size={14} /> {t('aiGenerate')}</button>
                      </div>
                   </div>
                </div>
@@ -360,11 +366,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                   <div className="space-y-4">
                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Scientific Taxonomy</h4>
-                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || !formData.commonName} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile</button>
+                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || (!formData.commonName && !formData.scientificName)} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile</button>
                      </div>
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} required /></div>
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} required /></div>
+                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} /></div>
+                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} /></div>
                         {isAll && allProjects.length > 1 && (
                           <div className="space-y-1">
                             <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>

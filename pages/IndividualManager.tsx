@@ -281,8 +281,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   };
 
   const handleCreateNewSpecies = async () => {
-    if (!newSpeciesData.commonName || !newSpeciesData.scientificName) {
-        alert("Please fill in common and scientific names for the new species.");
+    if (!newSpeciesData.commonName && !newSpeciesData.scientificName) {
+        alert("Please fill in at least the common or scientific name for the new species.");
         return;
     }
     
@@ -290,17 +290,19 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     try {
+        const primaryName = (newSpeciesData.commonName || newSpeciesData.scientificName) as string;
+        
         const newSp: Species = {
             id: `sp-${Date.now()}`,
             projectId: targetProjectId as string,
-            commonName: newSpeciesData.commonName as string,
-            scientificName: newSpeciesData.scientificName as string,
+            commonName: (newSpeciesData.commonName || newSpeciesData.scientificName) as string,
+            scientificName: (newSpeciesData.scientificName || newSpeciesData.commonName) as string,
             type: newSpeciesData.type as SpeciesType,
             conservationStatus: newSpeciesData.conservationStatus || 'Unknown',
             sexualMaturityAgeYears: 0,
             averageAdultWeightKg: 0,
             lifeExpectancyYears: 0,
-            imageUrl: generatePattern(newSpeciesData.commonName as string)
+            imageUrl: generatePattern(primaryName)
         };
         
         const updated = [...allSpecies, newSp];
@@ -374,7 +376,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       const text = event.target?.result as string;
       const lines = text.split('\n').filter(l => l.trim().length > 0);
       
-      // Fix: Robust header normalization to handle spaces and underscores
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s_]/g, ''));
       
       const rows = lines.slice(1);
@@ -384,7 +385,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       const localIndividuals = [...getIndividuals()];
       const updatedSpeciesList = [...getSpecies()];
       
-      // Local cache for the current session to avoid redundant AI calls
       const batchSpeciesCache = new Map<string, Species>();
 
       for (let i = 0; i < rows.length; i++) {
@@ -407,6 +407,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
           const commonName = String(data.commonname || data.speciesname || data.species || '');
           const lookupKey = (commonName || sciName || '').toLowerCase();
           
+          if (!lookupKey) {
+            console.warn(`[BULK IMPORT] Skipping row ${i+1}: Missing species name.`);
+            continue;
+          }
+
           let foundSpecies = batchSpeciesCache.get(lookupKey) || updatedSpeciesList.find(s => 
              s.projectId === targetProjectId && 
              ((sciName && s.scientificName.toLowerCase() === sciName.toLowerCase()) || 
@@ -415,12 +420,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
           if (!foundSpecies) {
             const lookupName = commonName || sciName;
-            if (!lookupName) throw new Error("Missing species identifier in row " + (i + 1));
-
             setBulkStatus(`AI Resolving Species: ${lookupName}`);
             
-            // GEMINI RATE LIMIT PROTECTION: Wait 4 seconds between requests to respect free tier RPM
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             const aiData = await fetchSpeciesData(lookupName, kingdom, org?.location || '');
             let spImg = await fetchWikimediaImage(aiData?.scientificName || lookupName);
@@ -430,7 +432,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
               id: `sp-auto-${Date.now()}-${i}`,
               projectId: targetProjectId,
               commonName: commonName || aiData?.commonName || sciName || lookupName || 'Unknown Species',
-              scientificName: sciName || aiData?.scientificName || 'Unknown',
+              scientificName: sciName || aiData?.scientificName || commonName || lookupName || 'Unknown',
               type: kingdom,
               conservationStatus: aiData?.conservationStatus || 'Unknown',
               sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),
@@ -834,7 +836,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
                   {showNewSpeciesForm ? (
                     <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 space-y-4 animate-in slide-in-from-top-2">
-                       <h5 className="text-xs font-black text-indigo-700 uppercase">Quick Species Registration</h5>
+                       <div className="flex justify-between items-center">
+                          <h5 className="text-xs font-black text-indigo-700 uppercase">Quick Species Registration</h5>
+                          <p className="text-[10px] text-indigo-400 font-bold uppercase italic">Enter common name, scientific name, or both</p>
+                       </div>
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                              <label className="text-[10px] font-bold text-indigo-400 uppercase">Common Name</label>

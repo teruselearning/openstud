@@ -232,7 +232,7 @@ export const mapUserToDb = (u: User) => ({
   password: u.password || null, 
   avatar_url: u.avatarUrl || null, 
   allowed_project_ids: u.allowedProjectIds || [], 
-  preferred_language: u.preferredLanguage || 'en-GB' 
+  preferred_language: u.preferred_language || 'en-GB' 
 });
 
 export const mapSpeciesToDb = (s: Species) => ({ 
@@ -264,8 +264,9 @@ export const mapIndToDb = (i: Individual) => ({
   sex: i.sex || 'Unknown', 
   birth_date: i.birthDate || null, 
   weight_kg: sanitizeNum(i.weightKg), 
-  sire_id: i.sire_id || null, 
-  dam_id: i.dam_id || null, 
+  // Fixed: Corrected property names to match Individual interface (sireId, damId, deathDate, transferDate)
+  sire_id: i.sireId || null, 
+  dam_id: i.damId || null, 
   image_url: i.imageUrl || null, 
   dna_sequence: i.dnaSequence || null, 
   notes: i.notes || null, 
@@ -274,10 +275,10 @@ export const mapIndToDb = (i: Individual) => ({
   latitude: i.latitude ?? null, 
   longitude: i.longitude ?? null, 
   is_deceased: i.isDeceased ?? false, 
-  death_date: i.death_date || null, 
+  death_date: i.deathDate || null, 
   loan_status: i.loanStatus || null, 
   transferred_to_org_id: i.transferredToOrgId || null, 
-  transfer_date: i.transfer_date || null, 
+  transfer_date: i.transferDate || null, 
   transfer_note: i.transferNote || null, 
   weight_history: i.weightHistory || [], 
   growth_history: i.growthHistory || [], 
@@ -306,11 +307,11 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
+export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.species_id, sire_id: e.sire_id, dam_id: e.dam_id, date: e.date, offspring_count: e.offspring_count, successful_births: e.successful_births, losses: e.losses, notes: e.notes, offspring_ids: e.offspring_ids })));
 
-export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
+export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partner_org_id, proposer_org_id: l.proposer_org_id, role: l.role, start_date: l.start_date, end_date: l.end_date, status: l.status, individual_ids: l.individual_ids, terms: l.terms, notification_recipient_id: l.notification_recipient_id, change_request: l.change_request })));
 
-export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
+export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.org_id_1, org_id_2: p.org_id_2, status: p.status, established_date: p.established_date })));
 
 export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });
 export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
