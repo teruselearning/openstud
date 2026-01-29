@@ -82,7 +82,12 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
     } catch (e: any) { 
         console.error("AI Error:", e);
-        const msg = e.message?.toLowerCase().includes('quota') ? "Gemini API Quota reached. Please wait a moment and try again." : "AI Service Error: " + e.message;
+        let msg = "AI Service Error: " + e.message;
+        if (e.message?.toLowerCase().includes('overloaded') || e.message?.toLowerCase().includes('503')) {
+          msg = "The AI model is temporarily overloaded. We've switched to a higher-capacity model, please try again.";
+        } else if (e.message?.toLowerCase().includes('quota')) {
+          msg = "API Quota reached. Please try again in a few minutes.";
+        }
         alert(msg); 
     } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
   };
@@ -196,8 +201,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           let aiData = batchCache.get(cacheKey);
 
           if (!aiData) {
-            // Delay for rate limiting on bulk
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Jittered delay for rate limiting on bulk
+            await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
             aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '') as Partial<Species>;
             batchCache.set(cacheKey, aiData);
           }
@@ -344,16 +349,16 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl animate-in zoom-in duration-200 flex flex-col max-h-[95vh] relative overflow-hidden">
-            <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center rounded-t-2xl">
+        <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl animate-in zoom-in duration-200 flex flex-col my-8 max-h-[90vh]">
+            <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center rounded-t-2xl shrink-0">
                <div className="flex items-center gap-2">
                   <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Plus size={20}/></div>
                   <h3 className="font-bold text-xl text-slate-900">{editingId ? t('updateSpecies') : t('add')}</h3>
                </div>
                <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><XIcon size={24} /></button>
             </div>
-            <form onSubmit={handleSubmit} className="p-8 space-y-8 flex-1 overflow-y-auto">
+            <form onSubmit={handleSubmit} className="p-8 space-y-8 overflow-y-auto">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                  <div className="lg:col-span-4 space-y-6">
                     <div className="space-y-2">
@@ -404,7 +409,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                     </div>
                  </div>
               </div>
-              <div className="flex justify-end pt-6 border-t border-slate-100 space-x-3">
+              <div className="flex justify-end pt-6 border-t border-slate-100 space-x-3 shrink-0">
                 <button type="button" onClick={handleCloseForm} className="px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">{t('cancel')}</button>
                 <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2.5 rounded-lg font-bold shadow-lg transition-all">{editingId ? t('updateSpecies') : t('saveSpecies')}</button>
               </div>

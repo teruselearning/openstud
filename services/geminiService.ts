@@ -37,12 +37,12 @@ const translationSchema = {
 const getAiClient = (): GoogleGenAI => {
   const apiKey = process.env.API_KEY;
   
-  // Debug Logging for User verification
   if (apiKey) {
     const maskedKey = `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`;
-    console.log(`[GEMINI] Using API Key: ${maskedKey} (Source: Frontend .env)`);
+    console.log(`%c[GEMINI API CONFIG] API Key Active: ${maskedKey}`, "color: #10b981; font-weight: bold;");
   } else {
-    console.error("[GEMINI] No API Key detected in process.env.API_KEY. Please check your root .env file.");
+    console.error("%c[GEMINI API CONFIG] API KEY IS MISSING!", "color: #ef4444; font-weight: bold; font-size: 14px;");
+    console.warn("Ensure process.env.API_KEY is defined. Check your root .env file and restart your dev server.");
   }
 
   if (!apiKey || apiKey.trim() === "") {
@@ -78,7 +78,7 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-lite-latest',
       contents: `Identify the location at coordinates Latitude: ${lat}, Longitude: ${lng}. 
       Return a string in the format: "City, State/Region, Country". 
       Be precise. Return ONLY the location string, no other text.`,
@@ -140,7 +140,7 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
     }
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-lite-latest',
       contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
       config: {
         responseMimeType: "application/json",
@@ -191,7 +191,7 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     const ai = getAiClient();
     const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-lite-latest',
       contents: prompt,
       config: { 
         responseMimeType: "application/json",
