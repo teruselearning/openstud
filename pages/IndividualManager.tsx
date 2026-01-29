@@ -27,23 +27,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [allEnclosures, setAllEnclosures] = useState<Enclosure[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [showBulkModal, setShowBulkModal] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  const [bulkProgress, setBulkProgress] = useState(0);
-  const [bulkTotal, setBulkTotal] = useState(0);
-  const [bulkStatus, setBulkStatus] = useState('');
-  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersLayerRef = useRef<any>(null);
-  const enclosuresLayerRef = useRef<any>(null);
-  const [showEnclosuresOnMap, setShowEnclosuresOnMap] = useState(true);
-  const [activeEnclosureFromMap, setActiveEnclosureFromMap] = useState<Enclosure | null>(null);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSpeciesId, setFilterSpeciesId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('current');
@@ -95,39 +81,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       }
     }
   }, [locState, allIndividuals, allSpecies]);
-
-  const selectedSpecies = allSpecies.find(s => s.id === formData.speciesId);
-  const isFlora = selectedSpecies?.type === 'Plant';
-
-  useEffect(() => {
-    if (viewMode === 'map' && mapContainerRef.current && !mapInstanceRef.current) {
-      const initialLat = typeof org?.latitude === 'number' ? org.latitude : 0;
-      const initialLng = typeof org?.longitude === 'number' ? org.longitude : 0;
-      
-      const map = L.map(mapContainerRef.current, { 
-        maxZoom: 22,
-        zoomControl: false 
-      }).setView([initialLat, initialLng], 15);
-      
-      L.control.zoom({ position: 'topright' }).addTo(map);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22 }).addTo(map);
-      
-      markersLayerRef.current = L.layerGroup().addTo(map);
-      enclosuresLayerRef.current = L.layerGroup().addTo(map);
-      mapInstanceRef.current = map;
-      
-      setTimeout(() => map.invalidateSize(), 200);
-    }
-
-    return () => {
-       if (mapInstanceRef.current && viewMode !== 'map') {
-          mapInstanceRef.current.remove();
-          mapInstanceRef.current = null;
-          markersLayerRef.current = null;
-          enclosuresLayerRef.current = null;
-       }
-    };
-  }, [viewMode, org]);
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const projectIndividuals = isAll ? allIndividuals : allIndividuals.filter(ind => ind.projectId === currentProjectId);
@@ -186,22 +139,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     try {
         const primaryName = (newSpeciesData.commonName || newSpeciesData.scientificName) as string;
         const kingdom = newSpeciesData.type as SpeciesType;
-        
-        let aiData: any = {};
-        try {
-           aiData = await fetchSpeciesData(primaryName, kingdom, org?.location || '');
-        } catch(e: any) { 
-           console.warn("Quick Add: AI Data enrichment failed.", e); 
-           if (e.message?.toLowerCase().includes('quota') || e.message?.toLowerCase().includes('overloaded')) {
-              alert("AI limit hit. Switch to 'gemini-flash-lite-latest' or try again. Minimal record will be created.");
-           }
-        }
+        const aiData = await fetchSpeciesData(primaryName, kingdom, org?.location || '');
 
-        let spImg = '';
-        try {
-           spImg = await fetchWikimediaImage(aiData?.scientificName || primaryName) || '';
-           if (!spImg) spImg = await generateSpeciesImage(primaryName, aiData?.scientificName || '', kingdom) || '';
-        } catch(e) { console.warn("Quick Add: AI Image failed.", e); }
+        let spImg = await fetchWikimediaImage(aiData?.scientificName || primaryName) || '';
+        if (!spImg) spImg = await generateSpeciesImage(primaryName, aiData?.scientificName || '', kingdom) || '';
 
         const newSp: Species = {
             id: `sp-${Date.now()}`,
@@ -222,15 +163,11 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         const updated = [...allSpecies, newSp];
         await saveSpecies(updated); 
         setAllSpecies(updated);
-        
         setFormData({ ...formData, speciesId: newSp.id });
         setSpeciesSearchQuery(newSp.commonName);
         setShowNewSpeciesForm(false);
     } catch (e: any) {
-        console.error(e);
-        let msg = "Failed to register species.";
-        if (e.message?.includes("INTERNAL_LIMIT")) msg = "Internal limit reached.";
-        alert(msg);
+        alert("Failed to register species: " + e.message);
     } finally {
         setIsAiLoading(false);
     }
@@ -267,7 +204,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
-          <p className="text-slate-500">{isFlora ? t('indivSubtitlePlant') : t('indivSubtitleAnimal')}</p>
+          <p className="text-slate-500">{t('indivSubtitleAnimal')}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
@@ -289,15 +226,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filtered.map(ind => {
             const sp = allSpecies.find(s => s.id === ind.speciesId);
-            const isPlant = sp?.type === 'Plant';
             const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
             return (
               <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group flex flex-col relative">
                 <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
                   <img src={displayImg} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={ind.name} />
-                  {(!(isPlant && ind.sex === Sex.UNKNOWN)) && (
-                    <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
-                  )}
+                  <div className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>
                 </Link>
                 <div className="p-4 flex-1">
                   <Link to={`/individuals/${ind.id}`} className="block">
@@ -362,7 +296,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                        </div>
                        <button type="button" onClick={handleCreateNewSpecies} disabled={isAiLoading} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm flex items-center gap-2">
                          {isAiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
-                         Register Species {isAiLoading && "(AI Researching...)"}
+                         Register Species
                        </button>
                     </div>
                   ) : (
@@ -391,39 +325,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <label className="text-xs font-bold text-slate-700 block mb-1">{t('name')} <span className="text-red-500">*</span></label>
                           <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Specimen name" required />
                       </div>
-                      <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">{isFlora ? t('classification') : t('sex')}</label>
-                          {isFlora ? (
-                             <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 font-medium">
-                                {selectedSpecies?.plantClassification || t('unknown')}
-                             </div>
-                          ) : (
-                            <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}>
-                              {Object.values(Sex).map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          )}
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">{isFlora ? t('datePlanted') : t('dateOfBirth')}</label>
-                          <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
-                      </div>
-                      {!isFlora ? (
-                        <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">{t('weight')} (Kg)</label>
-                            <div className="relative">
-                              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Scale size={16}/></div>
-                              <input type="number" step="0.01" className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} />
-                            </div>
-                        </div>
-                      ) : (
-                        <div>
-                            <label className="text-xs font-bold text-slate-700 block mb-1">Height (cm)</label>
-                            <div className="relative">
-                              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Ruler size={16}/></div>
-                              <input type="number" step="0.1" className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none" placeholder="Growth metric..." />
-                            </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

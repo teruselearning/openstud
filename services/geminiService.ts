@@ -2,6 +2,15 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
 import { checkAndIncrementAiUsage } from "./storage";
 
+/**
+ * OpenStudbook AI Model Configuration
+ * ----------------------------------
+ * Text/Data: gemini-3-flash-preview (High RPM, Reliable)
+ * Images: gemini-3-pro-image-preview (High Quality, requires user API key)
+ */
+const TEXT_MODEL = 'gemini-3-flash-preview';
+const IMAGE_MODEL = 'gemini-3-pro-image-preview';
+
 // Schema for species data
 const speciesSchema = {
   type: Type.OBJECT,
@@ -34,21 +43,53 @@ const translationSchema = {
   }
 };
 
+/**
+ * Checks if the user has selected a paid API key for high-quality Pro models.
+ */
+export const ensureApiKeySelection = async () => {
+  if (typeof window.aistudio !== 'undefined') {
+    const hasKey = await window.aistudio.hasSelectedApiKey();
+    if (!hasKey) {
+      await window.aistudio.openSelectKey();
+    }
+  }
+};
+
 const getAiClient = (): GoogleGenAI => {
   const apiKey = process.env.API_KEY;
   
   if (apiKey) {
     const maskedKey = `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`;
-    console.log(`%c[GEMINI API CONFIG] API Key Active: ${maskedKey}`, "color: #10b981; font-weight: bold;");
+    console.log(`%c[GEMINI API CONFIG] Using Model: ${TEXT_MODEL} | API Key Active: ${maskedKey}`, "color: #10b981; font-weight: bold;");
   } else {
     console.error("%c[GEMINI API CONFIG] API KEY IS MISSING!", "color: #ef4444; font-weight: bold; font-size: 14px;");
-    console.warn("Ensure process.env.API_KEY is defined. Check your root .env file and restart your dev server.");
   }
 
   if (!apiKey || apiKey.trim() === "") {
-    throw new Error("Gemini API Key not configured in environment.");
+    throw new Error("Gemini API Key not configured. If this persists, please select an API key via the key selection dialog.");
   }
   return new GoogleGenAI({ apiKey });
+};
+
+const handleAiError = async (error: any) => {
+  console.error("AI Service Error Detail:", error);
+  let message = error.message || "An unknown AI error occurred.";
+  
+  if (message.includes("503") || message.toLowerCase().includes("overloaded") || message.toLowerCase().includes("unavailable")) {
+    throw new Error("The AI model is temporarily overloaded by Google. This is common during peak times. Please wait about 15 seconds and try again.");
+  }
+
+  if (message.includes("Requested entity was not found.")) {
+    console.warn("API Key might be invalid or from a non-paid project for Pro models.");
+    if (window.aistudio) await window.aistudio.openSelectKey();
+    throw new Error("API Key issue detected. Pro models require an API key from a paid GCP project.");
+  }
+  
+  if (message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
+    throw new Error("API Quota reached. Please try again in a few minutes.");
+  }
+
+  throw error;
 };
 
 const sanitizeJsonResponse = (text: string): string => {
@@ -78,15 +119,14 @@ export const reverseGeocode = async (lat: number, lng: number): Promise<string> 
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
+      model: TEXT_MODEL,
       contents: `Identify the location at coordinates Latitude: ${lat}, Longitude: ${lng}. 
       Return a string in the format: "City, State/Region, Country". 
       Be precise. Return ONLY the location string, no other text.`,
     });
     return response.text?.trim() || "Unknown Location";
   } catch (error) {
-    console.error("Reverse Geocode Error:", error);
-    return "Unknown Location";
+    return handleAiError(error);
   }
 };
 
@@ -140,7 +180,7 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
     }
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
+      model: TEXT_MODEL,
       contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
       config: {
         responseMimeType: "application/json",
@@ -153,8 +193,7 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
     }
     return null;
   } catch (error: any) {
-    console.error("AI Error:", error);
-    throw error;
+    return handleAiError(error);
   }
 };
 
@@ -163,12 +202,22 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
     if (!checkAndIncrementAiUsage()) {
       throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
     }
+    
+    await ensureApiKeySelection();
     const ai = getAiClient();
-    const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, textbook style, white background, high quality.`;
+    
+    const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, textbook style, white background, professional biological drawing quality.`;
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] }
+      model: IMAGE_MODEL,
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1",
+          imageSize: "1K"
+        }
+      }
     });
+
     for (const candidate of response.candidates) {
       for (const part of candidate.content.parts) {
         if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
@@ -176,8 +225,7 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
     }
     return null;
   } catch (error) {
-    console.error("Image Generation Error:", error);
-    throw error;
+    return handleAiError(error);
   }
 };
 
@@ -191,7 +239,7 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     const ai = getAiClient();
     const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
+      model: TEXT_MODEL,
       contents: prompt,
       config: { 
         responseMimeType: "application/json",
@@ -208,7 +256,6 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     }
     return [];
   } catch (e) { 
-    console.error("Dictionary Translation Error:", e);
-    throw e; 
+    return handleAiError(e);
   }
 };
