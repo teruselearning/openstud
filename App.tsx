@@ -69,10 +69,13 @@ interface ErrorBoundaryState {
  * Fix: Use direct Component inheritance for ErrorBoundary to ensure props and state are correctly typed and accessible in render().
  */
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false };
+  // Explicitly declared props and state to fix "Property 'props' does not exist on type 'ErrorBoundary'" error.
+  public props: ErrorBoundaryProps;
+  public state: ErrorBoundaryState = { hasError: false };
 
   constructor(props: ErrorBoundaryProps) {
     super(props);
+    this.props = props;
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 

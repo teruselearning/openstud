@@ -373,7 +373,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     reader.onload = async (event) => {
       const text = event.target?.result as string;
       const lines = text.split('\n').filter(l => l.trim().length > 0);
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Fix: Robust header normalization to handle spaces and underscores
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s_]/g, ''));
       
       const rows = lines.slice(1);
       setBulkTotal(rows.length);
@@ -427,8 +429,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
             const newSp: Species = {
               id: `sp-auto-${Date.now()}-${i}`,
               projectId: targetProjectId,
-              commonName: commonName || aiData?.commonName || sciName || lookupName,
-              scientificName: sciName || aiData?.scientificName || '',
+              commonName: commonName || aiData?.commonName || sciName || lookupName || 'Unknown Species',
+              scientificName: sciName || aiData?.scientificName || 'Unknown',
               type: kingdom,
               conservationStatus: aiData?.conservationStatus || 'Unknown',
               sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),

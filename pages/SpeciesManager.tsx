@@ -147,7 +147,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     reader.onload = async (event) => {
       const text = event.target?.result as string;
       const lines = text.split('\n').filter(l => l.trim().length > 0);
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Fix: Robust header normalization
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s_]/g, ''));
       
       const rows = lines.slice(1);
       setBulkTotal(rows.length);
@@ -197,10 +199,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           const speciesEntry: Species = {
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
-            commonName: commonName || aiData?.commonName || scientificName,
-            scientificName: scientificName || aiData?.scientificName || '',
+            commonName: commonName || aiData?.commonName || scientificName || 'Unknown Species',
+            scientificName: scientificName || aiData?.scientificName || 'Unknown',
             type: kingdom,
-            plantClassification: aiData?.plantClassification as PlantClassification || data.plantclassification,
+            plantClassification: (aiData?.plantClassification as PlantClassification) || data.plantclassification,
             conservationStatus: aiData?.conservationStatus || data.conservationstatus || 'Unknown',
             sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || data.sexualmaturity || 0),
             averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || data.weight || 0),
@@ -218,8 +220,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
           newSpecies.push({
             id: `sp-${Date.now()}-${i}`,
             projectId: targetProjectId,
-            commonName: commonName || scientificName,
-            scientificName: scientificName || '',
+            commonName: commonName || scientificName || 'Unknown Species',
+            scientificName: scientificName || 'Unknown',
             type: kingdom,
             conservationStatus: data.conservationstatus || 'Unknown',
             sexualMaturityAgeYears: 0,
