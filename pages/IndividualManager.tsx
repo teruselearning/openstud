@@ -2,8 +2,8 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
-import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project } from '../types';
-import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen } from 'lucide-react';
+import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
+import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen, Weight, Scale } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -51,6 +51,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [returnToId, setReturnToId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const speciesDropdownRef = useRef<HTMLDivElement>(null);
@@ -286,23 +287,39 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         return;
     }
     
-    setIsSubmitting(true);
+    setIsAiLoading(true);
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
     
     try {
         const primaryName = (newSpeciesData.commonName || newSpeciesData.scientificName) as string;
+        const kingdom = newSpeciesData.type as SpeciesType;
         
+        // Enrichment logic for quick add
+        let aiData: any = {};
+        try {
+           aiData = await fetchSpeciesData(primaryName, kingdom, org?.location || '');
+        } catch(e) { console.warn("Quick Add: AI Data enrichment failed, using minimal record.", e); }
+
+        let spImg = '';
+        try {
+           spImg = await fetchWikimediaImage(aiData?.scientificName || primaryName) || '';
+           if (!spImg) spImg = await generateSpeciesImage(primaryName, aiData?.scientificName || '', kingdom) || '';
+        } catch(e) { console.warn("Quick Add: AI Image failed.", e); }
+
         const newSp: Species = {
             id: `sp-${Date.now()}`,
             projectId: targetProjectId as string,
-            commonName: (newSpeciesData.commonName || newSpeciesData.scientificName) as string,
-            scientificName: (newSpeciesData.scientificName || newSpeciesData.commonName) as string,
-            type: newSpeciesData.type as SpeciesType,
-            conservationStatus: newSpeciesData.conservationStatus || 'Unknown',
-            sexualMaturityAgeYears: 0,
-            averageAdultWeightKg: 0,
-            lifeExpectancyYears: 0,
-            imageUrl: generatePattern(primaryName)
+            commonName: newSpeciesData.commonName || aiData?.commonName || newSpeciesData.scientificName || 'Unknown',
+            scientificName: newSpeciesData.scientificName || aiData?.scientificName || newSpeciesData.commonName || 'Unknown',
+            type: kingdom,
+            conservationStatus: aiData?.conservationStatus || newSpeciesData.conservationStatus || 'Unknown',
+            sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || 0),
+            averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || 0),
+            lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || 0),
+            plantClassification: (aiData?.plantClassification as PlantClassification) || (kingdom === 'Plant' ? 'Monoecious' : undefined),
+            imageUrl: spImg || generatePattern(primaryName),
+            nativeStatusCountry: (aiData?.nativeStatusCountry as any) || 'Unknown',
+            nativeStatusLocal: (aiData?.nativeStatusLocal as any) || 'Unknown'
         };
         
         const updated = [...allSpecies, newSp];
@@ -312,11 +329,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         setFormData({ ...formData, speciesId: newSp.id });
         setSpeciesSearchQuery(newSp.commonName);
         setShowNewSpeciesForm(false);
-    } catch (e) {
+    } catch (e: any) {
         console.error(e);
-        alert("Failed to save new species. Please check connection.");
+        const msg = e.message?.toLowerCase().includes('quota') ? "AI Rate Limit Reached. Created basic species record." : "Failed to register species. Please try again.";
+        alert(msg);
     } finally {
-        setIsSubmitting(false);
+        setIsAiLoading(false);
     }
   };
 
@@ -857,7 +875,10 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                              </select>
                           </div>
                        </div>
-                       <button type="button" onClick={handleCreateNewSpecies} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm transition-all">Register Species</button>
+                       <button type="button" onClick={handleCreateNewSpecies} disabled={isAiLoading} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-sm transition-all flex items-center gap-2">
+                         {isAiLoading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
+                         Register Species {isAiLoading && "(AI Researching...)"}
+                       </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -890,7 +911,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <label className="text-xs font-bold text-slate-700 block mb-1">{isFlora ? 'Classification' : 'Sex'}</label>
                           {isFlora ? (
                              <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 font-medium">
-                                {selectedSpecies?.plantClassification || 'Unknown'}
+                                {selectedSpecies?.plantClassification || 'Monoecious'}
                              </div>
                           ) : (
                             <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}>
@@ -903,8 +924,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                           <input type="date" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
                       </div>
                       <div>
-                          <label className="text-xs font-bold text-slate-700 block mb-1">Current Weight (Kg)</label>
-                          <input type="number" step="0.01" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} />
+                          <label className="text-xs font-bold text-slate-700 block mb-1">{isFlora ? 'Current Height (cm)' : 'Current Weight (Kg)'}</label>
+                          <div className="relative">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                               {isFlora ? <Sprout size={16}/> : <Scale size={16}/>}
+                            </div>
+                            <input type="number" step="0.01" className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} />
+                          </div>
                       </div>
                     </div>
                   )}

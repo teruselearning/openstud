@@ -80,7 +80,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         finalImageUrl = await generateSpeciesImage(lookupName, data?.scientificName || '', (data?.type || formData.type) as SpeciesType);
       }
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
-    } catch (e: any) { alert("AI Service Error: " + e.message); } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
+    } catch (e: any) { 
+        console.error("AI Error:", e);
+        const msg = e.message?.toLowerCase().includes('quota') ? "AI Rate Limit Reached (Gemini). Please try again in a minute." : "AI Service Error: " + e.message;
+        alert(msg); 
+    } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
   };
 
   const handleGenerateAIImage = async () => {
@@ -339,70 +343,72 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       )}
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden animate-in slide-in-from-top-4 duration-300 mb-6">
-          <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
-             <div className="flex items-center gap-2">
-                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Plus size={20}/></div>
-                <h3 className="font-bold text-slate-900">{editingId ? t('updateSpecies') : t('add')}</h3>
-             </div>
-             <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><XIcon size={20} /></button>
+        <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl animate-in zoom-in duration-200 flex flex-col max-h-[95vh]">
+            <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center rounded-t-2xl">
+               <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Plus size={20}/></div>
+                  <h3 className="font-bold text-xl text-slate-900">{editingId ? t('updateSpecies') : t('add')}</h3>
+               </div>
+               <button onClick={handleCloseForm} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><XIcon size={24} /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-8 space-y-8 flex-1 overflow-y-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                 <div className="lg:col-span-4 space-y-6">
+                    <div className="space-y-2">
+                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('representativeImage')}</label>
+                       <div className="aspect-square w-full rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 overflow-hidden relative group shadow-inner">
+                          {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center"><ImageIcon size={48} className="mb-2 opacity-20"/><p className="text-xs">{t('noImageProvided')}</p></div>}
+                          {loadingImage && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 text-center p-4"><Loader2 className="animate-spin text-emerald-600 mb-2" size={32}/><span className="text-[10px] font-bold text-slate-600 tracking-widest">{imageStatus || 'LOADING...'}</span></div>}
+                       </div>
+                       <div className="grid grid-cols-2 gap-2 mt-2">
+                          <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-medium shadow-sm"><Camera size={14} /> {t('upload')}<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setFormData({...formData, imageUrl: r.result as string}); r.readAsDataURL(f); } }} /></label>
+                          <button type="button" onClick={handleGenerateAIImage} disabled={loadingImage || (!formData.commonName && !formData.scientificName)} className="bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-sm disabled:opacity-50"><Sparkles size={14} /> {t('aiGenerate')}</button>
+                       </div>
+                    </div>
+                 </div>
+                 <div className="lg:col-span-8 space-y-6">
+                    <div className="space-y-4">
+                       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                          <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Scientific Taxonomy</h4>
+                          <button type="button" onClick={handleAutoFill} disabled={loadingAI || (!formData.commonName && !formData.scientificName)} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile</button>
+                       </div>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} /></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} /></div>
+                          {isAll && allProjects.length > 1 && (
+                            <div className="space-y-1">
+                              <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
+                              <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
+                                <option value="">Select Project...</option>
+                                {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as SpeciesType, plantClassification: e.target.value === 'Plant' ? 'Monoecious' : undefined})}><option value="Animal">{t('animal')}</option><option value="Plant">{t('plant')}</option></select></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('conservationStatus')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.conservationStatus} onChange={e => setFormData({...formData, conservationStatus: e.target.value})} placeholder="e.g. Critically Endangered" /></div>
+                       </div>
+                    </div>
+                    <div className="space-y-4 pt-4 border-t border-slate-100">
+                       <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> Biological Metrics</h4>
+                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{formData.type === 'Plant' ? t('maturityFlowering') : t('sexualMaturity')}</label><input type="number" step="0.1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.sexualMaturityAgeYears} onChange={e => setFormData({...formData, sexualMaturityAgeYears: parseFloat(e.target.value)})} /></div>
+                          <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('lifeExpectancy')}</label><input type="number" step="1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.lifeExpectancyYears} onChange={e => setFormData({...formData, lifeExpectancyYears: parseFloat(e.target.value)})} /></div>
+                          {formData.type === 'Animal' ? (
+                             <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('adultWeight')} (Kg)</label><div className="relative"><Weight size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input type="number" step="0.01" className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.averageAdultWeightKg} onChange={e => setFormData({...formData, averageAdultWeightKg: parseFloat(e.target.value)})} /></div></div>
+                          ) : (
+                             <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('classification')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.plantClassification} onChange={e => setFormData({...formData, plantClassification: e.target.value as PlantClassification})}><option value="Monoecious">{t('monoecious')}</option><option value="Dioecious">{t('dioecious')}</option></select></div>
+                          )}
+                       </div>
+                    </div>
+                 </div>
+              </div>
+              <div className="flex justify-end pt-6 border-t border-slate-100 space-x-3">
+                <button type="button" onClick={handleCloseForm} className="px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">{t('cancel')}</button>
+                <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2.5 rounded-lg font-bold shadow-lg transition-all">{editingId ? t('updateSpecies') : t('saveSpecies')}</button>
+              </div>
+            </form>
           </div>
-          <form onSubmit={handleSubmit} className="p-6 space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-               <div className="md:col-span-4 space-y-6">
-                  <div className="space-y-2">
-                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('representativeImage')}</label>
-                     <div className="aspect-square w-full rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 overflow-hidden relative group">
-                        {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center"><ImageIcon size={48} className="mb-2 opacity-20"/><p className="text-xs">{t('noImageProvided')}</p></div>}
-                        {loadingImage && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 text-center p-4"><Loader2 className="animate-spin text-emerald-600 mb-2" size={32}/><span className="text-[10px] font-bold text-slate-600 tracking-widest">{imageStatus || 'LOADING...'}</span></div>}
-                     </div>
-                     <div className="grid grid-cols-2 gap-2 mt-2">
-                        <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-medium shadow-sm"><Camera size={14} /> {t('upload')}<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setFormData({...formData, imageUrl: r.result as string}); r.readAsDataURL(f); } }} /></label>
-                        <button type="button" onClick={handleGenerateAIImage} disabled={loadingImage || (!formData.commonName && !formData.scientificName)} className="bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-sm disabled:opacity-50"><Sparkles size={14} /> {t('aiGenerate')}</button>
-                     </div>
-                  </div>
-               </div>
-               <div className="md:col-span-8 space-y-6">
-                  <div className="space-y-4">
-                     <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><Dna size={18} className="text-emerald-500"/> Scientific Taxonomy</h4>
-                        <button type="button" onClick={handleAutoFill} disabled={loadingAI || (!formData.commonName && !formData.scientificName)} className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">{loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile</button>
-                     </div>
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} /></div>
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} /></div>
-                        {isAll && allProjects.length > 1 && (
-                          <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
-                            <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
-                              <option value="">Select Project...</option>
-                              {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          </div>
-                        )}
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as SpeciesType, plantClassification: e.target.value === 'Plant' ? 'Monoecious' : undefined})}><option value="Animal">{t('animal')}</option><option value="Plant">{t('plant')}</option></select></div>
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('conservationStatus')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.conservationStatus} onChange={e => setFormData({...formData, conservationStatus: e.target.value})} placeholder="e.g. Critically Endangered" /></div>
-                     </div>
-                  </div>
-                  <div className="space-y-4 pt-4 border-t border-slate-100">
-                     <h4 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> Biological Metrics</h4>
-                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{formData.type === 'Plant' ? t('maturityFlowering') : t('sexualMaturity')}</label><input type="number" step="0.1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.sexualMaturityAgeYears} onChange={e => setFormData({...formData, sexualMaturityAgeYears: parseFloat(e.target.value)})} /></div>
-                        <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('lifeExpectancy')}</label><input type="number" step="1" className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.lifeExpectancyYears} onChange={e => setFormData({...formData, lifeExpectancyYears: parseFloat(e.target.value)})} /></div>
-                        {formData.type === 'Animal' ? (
-                           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('adultWeight')} (Kg)</label><div className="relative"><Weight size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input type="number" step="0.01" className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white outline-none" value={formData.averageAdultWeightKg} onChange={e => setFormData({...formData, averageAdultWeightKg: parseFloat(e.target.value)})} /></div></div>
-                        ) : (
-                           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('classification')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.plantClassification} onChange={e => setFormData({...formData, plantClassification: e.target.value as PlantClassification})}><option value="Monoecious">{t('monoecious')}</option><option value="Dioecious">{t('dioecious')}</option></select></div>
-                        )}
-                     </div>
-                  </div>
-               </div>
-            </div>
-            <div className="flex justify-end pt-6 border-t border-slate-100 space-x-3">
-              <button type="button" onClick={handleCloseForm} className="px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">{t('cancel')}</button>
-              <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2.5 rounded-lg font-bold shadow-lg transition-all">{editingId ? t('updateSpecies') : t('saveSpecies')}</button>
-            </div>
-          </form>
         </div>
       )}
 
