@@ -36,8 +36,16 @@ const translationSchema = {
 
 const getAiClient = (): GoogleGenAI => {
   const apiKey = process.env.API_KEY;
+  
+  // Debug Logging for User
+  if (apiKey) {
+    const maskedKey = `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}`;
+    console.log(`[GEMINI] API Key detected: ${maskedKey}`);
+  } else {
+    console.error("[GEMINI] API Key is MISSING from process.env.API_KEY. Ensure it is in your root .env file.");
+  }
+
   if (!apiKey || apiKey.trim() === "") {
-    console.error("[GEMINI] API Key is missing from environment variables (process.env.API_KEY).");
     throw new Error("Gemini API Key not configured in environment.");
   }
   return new GoogleGenAI({ apiKey });
@@ -89,25 +97,14 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
   console.group(`[MEDIA PROCESSING] Processing URL: ${targetUrl.substring(0, 100)}...`);
   
   try {
-    // Detect all variants of Google Drive URLs
     const isGoogleDrive = /drive\.google\.com|drive\.usercontent\.google\.com/.test(targetUrl);
-    
     if (isGoogleDrive) {
-       console.log("Detected Google Drive content. Extracting ID...");
-       // Extract ID using a robust regex that catches alphanumeric plus hyphens/underscores
-       // Usually between 'id=' and '&' or just at the end, or in /d/ID/ format
        const idMatch = targetUrl.match(/[-\w]{25,}/);
        const id = idMatch ? idMatch[0] : null;
-       
        if (id) {
-          console.log(`Successfully extracted Google Drive ID: ${id}`);
-          // Using the thumbnail endpoint is the standard "hack" to bypass the 
-          // "Download / Virus Scan" interstitial pages for images.
           const reliableImageUrl = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
           console.groupEnd();
           return reliableImageUrl;
-       } else {
-          console.warn("Found Google Drive URL but could not extract a valid 25+ char ID.");
        }
     }
 
@@ -116,7 +113,6 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
        return targetUrl;
     }
 
-    // For non-Google URLs, try to fetch and convert to Base64 (to avoid CORS issues later)
     try {
       const response = await fetch(targetUrl);
       if (response.ok) {
@@ -162,7 +158,9 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
 
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
-    if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
+    if (!checkAndIncrementAiUsage()) {
+      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached (1000/mo). Check Organization Settings.");
+    }
     const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -185,7 +183,9 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
 export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
   try {
-    if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
+    if (!checkAndIncrementAiUsage()) {
+      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached (1000/mo).");
+    }
     const ai = getAiClient();
     const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, isolated on white background, textbook style, 4k.`;
     const response = await ai.models.generateContent({
@@ -206,7 +206,9 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
 
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<{k: string, v: string}[]> => {
   try {
-    if (!checkAndIncrementAiUsage()) throw new Error("AI usage limit reached.");
+    if (!checkAndIncrementAiUsage()) {
+      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
+    }
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
     if (payload.length === 0) return [];
     const ai = getAiClient();

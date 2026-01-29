@@ -82,7 +82,12 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
     } catch (e: any) { 
         console.error("AI Error:", e);
-        const msg = e.message?.toLowerCase().includes('quota') ? "AI Rate Limit Reached (Gemini). Please try again in a minute." : "AI Service Error: " + e.message;
+        let msg = "AI Service Error: " + e.message;
+        if (e.message?.includes("INTERNAL_LIMIT")) {
+          msg = "Organization AI Monthly Limit reached (internal counter). This can be increased by an admin.";
+        } else if (e.message?.toLowerCase().includes('quota')) {
+          msg = "Gemini API Quota reached. Please try again in a few minutes.";
+        }
         alert(msg); 
     } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
   };

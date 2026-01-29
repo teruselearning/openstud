@@ -187,7 +187,7 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
 };
 
 export const getOrg = (): Organization => {
-  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false };
+  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false, aiUsageLimit: 1000 };
   return get(KEYS.ORG, defaultOrg);
 };
 
@@ -203,7 +203,10 @@ export const checkAndIncrementAiUsage = (): boolean => {
   let count = org.aiUsageCount || 0;
   let lastReset = org.aiUsageLastReset || "";
   if (lastReset !== currentMonthStr) { count = 0; lastReset = currentMonthStr; }
-  if (count >= (org.aiUsageLimit || 100)) return false;
+  
+  const limit = org.aiUsageLimit || 1000;
+  if (count >= limit) return false;
+  
   saveOrg({ ...org, aiUsageCount: count + 1, aiUsageLastReset: currentMonthStr });
   return true;
 };

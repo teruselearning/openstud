@@ -116,7 +116,9 @@ export const BASE_TRANSLATIONS = {
     
     // Species & Individual Forms
     commonName: "Common Name",
+    commonNamePlaceholder: "e.g. Red Panda",
     scientificName: "Scientific Name",
+    scientificNamePlaceholder: "e.g. Ailurus fulgens",
     type: "Kingdom",
     animal: "Fauna",
     plant: "Flora",
@@ -136,6 +138,9 @@ export const BASE_TRANSLATIONS = {
     autofill: "Autofill",
     uploadImage: "Upload Image",
     imageSelected: "Image Selected",
+    representativeImage: "Representative Image",
+    noImageProvided: "No image provided.",
+    aiGenerate: "AI Illustration",
     studbookId: "Studbook ID",
     plantId: "Flora ID",
     name: "Name",
@@ -146,6 +151,7 @@ export const BASE_TRANSLATIONS = {
     acquisitionSource: "Acquisition Source",
     sourceDetails: "Source Details",
     parentage: "Parentage",
+    parentageTitle: "Parentage & Lineage",
     sire: "Sire (Father)",
     dam: "Dam (Mother)",
     genetics: "Genetics (DNA)",
