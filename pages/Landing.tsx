@@ -91,7 +91,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
 
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [forgotEmail, setForgotEmail] = useState('');
-  // Added missing useState hook to fix destructuring error on line 94
   const [resetData, setResetData] = useState({ code: '', newPassword: '', confirmPassword: '' });
   const [mfaData, setMfaData] = useState({ code: '', generatedCode: '', pendingUser: null as User | null });
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
@@ -319,7 +318,10 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     } else { setError("Invalid code."); }
   };
 
-  const getFeatureIcon = (iconName: string) => (LucideIcons as any)[iconName] || LucideIcons.HelpCircle;
+  const getFeatureIcon = (iconName: string) => {
+     const Icon = (LucideIcons as any)[iconName] || LucideIcons.HelpCircle;
+     return <Icon size={24} className="text-emerald-600" />;
+  };
   
   const featuresToRender: LandingFeature[] = (landingConfig?.features && landingConfig.features.length > 0) ? landingConfig.features : [
     { id: 'f1', title: t('securePrivate'), description: t('securePrivateDesc'), icon: 'Shield' },
@@ -360,15 +362,37 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center max-w-5xl mx-auto w-full">
+      <main className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center max-w-6xl mx-auto w-full">
         {viewMode === 'landing' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
-            <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 tracking-tight">{displayTitle}</h1>
-            <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{displaySubtitle}</p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              {isRegistrationEnabled && (<button onClick={() => { setViewMode('register'); setRegStep('details'); }} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
-              <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
+          <div className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
+            <div className="space-y-8">
+              <h1 className="text-4xl md:text-6xl font-extrabold text-slate-900 tracking-tight">{displayTitle}</h1>
+              <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{displaySubtitle}</p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                {isRegistrationEnabled && (<button onClick={() => { setViewMode('register'); setRegStep('details'); }} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
+                <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
+              </div>
             </div>
+
+            {/* Feature Tiles */}
+            {landingConfig?.showFeatures !== false && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                {featuresToRender.map(feature => (
+                  <div key={feature.id} className="bg-slate-50 p-8 rounded-3xl border border-slate-100 hover:border-emerald-200 transition-all group">
+                    <div className="p-3 bg-white rounded-2xl w-fit mb-6 shadow-sm group-hover:scale-110 transition-transform">
+                      {getFeatureIcon(feature.icon)}
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 mb-3">{feature.title}</h3>
+                    <p className="text-slate-500 leading-relaxed">{feature.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Custom Content HTML Section */}
+            {landingConfig?.customContentHtml && (
+              <div className="prose prose-slate max-w-none text-left py-8 border-t border-slate-100" dangerouslySetInnerHTML={{ __html: landingConfig.customContentHtml }} />
+            )}
           </div>
         )}
         

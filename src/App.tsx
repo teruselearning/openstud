@@ -355,7 +355,12 @@ const App: React.FC = () => {
            
            const activeSession = forceSession || getSession();
            const isAdmin = activeSession?.role === UserRole.ADMIN || (activeSession?.role as string) === 'Admin';
-           if (activeSession && isAdmin && (!data.species || data.species.length === 0)) {
+           
+           // Correctly detect empty collections for setup wizard
+           const speciesCount = (data.species || []).filter((s: any) => s.projectId && pjs.some(pj => pj.id === s.projectId)).length;
+           const indivCount = (data.individuals || []).filter((i: any) => i.projectId && pjs.some(pj => pj.id === i.projectId)).length;
+
+           if (activeSession && isAdmin && speciesCount === 0 && indivCount === 0) {
               setShowSetupWizard(true);
            }
         }

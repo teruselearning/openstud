@@ -7,7 +7,7 @@ import {
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
   Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
   Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check, Search,
-  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf, MessageSquare
+  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf, MessageSquare, Code
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner, Project, Individual, Species, Sex } from '../types';
@@ -549,6 +549,15 @@ const SuperAdmin: React.FC = () => {
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('heroTitle')}</label><input className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={settings.landingPageConfig?.heroTitle || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, heroTitle: e.target.value }})} /></div>
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('heroSubtitle')}</label><textarea className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium" rows={3} value={settings.landingPageConfig?.heroSubtitle || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, heroSubtitle: e.target.value }})} /></div>
                   
+                  <div className="space-y-1 pt-2">
+                     <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Code size={14} className="text-indigo-500"/> Custom Content HTML</label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase"><input type="checkbox" className="rounded" checked={settings.landingPageConfig?.showFeatures !== false} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, showFeatures: e.target.checked }})} /> Show Features</label>
+                     </div>
+                     <RichTextEditor value={settings.landingPageConfig?.customContentHtml || ''} onChange={v => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, customContentHtml: v }})} height="150px" />
+                     <p className="text-[10px] text-slate-400 italic">Optional custom area below the hero section.</p>
+                  </div>
+
                   <div className="space-y-3 pt-4 border-t border-slate-50">
                      <div className="flex justify-between items-center"><h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">{t('featureCards')}</h4><button onClick={handleAddFeature} className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"><Plus size={14}/> {t('add')}</button></div>
                      <div className="space-y-3">
@@ -566,7 +575,7 @@ const SuperAdmin: React.FC = () => {
                      {['aboutPage', 'privacyPage', 'termsPage'].map(pKey => {
                         const pg = settings[pKey as keyof SystemSettings] as StaticPageConfig;
                         return (
-                           <div key={pKey} className="space-y-2 border-b border-slate-50 pb-4 last:border-0">
+                           <div key={pKey} className="space-y-2 border-b border-slate-50 last:border-0 pb-4 last:pb-0">
                               <div className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg"><FileText size={14}/></div><span className="text-xs font-bold text-slate-700">{pg.title || pKey}</span></div><label className="relative inline-flex items-center cursor-pointer scale-75"><input type="checkbox" className="sr-only peer" checked={pg.enabled} onChange={e => setSettings({...settings, [pKey]: { ...pg, enabled: e.target.checked }})} /><div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div></label></div>
                               {pg.enabled && (<div className="space-y-2 animate-in slide-in-from-top-1"><input className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" placeholder="Custom Page Title" value={pg.title} onChange={e => setSettings({...settings, [pKey]: { ...pg, title: e.target.value }})} /><RichTextEditor value={pg.contentHtml} onChange={v => setSettings({...settings, [pKey]: { ...pg, contentHtml: v }})} height="150px" /></div>)}
                            </div>
