@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { getNetworkPartners, getOrg, getSpecies, sendMockNotification, getPartnerships, generatePartnerInvite, redeemPartnerInvite, getSession, getIndividuals, getProjects } from '../services/storage';
 import { ExternalPartner, Organization, Species, Partnership, Sex, UserRole } from '../types';
-import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock, AlertTriangle, Globe2, Activity, Leaf, ChevronRight, Info } from 'lucide-react';
+import { Map, Filter, Building2, MapPin, Send, MessageSquare, Search, Crosshair, EyeOff, Handshake, Plus, Copy, Check, Eye, X, Users, Dna, Lock, AlertTriangle, Globe2, Activity, Leaf, ChevronRight, Info, Loader2 } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -19,6 +19,8 @@ const Network: React.FC = () => {
   
   const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isLocating, setIsLocating] = useState(false);
+  const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | null>(null);
   
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<any>(null);
@@ -74,9 +76,24 @@ const Network: React.FC = () => {
 
     if (!leafletMap.current) {
       try {
-        const map = L.map(mapRef.current).setView([targetLat, targetLng], targetZoom);
+        const map = L.map(mapRef.current, { zoomControl: false }).setView([targetLat, targetLng], targetZoom);
+        L.control.zoom({ position: 'topright' }).addTo(map);
         leafletMap.current = map;
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+
+        // ATTEMPT TO CENTER ON CURRENT LOCATION
+        if (navigator.geolocation) {
+           navigator.geolocation.getCurrentPosition(
+             (pos) => {
+               const { latitude, longitude } = pos.coords;
+               setUserCoords({ lat: latitude, lng: longitude });
+               map.setView([latitude, longitude], 11);
+             },
+             (err) => console.warn("Network Map geolocation denied."),
+             { enableHighAccuracy: true, timeout: 5000 }
+           );
+        }
+
         setTimeout(() => map.invalidateSize(), 200);
       } catch (e) { console.error("Error initializing map:", e); }
     }
@@ -151,13 +168,14 @@ const Network: React.FC = () => {
   };
 
   const handleLocateMe = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation || !leafletMap.current) return;
+    setIsLocating(true);
     navigator.geolocation.getCurrentPosition((position) => {
         const { latitude, longitude } = position.coords;
-        if (leafletMap.current) {
-          leafletMap.current.setView([latitude, longitude], 12);
-        }
-    });
+        leafletMap.current.flyTo([latitude, longitude], 12, { animate: true, duration: 1.5 });
+        setUserCoords({ lat: latitude, lng: longitude });
+        setIsLocating(false);
+    }, () => setIsLocating(false));
   };
 
   const generateMockPartnerIndividuals = (speciesId: string, counts: string) => {
@@ -197,7 +215,9 @@ const Network: React.FC = () => {
             <div className="flex flex-col md:flex-row h-full">
                <div className="flex-1 relative z-0 h-full min-h-[400px]">
                   <div id="network-map" ref={mapRef} className="h-full w-full"></div>
-                  <button onClick={handleLocateMe} className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" title="Use My Current Location"><Crosshair size={24} /></button>
+                  <button onClick={handleLocateMe} className="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200" title="Use My Current Location">
+                    {isLocating ? <Loader2 size={24} className="animate-spin text-emerald-600" /> : <Crosshair size={24} />}
+                  </button>
                </div>
                <div className="w-full md:w-80 border-l border-slate-200 bg-slate-50 overflow-y-auto h-64 md:h-full">
                   <div className="p-4 border-b border-slate-200 bg-white sticky top-0 flex justify-between items-center"><h3 className="font-bold text-slate-900">Organizations</h3><span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{filteredPartners.length} Total</span></div>
@@ -246,16 +266,15 @@ const Network: React.FC = () => {
                         {selectedPartnerForSummary.isSpeciesPublic ? ((selectedPartnerForSummary.speciesIds || []).map(sid => { 
                            const sp = localSpecies.find(s => s.id === sid); 
                            const counts = selectedPartnerForSummary.populationCounts?.[sid] || "???.???.???"; 
-                           if(!sp) return null; 
                            return (
                               <div key={sid} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                                  <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                                       {sp.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover rounded-full" /> : sp.commonName.charAt(0)}
+                                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center font-bold flex-shrink-0 overflow-hidden">
+                                       {sp?.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover rounded-full" /> : <Dna className="p-2 opacity-30" />}
                                     </div>
                                     <div className="overflow-hidden">
-                                       <h4 className="font-bold text-slate-900 truncate">{sp.commonName}</h4>
-                                       <p className="text-[10px] text-slate-500 italic truncate">{sp.scientificName}</p>
+                                       <h4 className="font-bold text-slate-900 truncate">{sp?.commonName || `Species #${sid.substring(0,5)}`}</h4>
+                                       <p className="text-[10px] text-slate-500 italic truncate">{sp?.scientificName || 'Unlisted Metadata'}</p>
                                     </div>
                                  </div>
                                  <div className="text-right flex-shrink-0">
@@ -283,13 +302,12 @@ const Network: React.FC = () => {
                            <div className="space-y-6">
                               {(selectedPartnerForSummary.speciesIds || []).map(sid => { 
                                  const sp = localSpecies.find(s => s.id === sid); 
-                                 if(!sp) return null; 
                                  const mockInds = generateMockPartnerIndividuals(sid, selectedPartnerForSummary.populationCounts?.[sid] || "0.0.0"); 
                                  if (mockInds.length === 0) return null;
                                  return (
                                     <div key={sid}>
                                        <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 bg-white p-2 rounded border border-slate-100 shadow-sm w-fit">
-                                          <Dna size={16} className="text-emerald-500"/> {sp.commonName}
+                                          <Dna size={16} className="text-emerald-500"/> {sp?.commonName || `Species #${sid.substring(0,5)}`}
                                        </h4>
                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                           {mockInds.map(ind => (

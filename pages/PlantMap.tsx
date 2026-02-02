@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getIndividuals, getSpecies, getOrg } from '../services/storage';
 import { Individual, Species, Organization } from '../types';
-import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon, Calendar, Weight, Info, Users, Briefcase, Archive, PawPrint, Sprout } from 'lucide-react';
+import { MapPin, ArrowLeft, Maximize2, X, Crosshair, Type as TypeIcon, Calendar, Weight, Info, Users, Briefcase, Archive, PawPrint, Sprout, FolderOpen, Layers } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any; // Leaflet global
@@ -27,9 +27,11 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
   useEffect(() => {
     if (mapContainerRef.current && !mapInstanceRef.current) {
        const currentOrg = getOrg();
-       const initialLat = typeof currentOrg.latitude === 'number' ? currentOrg.latitude : 0;
-       const initialLng = typeof currentOrg.longitude === 'number' ? currentOrg.longitude : 0;
-       const initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
+       
+       // Default fallback
+       let initialLat = typeof currentOrg.latitude === 'number' ? currentOrg.latitude : 0;
+       let initialLng = typeof currentOrg.longitude === 'number' ? currentOrg.longitude : 0;
+       let initialZoom = (typeof currentOrg.latitude === 'number' && typeof currentOrg.longitude === 'number') ? 15 : 2;
 
        const map = L.map(mapContainerRef.current, {
           zoomControl: false,
@@ -47,15 +49,29 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        markersLayerRef.current = markersLayer;
        mapInstanceRef.current = map;
 
-       setTimeout(() => map.invalidateSize(), 200);
-
+       // CENTER ON CURRENT LOCATION ON START
        if (navigator.geolocation) {
-         navigator.geolocation.watchPosition(
-           (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-           (err) => console.warn("Watch failed", err),
-           { enableHighAccuracy: true }
-         );
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const { latitude, longitude } = pos.coords;
+              setUserCoords({ lat: latitude, lng: longitude });
+              map.setView([latitude, longitude], 16);
+            },
+            (err) => {
+              console.warn("Geolocation denied or failed, using org default.");
+            },
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+
+          // Continuous watch for user marker
+          navigator.geolocation.watchPosition(
+            (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            (err) => console.warn("Watch failed", err),
+            { enableHighAccuracy: true }
+          );
        }
+
+       setTimeout(() => map.invalidateSize(), 200);
     }
 
     return () => {
@@ -114,8 +130,9 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           .bindPopup(`<b>${currentOrg.name}</b><br>Headquarters`);
     }
 
+    const isAll = currentProjectId === 'ALL_PROJECTS';
     const mappedInds = allInds.filter(i => 
-       i.projectId === currentProjectId && 
+       (isAll || i.projectId === currentProjectId) && 
        typeof i.latitude === 'number' && 
        typeof i.longitude === 'number'
     );
@@ -156,7 +173,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
        leafletMarkers.push(marker);
     });
 
-    if (leafletMarkers.length > 0 && !hasInitialFit.current) {
+    if (leafletMarkers.length > 0 && !hasInitialFit.current && !userCoords) {
        try {
           const group = L.featureGroup(leafletMarkers);
           const bounds = group.getBounds();
@@ -168,7 +185,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
           console.warn("FitBounds failed on Map", err);
        }
     }
-  }, [currentProjectId, showLabels]); 
+  }, [currentProjectId, showLabels, userCoords]); 
 
   const handleLocateMe = () => {
      if (!mapInstanceRef.current || !userCoords) return;
@@ -183,130 +200,138 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
   };
 
   return (
-    <div className="h-[calc(100vh-100px)] flex flex-col relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-       <div className="absolute top-4 left-4 z-[1000] bg-white p-2 rounded-lg shadow-md border border-slate-200 flex items-center gap-2">
-          <button onClick={() => navigate(-1)} className="p-1 hover:bg-slate-100 rounded-full transition-colors text-slate-600">
-             <ArrowLeft size={20} />
-          </button>
-          <h2 className="font-bold text-slate-900 pr-2">{t('plantMap')}</h2>
-       </div>
+    <div className="space-y-6 flex flex-col h-full">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
+        <div>
+           <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-2xl font-bold text-slate-900">{t('plantMap')}</h2>
+              <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-200">
+                {currentProjectId === 'ALL_PROJECTS' ? <Layers size={14}/> : <FolderOpen size={14} />}
+                {currentProjectId === 'ALL_PROJECTS' ? 'All Managed Areas' : 'Project Scope'}
+              </span>
+           </div>
+           <p className="text-slate-500">Spatial distribution and precise physical tracking of your botanical collection.</p>
+        </div>
+      </div>
 
-       <div ref={mapContainerRef} className="w-full h-full z-0" />
-       
-       <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-3">
-          <button 
-             onClick={() => setShowLabels(!showLabels)} 
-             className={`p-3 rounded-full shadow-lg border transition-all ${showLabels ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-             title={showLabels ? "Hide Labels" : "Show Labels"}
-          >
-             <TypeIcon size={24} />
-          </button>
-          <button 
-             onClick={handleLocateMe}
-             disabled={!userCoords}
-             className={`bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200 ${!userCoords ? 'opacity-50 cursor-not-allowed' : ''}`}
-             title="Locate Me"
-          >
-             <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />
-          </button>
-       </div>
+      <div className="flex-1 min-h-[400px] relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+         <div ref={mapContainerRef} className="w-full h-full z-0" />
+         
+         <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-3">
+            <button 
+               onClick={() => setShowLabels(!showLabels)} 
+               className={`p-3 rounded-full shadow-lg border transition-all ${showLabels ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+               title={showLabels ? "Hide Labels" : "Show Labels"}
+            >
+               <TypeIcon size={24} />
+            </button>
+            <button 
+               onClick={handleLocateMe}
+               disabled={!userCoords}
+               className={`bg-white p-3 rounded-full shadow-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors border border-slate-200 ${!userCoords ? 'opacity-50 cursor-not-allowed' : ''}`}
+               title="Locate Me"
+            >
+               <Crosshair size={24} className={isLocating ? 'animate-spin' : ''} />
+            </button>
+         </div>
 
-       {selectedInd && (
-          <div className="absolute right-4 top-4 bottom-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
-             <div className="relative h-44 bg-slate-100">
-                {(() => {
-                  const displayImg = selectedInd.imageUrl || selectedSpecies?.imageUrl;
-                  return displayImg && !displayImg.startsWith('data:image/svg+xml') ? (
-                    <img src={displayImg} className="w-full h-full object-cover" alt={selectedInd.name} />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 flex-col gap-2">
-                       <PawPrint size={40} className="opacity-20" />
-                       <span className="text-[10px] font-bold tracking-widest uppercase">No Image</span>
-                    </div>
-                  );
-                })()}
-                <button onClick={() => setSelectedInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10"><X size={16} /></button>
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
-                  <h3 className="font-bold text-white text-lg drop-shadow-sm">{selectedInd.name}</h3>
-                  <p className="text-[10px] text-white/80 font-mono tracking-widest">{selectedInd.studbookId}</p>
-                </div>
-             </div>
-             
-             <div className="p-5 flex-1 overflow-y-auto space-y-5">
-                {(() => {
-                  const isPlant = selectedSpecies?.type === 'Plant';
-                  return (
-                    <>
-                      <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
-                        <p className="font-bold text-slate-900">{selectedSpecies?.commonName}</p>
-                        <p className="text-xs text-emerald-700 italic">{selectedSpecies?.scientificName}</p>
+         {selectedInd && (
+            <div className="absolute right-4 top-4 bottom-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-[1000] flex flex-col overflow-hidden animate-in slide-in-from-right-10 duration-300">
+               <div className="relative h-44 bg-slate-100">
+                  {(() => {
+                    const displayImg = selectedInd.imageUrl || selectedSpecies?.imageUrl;
+                    return displayImg && !displayImg.startsWith('data:image/svg+xml') ? (
+                      <img src={displayImg} className="w-full h-full object-cover" alt={selectedInd.name} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 flex-col gap-2">
+                         <PawPrint size={40} className="opacity-20" />
+                         <span className="text-[10px] font-bold tracking-widest uppercase">No Image</span>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                            {isPlant ? <Sprout size={10}/> : <Users size={10}/>} {isPlant ? 'Classification' : 'Sex'}
-                          </span>
-                          <p className="text-sm font-bold text-slate-800">
-                            {isPlant ? (selectedSpecies?.plantClassification || 'Unknown') : (selectedInd.sex || 'Unknown')}
-                          </p>
+                    );
+                  })()}
+                  <button onClick={() => setSelectedInd(null)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors z-10"><X size={16} /></button>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+                    <h3 className="font-bold text-white text-lg drop-shadow-sm">{selectedInd.name}</h3>
+                    <p className="text-[10px] text-white/80 font-mono tracking-widest">{selectedInd.studbookId}</p>
+                  </div>
+               </div>
+               
+               <div className="p-5 flex-1 overflow-y-auto space-y-5">
+                  {(() => {
+                    const isPlant = selectedSpecies?.type === 'Plant';
+                    return (
+                      <>
+                        <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Species</span>
+                          <p className="font-bold text-slate-900">{selectedSpecies?.commonName}</p>
+                          <p className="text-xs text-emerald-700 italic">{selectedSpecies?.scientificName}</p>
                         </div>
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                            <Calendar size={10}/> {isPlant ? 'Planted' : 'Born'}
-                          </span>
-                          <p className="text-sm font-bold text-slate-800">{selectedInd.birthDate || 'Unknown'}</p>
-                        </div>
-                        
-                        {!isPlant && (
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
-                            <p className="text-sm font-bold text-slate-800">{selectedInd.weightKg ? `${selectedInd.weightKg} kg` : 'N/A'}</p>
-                          </div>
-                        )}
 
-                        {isPlant && (
+                        <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Sprout size={10}/> Flowers</span>
-                            <p className="text-[10px] font-bold text-slate-800">
-                              {selectedSpecies?.breedingSeasonStart ? `${getMonthName(selectedSpecies.breedingSeasonStart)} - ${getMonthName(selectedSpecies.breedingSeasonEnd)}` : 'N/A'}
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                              {isPlant ? <Sprout size={10}/> : <Users size={10}/>} {isPlant ? 'Classification' : 'Sex'}
+                            </span>
+                            <p className="text-sm font-bold text-slate-800">
+                              {isPlant ? (selectedSpecies?.plantClassification || 'Unknown') : (selectedInd.sex || 'Unknown')}
                             </p>
                           </div>
-                        )}
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                              <Calendar size={10}/> {isPlant ? 'Planted' : 'Born'}
+                            </span>
+                            <p className="text-sm font-bold text-slate-800">{selectedInd.birthDate || 'Unknown'}</p>
+                          </div>
+                          
+                          {!isPlant && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Weight size={10}/> Weight</span>
+                              <p className="text-sm font-bold text-slate-800">{selectedInd.weightKg ? `${selectedInd.weightKg} kg` : 'N/A'}</p>
+                            </div>
+                          )}
 
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
-                          <p className={`text-sm font-bold ${selectedInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {selectedInd.isDeceased ? (isPlant ? 'Removed' : 'Deceased') : 'Active'}
-                          </p>
+                          {isPlant && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Sprout size={10}/> Flowers</span>
+                              <p className="text-[10px] font-bold text-slate-800">
+                                {selectedSpecies?.breedingSeasonStart ? `${getMonthName(selectedSpecies.breedingSeasonStart)} - ${getMonthName(selectedSpecies.breedingSeasonEnd)}` : 'N/A'}
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Info size={10}/> Status</span>
+                            <p className={`text-sm font-bold ${selectedInd.isDeceased ? 'text-red-600' : 'text-emerald-600'}`}>
+                              {selectedInd.isDeceased ? (isPlant ? 'Removed' : 'Deceased') : 'Active'}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </>
-                  );
-                })()}
+                      </>
+                    );
+                  })()}
 
-                <div className="pt-4 border-t border-slate-100">
-                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Geo-Coordinates</span>
-                   <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
-                      <MapPin size={14} className="text-blue-500" />
-                      <span>{selectedInd.latitude?.toFixed(5)}, {selectedInd.longitude?.toFixed(5)}</span>
-                   </div>
-                </div>
-
-                {selectedInd.notes && (
                   <div className="pt-4 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Notes</span>
-                    <p className="text-xs text-slate-600 italic leading-relaxed">"{selectedInd.notes}"</p>
+                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Geo-Coordinates</span>
+                     <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
+                        <MapPin size={14} className="text-blue-500" />
+                        <span>{selectedInd.latitude?.toFixed(5)}, {selectedInd.longitude?.toFixed(5)}</span>
+                     </div>
                   </div>
-                )}
-             </div>
 
-             <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
-                <button onClick={() => navigate(`/individuals/${selectedInd.id}`)} className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2 shadow-md"><Maximize2 size={16} /> View Full File</button>
-             </div>
-          </div>
-       )}
+                  {selectedInd.notes && (
+                    <div className="pt-4 border-t border-slate-100">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Notes</span>
+                      <p className="text-xs text-slate-600 italic leading-relaxed">"{selectedInd.notes}"</p>
+                    </div>
+                  )}
+               </div>
+
+               <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+                  <button onClick={() => navigate(`/individuals/${selectedInd.id}`)} className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2 shadow-md"><Maximize2 size={16} /> View Full File</button>
+               </div>
+            </div>
+         )}
+      </div>
     </div>
   );
 };
