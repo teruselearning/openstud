@@ -192,7 +192,6 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
 
 /**
  * Improved Image Generation
- * Ensures a fresh instance and specific artistic prompt.
  */
 export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
   try {
@@ -201,23 +200,27 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
     }
     
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    // Refined prompt to ensure high-quality biological illustration
-    const prompt = `A clean, professional scientific illustration of a ${commonName} (${scientificName}) on a solid white background. High resolution, detailed biology textbook style.`;
+    // Detailed prompt for scientific accuracy
+    const prompt = `A clean, centered professional scientific illustration of a ${commonName} (Species scientific name: ${scientificName}) on a solid white background. High resolution, detailed biology textbook botanical or zoological illustration style. No text.`;
     
     const response = await ai.models.generateContent({
       model: IMAGE_MODEL,
       contents: { parts: [{ text: prompt }] }
     });
 
-    if (response.candidates && response.candidates[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          console.log(`[AI IMAGE] Successfully generated image for ${commonName}`);
-          return `data:image/png;base64,${part.inlineData.data}`;
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData) {
+            console.log(`[AI IMAGE] Successfully generated image for ${commonName}`);
+            return `data:image/png;base64,${part.inlineData.data}`;
+          }
         }
       }
     }
-    console.warn(`[AI IMAGE] No image data returned for ${commonName}`);
+    
+    console.warn(`[AI IMAGE] No image data found in candidates for ${commonName}`);
     return null;
   } catch (error: any) {
     console.error("AI Image generation failed:", error.message);

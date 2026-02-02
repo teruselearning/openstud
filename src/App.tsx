@@ -1,4 +1,3 @@
-
 import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -67,12 +66,7 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-/**
- * Fix: Changed from React.Component to direct Component extension and explicitly declared class properties
- * to ensure that TypeScript correctly identifies 'props' and 'state'.
- */
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Explicitly declared props and state to fix "Property 'props' does not exist on type 'ErrorBoundary'" error.
   public props: ErrorBoundaryProps;
   public state: ErrorBoundaryState = { hasError: false };
 
@@ -141,7 +135,7 @@ const NavItem = ({ to, icon: Icon, label, active, badge }: { to: string, icon: a
 const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, showEnclosures, logoUrl, projects, currentProjectId, onChangeProject, onAddProject, onEditProfile }: { isOpen: boolean, onClose: () => void, user: User, onLogout: () => void, showBreeding: boolean, showPlantMap: boolean, showEnclosures: boolean, logoUrl?: string, projects: Project[], currentProjectId: string, onChangeProject: (id: string) => void, onAddProject: () => void, onEditProfile: () => void }) => {
   const location = useLocation();
   const path = location.pathname;
-  const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
+  const { t, language, availableLanguages, setLanguage } = useContext(LanguageContext);
   const org = getOrg();
   const enclosureLabel = org.focus === 'Flora' ? 'Areas' : 'Enclosures';
   
@@ -159,7 +153,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
             <button onClick={onClose} className="lg:hidden text-slate-500"><X size={24} /></button>
           </div>
           <div className="relative">
-             <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> Current Project</div>
+             <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> {t('currentProject')}</div>
              <select 
                value={currentProjectId} 
                onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} 
@@ -167,7 +161,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
                disabled={!isAdmin && projects.length <= 1}
              >
                {hasGlobalAccess && projects.length > 1 && (
-                 <option value="ALL_PROJECTS">🌐 All Projects</option>
+                 <option value="ALL_PROJECTS">🌐 {t('allProjects')}</option>
                )}
                {projects.length > 0 ? (
                  projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
@@ -177,7 +171,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
                {isAdmin && (
                  <>
                    <option disabled>──────────</option>
-                   <option value="NEW">+ Create New Project</option>
+                   <option value="NEW">+ {t('createNewProject')}</option>
                  </>
                )}
              </select>
@@ -228,7 +222,6 @@ const App: React.FC = () => {
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(getSystemSettings());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string|null>(null);
-  const [showBackendSetup, setShowBackendSetup] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [initialLandingView, setInitialLandingView] = useState<ViewMode>('landing');
   const [projects, setProjects] = useState<Project[]>(getProjects());
@@ -285,7 +278,15 @@ const App: React.FC = () => {
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type });
   const refreshTranslations = () => setLanguages(getLanguages());
-  const t = (key: TranslationKey): string => languages.find(l => l.code === currentLangCode)?.translations[key] || BASE_TRANSLATIONS[key] || key;
+  
+  // Refined t function with better fallback logic
+  const t = (key: TranslationKey): string => {
+    const activeLang = languages.find(l => l.code === currentLangCode);
+    if (activeLang && activeLang.translations && activeLang.translations[key]) {
+      return activeLang.translations[key];
+    }
+    return BASE_TRANSLATIONS[key] || key;
+  };
 
   useEffect(() => {
     const styleId = 'custom-theme-styles';
@@ -345,7 +346,6 @@ const App: React.FC = () => {
            setProjects(pjs);
            if (pjs.length > 0) {
               const currentId = getCurrentProjectId();
-              // If only one project exists, force user away from 'ALL_PROJECTS' if they were there
               if (pjs.length === 1 && (currentId === 'ALL_PROJECTS' || !currentId)) {
                  handleProjectChange(pjs[0].id);
               } else {
@@ -354,7 +354,8 @@ const App: React.FC = () => {
            }
            
            const activeSession = forceSession || getSession();
-           if (activeSession && activeSession.role === UserRole.ADMIN && (!data.species || data.species.length === 0)) {
+           const isAdmin = activeSession?.role === UserRole.ADMIN || (activeSession?.role as string) === 'Admin';
+           if (activeSession && isAdmin && (!data.species || data.species.length === 0)) {
               setShowSetupWizard(true);
            }
         }
@@ -383,7 +384,6 @@ const App: React.FC = () => {
         saveCurrentProjectId(savedPid);
     }
     
-    // Safety check for single-project Orgs
     if (availableProjects.length === 1 && (savedPid === 'ALL_PROJECTS' || !savedPid)) {
        savedPid = availableProjects[0].id;
        saveCurrentProjectId(savedPid);
@@ -449,7 +449,7 @@ const App: React.FC = () => {
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
-                 <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top.1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
+                 <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
                  <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1"><Menu size={24} /></button>
               </div>
             </header>

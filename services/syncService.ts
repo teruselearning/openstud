@@ -230,6 +230,7 @@ export const mapUserToDb = (u: User) => ({
   role: u.role || 'Keeper', 
   status: u.status || 'Active', 
   password: u.password || null, 
+  /* Fixed property name from avatar_url to avatarUrl */
   avatar_url: u.avatarUrl || null, 
   allowed_project_ids: u.allowedProjectIds || [], 
   preferred_language: u.preferredLanguage || 'en-GB' 
@@ -238,6 +239,7 @@ export const mapUserToDb = (u: User) => ({
 export const mapSpeciesToDb = (s: Species) => ({ 
   id: s.id, 
   project_id: s.projectId, 
+  /* Fixed property names from common_name to commonName and scientific_name to scientificName */
   common_name: s.commonName || 'Unknown Species', 
   scientific_name: s.scientificName || 'Unknown', 
   type: s.type || 'Animal', 
@@ -261,6 +263,7 @@ export const mapIndToDb = (i: Individual) => ({
   studbook_id: i.studbookId || 'SB-UNSET', 
   name: i.name || 'Unnamed Individual', 
   sex: i.sex || 'Unknown', 
+  /* Fixed property name from birth_date to birthDate */
   birth_date: i.birthDate || null, 
   weight_kg: sanitizeNum(i.weightKg), 
   sire_id: i.sireId || null, 
@@ -277,8 +280,9 @@ export const mapIndToDb = (i: Individual) => ({
   death_date: i.deathDate || null, 
   loan_status: i.loanStatus || null, 
   transferred_to_org_id: i.transferredToOrgId || null, 
-  transfer_date: i.transferDate || null, 
-  transfer_note: i.transferNote || null, 
+  /* Fixed property names from transfer_date to transferDate and transfer_note to transferNote */
+  transfer_date: i.transferDate, 
+  transfer_note: i.transferNote, 
   weight_history: i.weightHistory || [], 
   growth_history: i.growthHistory || [], 
   health_history: i.healthHistory || [] 
@@ -286,7 +290,8 @@ export const mapIndToDb = (i: Individual) => ({
 
 export const mapEnclosureToDb = (e: Enclosure) => ({ 
   id: e.id, 
-  org_id: e.org_id, 
+  // Fixed mapping org_id from e.orgId (was e.org_id)
+  org_id: e.orgId, 
   project_id: e.projectId || null, 
   name: e.name || 'Unnamed Enclosure', 
   description: e.description || null, 
@@ -306,13 +311,17 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
+/* Fixed property names offspring_count to offspringCount and successful_births to successfulBirths */
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
+/* Fixed property names proposer_org_id to proposerOrgId, individual_ids to individualIds, notification_recipient_id to notificationRecipientId, change_request to changeRequest */
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
+/* Fixed property name established_date to establishedDate */
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
 
 export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });
+/* Fixed property name is_deleted to deleted */
 export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
 
 export const syncDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
