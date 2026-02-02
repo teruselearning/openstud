@@ -74,7 +74,7 @@ const initDatabase = async () => {
         const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
         if (orgs.length === 0) {
             console.log('[DATABASE] Seeding multiple organizations...');
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals', 1, 1, 0)`);
+            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals', 1, 1, 0, 1)`);
             await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-2', 'Oceanic Research Lab', 'Queensland, AU', 'Animals', 1, 1, 0)`);
             
             const hashed = await bcrypt.hash('password', 10);
@@ -85,6 +85,9 @@ const initDatabase = async () => {
             
             await db.execute(`INSERT INTO species (id, project_id, common_name, scientific_name, type, conservation_status) VALUES ('sp-1', 'p-1', 'Snow Leopard', 'Panthera uncia', 'Animal', 'Vulnerable')`);
             await db.execute(`INSERT INTO species (id, project_id, common_name, scientific_name, type, conservation_status) VALUES ('sp-2', 'p-2', 'Green Sea Turtle', 'Chelonia mydas', 'Animal', 'Endangered')`);
+            
+            await db.execute(`INSERT INTO enclosures (id, org_id, project_id, name, description, individual_ids) VALUES ('enc-1', 'org-1', 'p-1', 'Main Paddock', 'Primary leopard habitat', '[]')`);
+            await db.execute(`INSERT INTO app_config (id, settings) VALUES ('global-settings', ?)`, [JSON.stringify({ enableRegistration: true, themePrimaryColor: '#059669' })]);
         }
 
         const [langs]: any = await db.execute(`SELECT code FROM languages LIMIT 1`);
@@ -300,36 +303,51 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     const isSuper = role === 'Super Admin';
     try {
         const db = getDb();
-        // Fix: Explicitly typing row result variables as any[] to resolve indexing errors
-        let orgRows: any[], partnersRows: any[], projectsRows: any[], usersRows: any[], speciesRows: any[], individualsRows: any[], languagesRows: any[], configRows: any[], enclosuresRows: any[];
+        let orgRows: any = [], partnersRows: any = [], projectsRows: any = [], usersRows: any = [], speciesRows: any = [], individualsRows: any = [], languagesRows: any = [], configRows: any = [], enclosuresRows: any = [];
 
         if (isSuper) {
-            [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_deleted = 0`, [orgId]);
-            [projectsRows] = await db.execute(`SELECT * FROM projects`);
-            [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
-            [speciesRows] = await db.execute(`SELECT * FROM species`);
-            [individualsRows] = await db.execute(`SELECT * FROM individuals`);
-            [enclosuresRows] = await db.execute(`SELECT * FROM enclosures`);
+            const [o]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
+            orgRows = o;
+            const [p]: any = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_deleted = 0`, [orgId]);
+            partnersRows = p;
+            const [pj]: any = await db.execute(`SELECT * FROM projects`);
+            projectsRows = pj;
+            const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
+            usersRows = u;
+            const [s]: any = await db.execute(`SELECT * FROM species`);
+            speciesRows = s;
+            const [i]: any = await db.execute(`SELECT * FROM individuals`);
+            individualsRows = i;
+            const [enc]: any = await db.execute(`SELECT * FROM enclosures`);
+            enclosuresRows = enc;
         } else {
-            [orgRows] = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
-            [partnersRows] = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1 AND is_deleted = 0`, [orgId]);
-            [projectsRows] = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
-            [usersRows] = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
+            const [o]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [orgId]);
+            orgRows = o;
+            const [p]: any = await db.execute(`SELECT * FROM organizations WHERE id != ? AND is_org_public = 1 AND is_deleted = 0`, [orgId]);
+            partnersRows = p;
+            const [pj]: any = await db.execute(`SELECT * FROM projects WHERE org_id = ?`, [orgId]);
+            projectsRows = pj;
+            const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
+            usersRows = u;
             
-            // Fix: Enhanced species sync logic to include public species from other organizations
-            [speciesRows] = await db.execute(`
+            const [s]: any = await db.execute(`
               SELECT s.* FROM species s 
               JOIN projects p ON s.project_id = p.id 
               JOIN organizations o ON p.org_id = o.id 
               WHERE p.org_id = ? OR o.is_species_public = 1`, [orgId]);
+            speciesRows = s;
               
-            [individualsRows] = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
-            [enclosuresRows] = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
+            const [i]: any = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            individualsRows = i;
+            const [enc]: any = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
+            enclosuresRows = enc;
         }
         
-        [languagesRows] = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
-        [configRows] = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        const [l]: any = await db.execute(`SELECT * FROM languages WHERE is_deleted = 0`);
+        languagesRows = l;
+        const [conf]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+        configRows = conf;
+
         let settings = configRows[0]?.settings || {};
         if (typeof settings === 'string') settings = JSON.parse(settings);
 

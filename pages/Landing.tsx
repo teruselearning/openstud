@@ -158,17 +158,26 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
+       // Clear any potentially conflicting local session data
+       localStorage.removeItem('os_token');
+       localStorage.removeItem('os_session');
+       
        const loginResp = await fetch('/api/login', {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ email: 'sarah@wild.org', password: 'password' })
        });
+       
        if (loginResp.ok) {
           const data = await loginResp.json();
           localStorage.setItem('os_token', data.token);
           saveSession(data.user);
           if (data.organization) saveOrg(data.organization, true);
+          
+          // Background sync to ensure all demo data is loaded
           fetchRemoteData().catch(e => console.warn("Background sync failed:", e));
+          
+          // Trigger transition to main app
           onLogin(data.user);
        } else {
           const err = await loginResp.json();
