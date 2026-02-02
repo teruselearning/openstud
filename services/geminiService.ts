@@ -5,10 +5,12 @@ import { checkAndIncrementAiUsage, generatePattern } from "./storage";
 /**
  * OpenStudbook AI Model Configuration
  * ----------------------------------
- * Text/Data: gemini-3-flash-preview (High RPM, Reliable)
- * Images: gemini-2.5-flash-image (High speed)
+ * Logic/Deep Research: gemini-3-flash-preview
+ * High-Speed Tasks (Location): gemini-flash-lite-latest
+ * Images: gemini-2.5-flash-image
  */
 const TEXT_MODEL = 'gemini-3-flash-preview';
+const FAST_MODEL = 'gemini-flash-lite-latest';
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 // Schema for species data
@@ -55,28 +57,20 @@ export const ensureApiKeySelection = async () => {
   }
 };
 
-const getAiClient = (): GoogleGenAI => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey.trim() === "") {
-    throw new Error("Gemini API Key not configured. Please select an API key via the key selection dialog.");
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
 const handleAiError = async (error: any) => {
   console.error("AI Service Error Detail:", error);
   let message = error.message || "An unknown AI error occurred.";
   
   if (message.includes("503") || message.toLowerCase().includes("overloaded") || message.toLowerCase().includes("unavailable")) {
-    throw new Error("The AI model is temporarily overloaded by Google. Please wait about 15 seconds and try again.");
+    throw new Error("The AI model is temporarily overloaded. Please wait about 15 seconds.");
   }
 
   if (message.includes("Requested entity was not found.")) {
-    throw new Error("API Key issue detected. Pro models require an API key from a paid GCP project.");
+    throw new Error("API Key issue detected. Please re-select your API key.");
   }
   
   if (message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
-    throw new Error("Gemini API Quota reached. Try using Wikimedia Search or wait a few minutes.");
+    throw new Error("API Quota reached. Please try again in a few minutes.");
   }
 
   throw error;
@@ -105,18 +99,24 @@ const sanitizeJsonResponse = (text: string): string => {
   return clean;
 };
 
+/**
+ * High Speed Reverse Geocode
+ * Uses the Lite model with zero thinking budget for instant form responses.
+ */
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
   try {
-    const ai = getAiClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: `Identify the location at coordinates Latitude: ${lat}, Longitude: ${lng}. 
-      Return a string in the format: "City, State/Region, Country". 
-      Be precise. Return ONLY the location string, no other text.`,
+      model: FAST_MODEL,
+      contents: `Identify location at: Lat ${lat}, Lng ${lng}. Return ONLY "City, Country".`,
+      config: {
+        thinkingConfig: { thinkingBudget: 0 }
+      }
     });
     return response.text?.trim() || "Unknown Location";
   } catch (error) {
-    return handleAiError(error);
+    console.warn("Fast geocode failed, returning coordinates.");
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   }
 };
 
@@ -147,14 +147,9 @@ export const urlToBase64 = async (url: string): Promise<string | null> => {
   }
 };
 
-/**
- * Enhanced Wikimedia Search
- * Uses a generator search to handle redirects and fuzzy titles.
- */
 export const fetchWikimediaImage = async (query: string): Promise<string | null> => {
   if (!query || query.trim().length < 2) return null;
   try {
-    // Use generator=search to find the best match for the query (common or scientific name)
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&pithumbsize=1000&origin=*`;
     const response = await fetch(searchUrl);
     const data = await response.json();
@@ -174,9 +169,9 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
 export const fetchSpeciesData = async (commonName: string, type: SpeciesType = 'Animal', locationContext: string = ''): Promise<Partial<Species> | null> => {
   try {
     if (!checkAndIncrementAiUsage()) {
-      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
+      throw new Error("INTERNAL_LIMIT: AI usage limit reached.");
     }
-    const ai = getAiClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
@@ -195,14 +190,20 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
   }
 };
 
+/**
+ * Improved Image Generation
+ * Ensures a fresh instance and specific artistic prompt.
+ */
 export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
   try {
     if (!checkAndIncrementAiUsage()) {
-      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
+      throw new Error("INTERNAL_LIMIT: AI usage limit reached.");
     }
     
-    const ai = getAiClient();
-    const prompt = `Highly detailed scientific illustration of a ${commonName} (${scientificName}), ${type.toLowerCase()} species, textbook style, white background, professional biological drawing quality.`;
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Refined prompt to ensure high-quality biological illustration
+    const prompt = `A clean, professional scientific illustration of a ${commonName} (${scientificName}) on a solid white background. High resolution, detailed biology textbook style.`;
+    
     const response = await ai.models.generateContent({
       model: IMAGE_MODEL,
       contents: { parts: [{ text: prompt }] }
@@ -210,13 +211,16 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
 
     if (response.candidates && response.candidates[0]?.content?.parts) {
       for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+        if (part.inlineData) {
+          console.log(`[AI IMAGE] Successfully generated image for ${commonName}`);
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
+    console.warn(`[AI IMAGE] No image data returned for ${commonName}`);
     return null;
   } catch (error: any) {
-    console.warn("AI Image generation failed. Likely Quota. Falling back to pattern.", error.message);
-    // Silent fail to pattern to keep the app usable
+    console.error("AI Image generation failed:", error.message);
     return generatePattern(commonName);
   }
 };
@@ -224,11 +228,11 @@ export const generateSpeciesImage = async (commonName: string, scientificName: s
 export const translateDictionary = async (sourceData: Record<string, string>, targetLanguage: string): Promise<{k: string, v: string}[]> => {
   try {
     if (!checkAndIncrementAiUsage()) {
-      throw new Error("INTERNAL_LIMIT: Organization AI usage limit reached.");
+      throw new Error("INTERNAL_LIMIT: AI usage limit reached.");
     }
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
     if (payload.length === 0) return [];
-    const ai = getAiClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,

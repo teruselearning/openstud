@@ -205,7 +205,8 @@ export const mapOrgToDb = (o: Organization) => ({
   allow_breeding_requests: o.allowBreedingRequests || false, 
   breeding_request_contact_id: o.breedingRequestContactId || null, 
   show_native_status: o.showNativeStatus ?? true, 
-  dashboard_block: o.dashboard_block || null, 
+  // Fixed: Correct property name is dashboardBlock
+  dashboard_block: o.dashboardBlock || null, 
   enable_mfa: o.enableMfa ?? false, 
   enable_enclosures: o.enableEnclosures ?? false, 
   ai_usage_limit: sanitizeNum(o.aiUsageLimit, 100),
@@ -265,7 +266,8 @@ export const mapIndToDb = (i: Individual) => ({
   sire_id: i.sireId || null, 
   dam_id: i.damId || null, 
   image_url: i.imageUrl || null, 
-  dna_sequence: i.dna_sequence || null, 
+  // Fixed: Correct property name is dnaSequence
+  dna_sequence: i.dnaSequence || null, 
   notes: i.notes || null, 
   source: i.source || null, 
   source_details: i.sourceDetails || null, 
@@ -284,7 +286,7 @@ export const mapIndToDb = (i: Individual) => ({
 
 export const mapEnclosureToDb = (e: Enclosure) => ({ 
   id: e.id, 
-  org_id: e.orgId, 
+  org_id: e.org_id, 
   project_id: e.projectId || null, 
   name: e.name || 'Unnamed Enclosure', 
   description: e.description || null, 
