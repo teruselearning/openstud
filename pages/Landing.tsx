@@ -91,6 +91,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
 
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [forgotEmail, setForgotEmail] = useState('');
+  // Added missing useState hook to fix destructuring error on line 94
   const [resetData, setResetData] = useState({ code: '', newPassword: '', confirmPassword: '' });
   const [mfaData, setMfaData] = useState({ code: '', generatedCode: '', pendingUser: null as User | null });
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
@@ -416,6 +417,40 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div className="pt-2 border-t border-slate-100 mt-2"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{t('adminDetails')}</label><div className="space-y-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('yourFullName')}</label><div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('workEmail')}</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('confirmPassword')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div></div></div></div></div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-4"><button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-black transition-colors shadow-lg flex items-center justify-center gap-2" disabled={isLoading}>{isLoading ? <Loader2 size={20} className="animate-spin" /> : <Mail size={20}/>} {t('verifyEmailAndContinue')}</button></div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'register' && regStep === 'verify' && (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left text-center">
+              <button onClick={() => setRegStep('details')} className="text-sm text-slate-400 hover:text-slate-600 mb-6 flex items-center gap-1">← {t('back')}</button>
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                 <Key size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
+              <p className="text-slate-500 mb-8 text-sm">We've sent a 6-digit verification code to <strong>{regData.email}</strong></p>
+              
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2"><Shield size={16} /> {error}</div>}
+              
+              <form onSubmit={handleRegisterFinal} className="space-y-6">
+                <div>
+                  <input 
+                    className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" 
+                    placeholder="000000" 
+                    maxLength={6}
+                    value={regData.code} 
+                    onChange={e => setRegData({...regData, code: e.target.value.replace(/\D/g, '')})} 
+                    required 
+                    autoFocus
+                  />
+                </div>
+                <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2" disabled={isLoading || regData.code.length < 6}>
+                   {isLoading ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20}/>} 
+                   Complete Registration
+                </button>
+                <button type="button" onClick={handleSendRegCode} className="text-sm text-slate-400 font-medium hover:text-emerald-600 transition-colors">Resend Code</button>
               </form>
             </div>
           </div>

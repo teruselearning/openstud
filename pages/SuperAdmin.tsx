@@ -1,4 +1,3 @@
-
 import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
@@ -296,7 +295,6 @@ const SuperAdmin: React.FC = () => {
                                     <div className="flex items-center gap-2 mb-1">
                                        <h3 className="text-lg font-extrabold text-slate-900 truncate">{org.name}</h3>
                                        {org.id === myOrg?.id && <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">{t('hostTag')}</span>}
-                                       {/* Fix: Changed 'Plants' to 'Flora' to match OrganizationFocus type */}
                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${org.focus === 'Flora' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{org.focus}</span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 font-medium">
@@ -499,10 +497,10 @@ const SuperAdmin: React.FC = () => {
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center space-y-4">
                 <div className="w-20 h-20 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mb-2"><Database size={40} /></div>
                 <h3 className="font-extrabold text-xl text-slate-900">{t('cacheManage')}</h3>
-                <p className="text-slate-500 text-sm max-w-xs">{t('cachePurgeDesc')}</p>
+                <p className="text-slate-500 text-sm max-w-xs">Purge the offline local cache. This will force all browsers to re-download the latest data from the backend.</p>
                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 flex gap-3 text-left">
                    <AlertTriangle className="text-amber-600 flex-shrink-0" size={20} />
-                   <p className="text-xs text-amber-800 leading-relaxed">{t('cachePurgeWarning')}</p>
+                   <p className="text-xs text-amber-800 leading-relaxed">Warning: This affects all users. Data currently in sync buffers may be lost if not committed.</p>
                 </div>
                 <button onClick={() => { if(confirm("Force re-sync and clear local data?")) clearLocalCache(); }} className="px-8 py-3 bg-white border-2 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white rounded-xl font-bold transition-all flex items-center gap-2"><RefreshCw size={18}/> {t('clearCacheBtn')}</button>
             </div>
@@ -529,7 +527,7 @@ const SuperAdmin: React.FC = () => {
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
                <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
                   <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
-                  <h3 className="font-extrabold text-lg text-slate-900">{t('landingPage')}</h3>
+                  <h3 className="font-extrabold text-lg text-slate-900">Landing Page Editor</h3>
                </div>
                <div className="space-y-4">
                   <div className="space-y-1 border-b border-slate-50 pb-4">
@@ -550,6 +548,7 @@ const SuperAdmin: React.FC = () => {
 
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('heroTitle')}</label><input className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={settings.landingPageConfig?.heroTitle || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, heroTitle: e.target.value }})} /></div>
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('heroSubtitle')}</label><textarea className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium" rows={3} value={settings.landingPageConfig?.heroSubtitle || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, heroSubtitle: e.target.value }})} /></div>
+                  
                   <div className="space-y-3 pt-4 border-t border-slate-50">
                      <div className="flex justify-between items-center"><h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">{t('featureCards')}</h4><button onClick={handleAddFeature} className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"><Plus size={14}/> {t('add')}</button></div>
                      <div className="space-y-3">
@@ -661,7 +660,7 @@ const SuperAdmin: React.FC = () => {
       {/* Permanently Delete Organization Modal */}
       {orgToDelete && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={48}/></div>
                <h3 className="text-2xl font-black text-slate-900 mb-2">Permanent Removal</h3>
                <p className="text-slate-500 mb-8 leading-relaxed">This action will permanently destroy <strong>{orgToDelete.name}</strong> and all its associated species, individuals, and user accounts. This cannot be undone.</p>

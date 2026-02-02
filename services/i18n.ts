@@ -151,13 +151,21 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       orgSettings: "Organisation Settings",
       orgSettingsSubtitle: "Manage your zoo or sanctuary details.",
       allOrganizations: "All Organisations",
-      createOrgBtn: "Create Organisation"
+      createOrgBtn: "Create Organisation",
+      about: "About",
+      privacyPolicy: "Privacy Policy",
+      termsConditions: "Terms & Conditions"
     }
   },
   {
     code: "en-US",
     name: "English (US)",
     isDefault: false,
-    translations: { ...BASE_TRANSLATIONS }
+    translations: { 
+      ...BASE_TRANSLATIONS,
+      about: "About",
+      privacyPolicy: "Privacy Policy",
+      termsConditions: "Terms & Conditions"
+    }
   }
 ];
