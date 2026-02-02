@@ -1,3 +1,4 @@
+
 import { Organization, Project, User, Species, Individual, BreedingEvent, BreedingLoan, Partnership, SystemSettings, LanguageConfig, Enclosure } from '../types';
 
 const API_BASE_URL = '';
@@ -90,7 +91,6 @@ const fromDbSpecies = (s: any): Species => ({
   commonName: s.common_name, 
   scientificName: s.scientific_name, 
   type: s.type, 
-  // Fixed: Corrected property names to match Species interface
   plantClassification: s.plant_classification, 
   conservationStatus: s.conservation_status, 
   sexualMaturityAgeYears: s.sexual_maturity_age_years, 
@@ -144,7 +144,6 @@ const fromDbEvent = (e: any): BreedingEvent => ({
   sireId: e.sire_id || '', 
   damId: e.dam_id || '', 
   date: e.date, 
-  // Fixed: Corrected property names to match BreedingEvent interface
   offspringCount: e.offspring_count, 
   successfulBirths: e.successful_births, 
   losses: e.losses, 
@@ -179,7 +178,6 @@ const fromDbLanguage = (l: any): LanguageConfig => ({
   name: l.name, 
   translations: safeParse(l.translations, {}), 
   isDefault: !!l.is_default, 
-  // Fixed: Corrected property name to match LanguageConfig interface
   manualOverrides: safeParse(l.manual_overrides, []), 
   deleted: !!l.is_deleted 
 });
@@ -198,7 +196,8 @@ export const mapOrgToDb = (o: Organization) => ({
   longitude: o.longitude ?? null, 
   founded_year: sanitizeNum(o.foundedYear, 2024), 
   description: o.description || null, 
-  focus: o.focus || 'Animals', 
+  // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
+  focus: o.focus || 'Fauna', 
   is_org_public: o.isOrgPublic || false, 
   is_species_public: o.isSpeciesPublic || false, 
   obscure_location: o.obscureLocation || false, 
@@ -206,7 +205,7 @@ export const mapOrgToDb = (o: Organization) => ({
   allow_breeding_requests: o.allowBreedingRequests || false, 
   breeding_request_contact_id: o.breedingRequestContactId || null, 
   show_native_status: o.showNativeStatus ?? true, 
-  dashboard_block: o.dashboardBlock || null, 
+  dashboard_block: o.dashboard_block || null, 
   enable_mfa: o.enableMfa ?? false, 
   enable_enclosures: o.enableEnclosures ?? false, 
   ai_usage_limit: sanitizeNum(o.aiUsageLimit, 100),
@@ -232,7 +231,6 @@ export const mapUserToDb = (u: User) => ({
   password: u.password || null, 
   avatar_url: u.avatarUrl || null, 
   allowed_project_ids: u.allowedProjectIds || [], 
-  // Fixed: Changed u.preferred_language to u.preferredLanguage
   preferred_language: u.preferredLanguage || 'en-GB' 
 });
 
@@ -240,7 +238,6 @@ export const mapSpeciesToDb = (s: Species) => ({
   id: s.id, 
   project_id: s.projectId, 
   common_name: s.commonName || 'Unknown Species', 
-  // Fix: changed s.scientific_name to s.scientificName as per Species interface
   scientific_name: s.scientificName || 'Unknown', 
   type: s.type || 'Animal', 
   plant_classification: s.plantClassification || null, 
@@ -265,11 +262,10 @@ export const mapIndToDb = (i: Individual) => ({
   sex: i.sex || 'Unknown', 
   birth_date: i.birthDate || null, 
   weight_kg: sanitizeNum(i.weightKg), 
-  // Fixed: Corrected property names to match Individual interface (sireId, damId, deathDate, transferDate)
   sire_id: i.sireId || null, 
   dam_id: i.damId || null, 
   image_url: i.imageUrl || null, 
-  dna_sequence: i.dnaSequence || null, 
+  dna_sequence: i.dna_sequence || null, 
   notes: i.notes || null, 
   source: i.source || null, 
   source_details: i.sourceDetails || null, 
@@ -308,13 +304,10 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-// Fixed: Corrected property names in map function (speciesId, sireId, damId, offspringCount, successfulBirths, offspringIds)
 export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
-// Fixed: Corrected property names in map function (partnerOrgId, proposerOrgId, startDate, endDate, individualIds, notificationRecipientId, changeRequest)
 export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
-// Fixed: Corrected property names in map function (orgId1, orgId2, establishedDate)
 export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
 
 export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });

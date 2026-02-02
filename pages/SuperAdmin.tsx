@@ -296,7 +296,8 @@ const SuperAdmin: React.FC = () => {
                                     <div className="flex items-center gap-2 mb-1">
                                        <h3 className="text-lg font-extrabold text-slate-900 truncate">{org.name}</h3>
                                        {org.id === myOrg?.id && <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">{t('hostTag')}</span>}
-                                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${org.focus === 'Plants' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{org.focus}</span>
+                                       {/* Fix: Changed 'Plants' to 'Flora' to match OrganizationFocus type */}
+                                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${org.focus === 'Flora' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{org.focus}</span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 font-medium">
                                        <span className="flex items-center gap-1.5"><MapPin size={14} className="text-slate-400" /> {org.location || 'No Location Set'}</span>

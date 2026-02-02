@@ -16,7 +16,8 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   const { t } = useContext(LanguageContext);
   const location = useLocation();
   const org = getOrg();
-  const isPlantOrg = org.focus === 'Plants';
+  // Fix: Changed 'Plants' to 'Flora' to match OrganizationFocus type
+  const isPlantOrg = org.focus === 'Flora';
   const label = isPlantOrg ? 'Area' : 'Enclosure';
   const labelsPlural = isPlantOrg ? 'Areas' : 'Enclosures';
 

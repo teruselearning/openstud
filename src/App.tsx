@@ -1,3 +1,4 @@
+
 import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -142,7 +143,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
   const org = getOrg();
-  const enclosureLabel = org.focus === 'Plants' ? 'Areas' : 'Enclosures';
+  const enclosureLabel = org.focus === 'Flora' ? 'Areas' : 'Enclosures';
   
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
@@ -311,13 +312,13 @@ const App: React.FC = () => {
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
      const projectSpecies = pid === 'ALL_PROJECTS' ? allSpecies : allSpecies.filter(s => s.projectId === pid);
-     setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     setShowBreeding(org.focus === 'Fauna' || projectSpecies.some(s => s.type === 'Animal'));
      setShowEnclosures(!!org.enableEnclosures);
      const hasMappedPlants = allInds.some(i => (pid === 'ALL_PROJECTS' || i.projectId === pid) && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
      setShowPlantMap(hasMappedPlants);
   };
 
-  const performSync = async () => {
+  const performSync = async (forceSession?: User) => {
      setIsSyncing(true);
      setSyncError(null);
      try {
@@ -352,8 +353,8 @@ const App: React.FC = () => {
               }
            }
            
-           const session = getSession();
-           if (session && session.role === UserRole.ADMIN && (!data.species || data.species.length === 0)) {
+           const activeSession = forceSession || getSession();
+           if (activeSession && activeSession.role === UserRole.ADMIN && (!data.species || data.species.length === 0)) {
               setShowSetupWizard(true);
            }
         }
@@ -361,7 +362,7 @@ const App: React.FC = () => {
   };
 
   const loadData = async (session: User) => {
-    await performSync();
+    await performSync(session);
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
     const isImpersonatingSession = isImpersonating();
@@ -448,7 +449,7 @@ const App: React.FC = () => {
               <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : <PawPrint size={24} />}<span>OpenStudbook</span></div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
-                 <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
+                 <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top.1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
                  <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1"><Menu size={24} /></button>
               </div>
             </header>

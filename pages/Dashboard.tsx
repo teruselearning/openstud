@@ -79,7 +79,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
     setSexRatio(`${males}.${females}.${unknowns}`);
     
     const hasAnimalSpecies = projectSpecies.some(s => s.type === 'Animal');
-    setShowBreedingSection(currentOrg.focus === 'Animals' || hasAnimalSpecies);
+    // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
+    setShowBreedingSection(currentOrg.focus === 'Fauna' || hasAnimalSpecies);
 
     const endangered = projectSpecies.filter(x => x.conservationStatus?.toLowerCase().includes('endangered') || x.conservationStatus?.toLowerCase().includes('critical')).length;
     setEndangeredCount(endangered);

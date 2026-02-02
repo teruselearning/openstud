@@ -1,3 +1,4 @@
+
 import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -140,7 +141,8 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
   const org = getOrg();
-  const enclosureLabel = org.focus === 'Plants' ? 'Areas' : 'Enclosures';
+  // Fix: Changed 'Plants' to 'Flora' to match OrganizationFocus type
+  const enclosureLabel = org.focus === 'Flora' ? 'Areas' : 'Enclosures';
   
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
@@ -309,7 +311,8 @@ const App: React.FC = () => {
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
      const projectSpecies = pid === 'ALL_PROJECTS' ? allSpecies : allSpecies.filter(s => s.projectId === pid);
-     setShowBreeding(org.focus === 'Animals' || projectSpecies.some(s => s.type === 'Animal'));
+     // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
+     setShowBreeding(org.focus === 'Fauna' || projectSpecies.some(s => s.type === 'Animal'));
      setShowEnclosures(!!org.enableEnclosures);
      const hasMappedPlants = allInds.some(i => (pid === 'ALL_PROJECTS' || i.projectId === pid) && i.latitude !== undefined && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
      setShowPlantMap(hasMappedPlants);

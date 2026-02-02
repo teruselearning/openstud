@@ -32,7 +32,7 @@ export interface Project {
   orgId?: string;
 }
 
-export type OrganizationFocus = 'Animals' | 'Plants';
+export type OrganizationFocus = 'Fauna' | 'Flora';
 
 export interface DashboardBlockConfig {
   enabled: boolean;

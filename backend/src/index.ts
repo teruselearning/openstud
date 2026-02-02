@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -74,8 +75,8 @@ const initDatabase = async () => {
         const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
         if (orgs.length === 0) {
             console.log('[DATABASE] Seeding multiple organizations...');
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Animals', 1, 1, 0, 1)`);
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-2', 'Oceanic Research Lab', 'Queensland, AU', 'Animals', 1, 1, 0)`);
+            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Fauna', 1, 1, 0, 1)`);
+            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-2', 'Oceanic Research Lab', 'Queensland, AU', 'Fauna', 1, 1, 0)`);
             
             const hashed = await bcrypt.hash('password', 10);
             await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Super Admin', 'Active', ?)`, [hashed]);
@@ -245,7 +246,7 @@ app.post('/api/register', async (req: any, res: any) => {
             await conn.beginTransaction();
             await conn.execute(
                 `INSERT INTO organizations (id, name, location, focus, is_org_public, latitude, longitude, obscure_location) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`,
-                [orgId, orgName, location || '', focus || 'Animals', latitude || null, longitude || null]
+                [orgId, orgName, location || '', focus || 'Fauna', latitude || null, longitude || null]
             );
             await conn.execute(
                 `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,

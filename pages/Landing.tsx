@@ -1,5 +1,6 @@
+
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
@@ -84,7 +85,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
   };
 
   const [regData, setRegData] = useState({ 
-    orgName: '', userName: '', email: '', focus: 'Animals' as OrganizationFocus,
+    orgName: '', userName: '', email: '', focus: 'Fauna' as OrganizationFocus,
     password: '', confirmPassword: '', latitude: undefined as number | undefined,
     longitude: undefined as number | undefined, location: '', code: ''
   });
@@ -122,37 +123,42 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     };
   }, [viewMode, regStep, settings.recaptchaSiteKey]);
 
-  useEffect(() => {
-    if (viewMode === 'register' && navigator.geolocation && locationStatus === 'idle') {
-      setLocationStatus('detecting');
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          // Set coordinates first as a reliable default instead of leaving it empty
-          const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-          setRegData(prev => ({ ...prev, latitude, longitude, location: coordString }));
-          
-          try {
-            // Attempt reverse geocode
-            const resolvedLocation = await reverseGeocode(latitude, longitude);
-            // If the AI gives us a real city name, use it. Otherwise stay with the coordinates.
-            if (resolvedLocation && resolvedLocation !== "Unknown Location" && !resolvedLocation.includes(",")) {
-              setRegData(prev => ({ ...prev, location: resolvedLocation }));
-            } else if (resolvedLocation && resolvedLocation !== "Unknown Location") {
-              // It's a full string like "City, Country", also good
-              setRegData(prev => ({ ...prev, location: resolvedLocation }));
-            }
-            setLocationStatus('ready');
-          } catch (err) { 
-            // Fallback is already set to coordinates
-            setLocationStatus('ready'); 
-          }
-        },
-        () => setLocationStatus('idle'),
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+       setError("Geolocation is not supported by your browser.");
+       return;
     }
-  }, [viewMode, locationStatus]);
+    setLocationStatus('detecting');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        setRegData(prev => ({ ...prev, latitude, longitude, location: coordString }));
+        
+        try {
+          const resolvedLocation = await reverseGeocode(latitude, longitude);
+          if (resolvedLocation && resolvedLocation !== "Unknown Location") {
+            setRegData(prev => ({ ...prev, location: resolvedLocation }));
+          }
+          setLocationStatus('ready');
+        } catch (err) { 
+          setLocationStatus('ready'); 
+        }
+      },
+      (err) => {
+        setLocationStatus('idle');
+        setError("Location access denied. Please type your city manually.");
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  // Initial detection when switching to register view
+  useEffect(() => {
+    if (viewMode === 'register' && locationStatus === 'idle') {
+      detectLocation();
+    }
+  }, [viewMode]);
 
   const handleDemoLogin = async () => {
     setIsLoading(true);
@@ -427,9 +433,9 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <form onSubmit={handleSendRegCode} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('orgName')}</label><div className="relative"><Building2 size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. Island Sanctuary" value={regData.orgName} onChange={e => setRegData({...regData, orgName: e.target.value})} required /></div></div>
-                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Org Focus</label><select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}><option value="Animals">Animals</option><option value="Plants">Plants</option></select></div>
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Focus</label><select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}><option value="Fauna">Fauna</option><option value="Flora">Flora</option></select></div>
                 </div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">City / Location</label><div className="relative"><MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. London, UK" value={regData.location} onChange={e => setRegData({...regData, location: e.target.value})} required />{locationStatus === 'detecting' && <div className="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={16} className="animate-spin text-emerald-600"/></div>}</div></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">City / Location</label><div className="relative group"><MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-12 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. London, UK" value={regData.location} onChange={e => setRegData({...regData, location: e.target.value})} required /><button type="button" onClick={detectLocation} title="Detect My Location" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-slate-100 rounded-md transition-all text-emerald-600">{locationStatus === 'detecting' ? <Loader2 size={18} className="animate-spin"/> : <Crosshair size={18}/>}</button></div>{locationStatus === 'detecting' && <p className="mt-1 text-[10px] text-emerald-600 font-bold animate-pulse uppercase tracking-widest">Resolving physical location...</p>}</div>
                 <div className="pt-2 border-t border-slate-100 mt-2"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Admin Account Details</label><div className="space-y-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Your Full Name</label><div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Work Email</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div></div></div></div></div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-4"><button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg flex items-center justify-center gap-2" disabled={isLoading}>{isLoading ? <Loader2 size={20} className="animate-spin" /> : <Mail size={20}/>} Verify Email & Continue</button></div>

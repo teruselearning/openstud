@@ -1,3 +1,4 @@
+
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
@@ -180,14 +181,16 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
    const partners = getNetworkPartners();
    const partner = explicitOrg || partners.find(p => p.id === partnerId);
    if (partner) {
-      set(KEYS.ORG, { ...partner, foundedYear: partner.foundedYear || 2000, description: partner.description || '', focus: partner.focus || 'Animals' });
+      // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
+      set(KEYS.ORG, { ...partner, foundedYear: partner.foundedYear || 2000, description: partner.description || '', focus: partner.focus || 'Fauna' });
       return true;
    }
    return false;
 };
 
 export const getOrg = (): Organization => {
-  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Animals', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false, aiUsageLimit: 1000 };
+  // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
+  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Fauna', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false, aiUsageLimit: 1000 };
   return get(KEYS.ORG, defaultOrg);
 };
 
