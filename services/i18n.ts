@@ -33,6 +33,9 @@ export const BASE_TRANSLATIONS = {
     registerOrg: "Register Organization",
     orgName: "Organization Name",
     orgFocus: "Focus",
+    orgFocusExplanation: "Selecting a focus presets settings like Kingdoms, sex terminology, and specific tracking modules for your organization.",
+    faunaManagement: "Fauna Management",
+    floraManagement: "Flora Management",
     cityLocation: "City / Location",
     adminDetails: "Admin Account Details",
     yourFullName: "Your Full Name",
@@ -131,7 +134,25 @@ export const BASE_TRANSLATIONS = {
     registration: "User Registration",
     mfa: "Two-Factor Auth",
     invite: "Team Invitation",
-    notification: "System Alerts"
+    notification: "System Alerts",
+
+    // Team Manager
+    teamMembers: "Team Members",
+    teamSubtitle: "Manage your team's access and permissions.",
+    bulkInvite: "Bulk Invite",
+    inviteMember: "Invite Member",
+    csvFormatTitle: "CSV Format",
+    csvFormatDesc: "Download our template to ensure your CSV is formatted correctly.",
+    processingBulk: "Processing bulk invitations...",
+    selectSpecies: "Select Species",
+    saveEvent: "Save Event",
+    breedingSubtitle: "Track and manage breeding pairs and outcomes.",
+    recordBreedingEvent: "Record Event",
+    newBreedingLoan: "New Loan",
+    breedingEvents: "Events",
+    breedingLoans: "Loans",
+    viewTitle: "Filter View",
+    includePartnerOrgs: "Include Partner Events"
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;

@@ -131,13 +131,15 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-        setRegData(prev => ({ ...prev, latitude, longitude, location: coordString }));
+        // Keep coords in state but resolve name immediately for UI
+        setRegData(prev => ({ ...prev, latitude, longitude }));
         
         try {
           const resolvedLocation = await reverseGeocode(latitude, longitude);
           if (resolvedLocation && resolvedLocation !== "Unknown Location") {
             setRegData(prev => ({ ...prev, location: resolvedLocation }));
+          } else {
+            setRegData(prev => ({ ...prev, location: `${latitude.toFixed(2)}, ${longitude.toFixed(2)}` }));
           }
           setLocationStatus('ready');
         } catch (err) { 
@@ -162,7 +164,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
-       // Standardized Demo Login - fix for 401
        localStorage.removeItem('os_token');
        localStorage.removeItem('os_session');
        
@@ -416,7 +417,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         )}
 
         {viewMode === 'register' && regStep === 'details' && (
-          <div className="w-full max-w-lg animate-in fade-in zoom-in duration-300">
+          <div className="w-full max-w-lg animate-in fade-in zoom-in duration-300 text-left">
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
               <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
               
@@ -434,10 +435,63 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <form onSubmit={handleSendRegCode} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('orgName')}</label><div className="relative"><Building2 size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. Island Sanctuary" value={regData.orgName} onChange={e => setRegData({...regData, orgName: e.target.value})} required /></div></div>
-                  <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('orgFocus')}</label><select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}><option value="Fauna">{t('animal')}</option><option value="Flora">{t('plant')}</option></select></div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">{t('orgFocus')}</label>
+                    <select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}>
+                      <option value="Fauna">{t('faunaManagement')}</option>
+                      <option value="Flora">{t('floraManagement')}</option>
+                    </select>
+                  </div>
                 </div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('cityLocation')}</label><div className="relative group"><MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-12 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. London, UK" value={regData.location} onChange={e => setRegData({...regData, location: e.target.value})} required /><button type="button" onClick={detectLocation} title="Detect My Location" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-slate-100 rounded-md transition-all text-emerald-600">{locationStatus === 'detecting' ? <Loader2 size={18} className="animate-spin"/> : <Crosshair size={18}/>}</button></div>{locationStatus === 'detecting' && <p className="mt-1 text-[10px] text-emerald-600 font-bold animate-pulse uppercase tracking-widest">Resolving physical location...</p>}</div>
-                <div className="pt-2 border-t border-slate-100 mt-2"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{t('adminDetails')}</label><div className="space-y-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('yourFullName')}</label><div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('workEmail')}</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('confirmPassword')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div></div></div></div></div>
+                
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic">
+                    <Info size={12} className="inline mr-1 text-emerald-600" />
+                    {t('orgFocusExplanation')}
+                  </p>
+                </div>
+
+                <div>
+                   <label className="block text-sm font-medium text-slate-700 mb-1">{t('cityLocation')}</label>
+                   <div className="relative group">
+                      <MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+                      <input 
+                        className="w-full pl-10 pr-12 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" 
+                        placeholder="Detecting city..." 
+                        value={regData.location} 
+                        onChange={e => setRegData({...regData, location: e.target.value})} 
+                        required 
+                      />
+                      <button type="button" onClick={detectLocation} title="Detect My Location" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-slate-100 rounded-md transition-all text-emerald-600">
+                        {locationStatus === 'detecting' ? <Loader2 size={18} className="animate-spin"/> : <Crosshair size={18}/>}
+                      </button>
+                   </div>
+                   {locationStatus === 'detecting' && <p className="mt-1 text-[10px] text-emerald-600 font-bold animate-pulse uppercase tracking-widest">Resolving physical location...</p>}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 mt-2">
+                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{t('adminDetails')}</label>
+                   <div className="space-y-4">
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('yourFullName')}</label>
+                         <div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div>
+                      </div>
+                      <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('workEmail')}</label>
+                         <div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
+                            <div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div>
+                         </div>
+                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">{t('confirmPassword')}</label>
+                            <div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div>
+                         </div>
+                      </div>
+                   </div>
+                </div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-4"><button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-black transition-colors shadow-lg flex items-center justify-center gap-2" disabled={isLoading}>{isLoading ? <Loader2 size={20} className="animate-spin" /> : <Mail size={20}/>} {t('verifyEmailAndContinue')}</button></div>
               </form>

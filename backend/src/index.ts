@@ -269,7 +269,6 @@ app.post('/api/register', async (req: any, res: any) => {
                 `INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'General Collection', 'Default project created during registration.')`,
                 [projectId, orgId]
             );
-            await conn.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
             await conn.commit();
         } catch (err) {
             await conn.rollback();
