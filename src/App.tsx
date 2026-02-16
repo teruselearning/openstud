@@ -279,7 +279,6 @@ const App: React.FC = () => {
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type });
   const refreshTranslations = () => setLanguages(getLanguages());
   
-  // Refined t function with better fallback logic
   const t = (key: TranslationKey): string => {
     const activeLang = languages.find(l => l.code === currentLangCode);
     if (activeLang && activeLang.translations && activeLang.translations[key]) {
@@ -354,14 +353,18 @@ const App: React.FC = () => {
            }
            
            const activeSession = forceSession || getSession();
-           const isAdmin = activeSession?.role === UserRole.ADMIN || (activeSession?.role as string) === 'Admin';
+           // More robust role check handling string values from SQL
+           const roleStr = activeSession?.role?.toString().toLowerCase() || '';
+           const isOrgAdmin = roleStr.includes('admin');
            
-           // Correctly detect empty collections for setup wizard
            const speciesCount = (data.species || []).filter((s: any) => s.projectId && pjs.some(pj => pj.id === s.projectId)).length;
            const indivCount = (data.individuals || []).filter((i: any) => i.projectId && pjs.some(pj => pj.id === i.projectId)).length;
 
-           if (activeSession && isAdmin && speciesCount === 0 && indivCount === 0) {
+           // Trigger wizard only once for brand-new empty organizations
+           const hasShown = localStorage.getItem('os_wizard_shown');
+           if (activeSession && isOrgAdmin && speciesCount === 0 && indivCount === 0 && !hasShown) {
               setShowSetupWizard(true);
+              localStorage.setItem('os_wizard_shown', 'true');
            }
         }
      } catch (e: any) { setSyncError(e.message); } finally { setIsSyncing(false); }
@@ -401,7 +404,12 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (u: User) => loadData(u);
-  const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
+  const handleLogout = () => { 
+     logout(); 
+     setUser(null); 
+     setImpersonating(false); 
+     localStorage.removeItem('os_wizard_shown'); // Clear for potential re-onboarding if database resets
+  };
 
   const handleCreateProject = () => {
     if (!newProjectName) return;

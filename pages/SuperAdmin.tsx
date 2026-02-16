@@ -249,6 +249,8 @@ const SuperAdmin: React.FC = () => {
      return { projectCount: orgProjects.length, speciesCount: orgSpecies.length, indCount: orgInds.length };
   };
 
+  const isRegEnabled = settings.enableRegistration !== false;
+
   return (
     <div className="space-y-8 pb-12">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -276,7 +278,9 @@ const SuperAdmin: React.FC = () => {
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input type="text" placeholder={overviewSubTab === 'organizations' ? t('searchName') : "Search species catalog..."} className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-200 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                </div>
-               <button className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all whitespace-nowrap"><Plus size={18}/> {t('createOrgBtn')}</button>
+               {isRegEnabled && (
+                  <button className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all whitespace-nowrap"><Plus size={18}/> {t('createOrgBtn')}</button>
+               )}
             </div>
 
             {overviewSubTab === 'organizations' && (
@@ -525,9 +529,15 @@ const SuperAdmin: React.FC = () => {
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-               <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
-                  <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
-                  <h3 className="font-extrabold text-lg text-slate-900">Landing Page Editor</h3>
+               <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+                  <div className="flex items-center gap-3">
+                     <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
+                     <h3 className="font-extrabold text-lg text-slate-900">Landing Page Editor</h3>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isRegEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                     {isRegEnabled ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
+                     Reg: {isRegEnabled ? 'Enabled' : 'Disabled'}
+                  </div>
                </div>
                <div className="space-y-4">
                   <div className="space-y-1 border-b border-slate-50 pb-4">

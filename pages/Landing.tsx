@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair, Sprout, Globe2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
@@ -162,13 +162,13 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
+       // Standardized Demo Login - fix for 401
        localStorage.removeItem('os_token');
        localStorage.removeItem('os_session');
        
-       const loginResp = await fetch('/api/login', {
+       const loginResp = await fetch('/api/demo-login', {
          method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ email: 'sarah@wild.org', password: 'password' })
+         headers: { 'Content-Type': 'application/json' }
        });
        
        if (loginResp.ok) {
@@ -176,7 +176,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           localStorage.setItem('os_token', data.token);
           saveSession(data.user);
           if (data.organization) saveOrg(data.organization, true);
-          fetchRemoteData().catch(e => console.warn("Background sync failed:", e));
           onLogin(data.user);
        } else {
           const err = await loginResp.json();

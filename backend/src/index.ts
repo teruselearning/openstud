@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -57,7 +56,6 @@ const initDatabase = async () => {
 
         const db = getDb();
         
-        // --- Table Definitions ---
         await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
@@ -71,7 +69,6 @@ const initDatabase = async () => {
         await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
         await db.execute(`CREATE TABLE IF NOT EXISTS verification_codes (email VARCHAR(255) PRIMARY KEY, code VARCHAR(10) NOT NULL, expires_at BIGINT NOT NULL)`);
         
-        // --- Seed Data Logic ---
         const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
         if (orgs.length === 0) {
             console.log('[DATABASE] Seeding multiple organizations...');
@@ -102,8 +99,6 @@ const initDatabase = async () => {
         console.error("[DATABASE] Initialization Error:", e.message);
     }
 };
-
-// --- Mail Utilities ---
 
 const wrapEmailHtml = (content: string) => `
 <!DOCTYPE html>
@@ -197,6 +192,24 @@ app.get('/api/config', async (req: any, res: any) => {
         let settings = configRows[0]?.settings || {};
         if (typeof settings === 'string') settings = JSON.parse(settings);
         res.json({ success: true, data: { settings, languages: langRows } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/demo-login', async (req: any, res: any) => {
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = 'sarah@wild.org'`);
+        const user = rows[0];
+        if (!user) return res.status(404).json({ error: "Demo user not found. Database might be initializing." });
+        
+        const token = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
+        
+        res.json({ 
+            success: true, token, 
+            user: { ...user, orgId: user.org_id, avatarUrl: user.avatar_url, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : (user.allowed_project_ids || []) }, 
+            organization: orgRows[0] 
+        });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -368,8 +381,6 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
-
-// --- REST v1 Generic Handlers (For Sync Persistence) ---
 
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
