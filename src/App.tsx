@@ -236,7 +236,6 @@ const App: React.FC = () => {
   const [profileForm, setProfileForm] = useState({ name: '', email: '', avatarUrl: '', newPassword: '', confirmPassword: '' });
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
-  const [showSetupWizard, setShowSetupWizard] = useState(false);
 
   const handleProjectChange = (id: string) => { 
     setCurrentProjectIdState(id); 
@@ -353,18 +352,15 @@ const App: React.FC = () => {
            }
            
            const activeSession = forceSession || getSession();
-           // More robust role check handling string values from SQL
            const roleStr = activeSession?.role?.toString().toLowerCase() || '';
            const isOrgAdmin = roleStr.includes('admin');
            
-           const speciesCount = (data.species || []).filter((s: any) => s.projectId && pjs.some(pj => pj.id === s.projectId)).length;
-           const indivCount = (data.individuals || []).filter((i: any) => i.projectId && pjs.some(pj => pj.id === i.projectId)).length;
+           const speciesCount = (data.species || []).length;
+           const indivCount = (data.individuals || []).length;
 
-           // Trigger wizard only once for brand-new empty organizations
-           const hasShown = localStorage.getItem('os_wizard_shown');
-           if (activeSession && isOrgAdmin && speciesCount === 0 && indivCount === 0 && !hasShown) {
-              setShowSetupWizard(true);
-              localStorage.setItem('os_wizard_shown', 'true');
+           // If new organization admin, force redirect to settings for initial configuration
+           if (activeSession && isOrgAdmin && speciesCount === 0 && indivCount === 0 && window.location.hash !== '#/settings' && window.location.hash !== '#/super-admin') {
+              window.location.hash = '/settings';
            }
         }
      } catch (e: any) { setSyncError(e.message); } finally { setIsSyncing(false); }
@@ -408,7 +404,7 @@ const App: React.FC = () => {
      logout(); 
      setUser(null); 
      setImpersonating(false); 
-     localStorage.removeItem('os_wizard_shown'); // Clear for potential re-onboarding if database resets
+     localStorage.removeItem('os_onboarding_prompted');
   };
 
   const handleCreateProject = () => {
@@ -486,7 +482,6 @@ const App: React.FC = () => {
             </div>
           </main>
         </div>
-        {showSetupWizard && <SetupWizard onClose={() => setShowSetupWizard(false)} />}
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         {showAddProjectModal && isAdmin && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
         {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UsersIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly /></div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3"><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} /><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} /></div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}

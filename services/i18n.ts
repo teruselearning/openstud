@@ -152,7 +152,14 @@ export const BASE_TRANSLATIONS = {
     breedingEvents: "Events",
     breedingLoans: "Loans",
     viewTitle: "Filter View",
-    includePartnerOrgs: "Include Partner Events"
+    includePartnerOrgs: "Include Partner Events",
+
+    // Onboarding
+    onboardingWelcome: "Welcome to OpenStudbook",
+    onboardingSettingsTask: "Please review your organization settings below and click 'Save Changes' to continue.",
+    onboardingSaveAndNext: "Save & Continue to Species",
+    onboardingSpeciesTask: "Great! Now add your first species to start building your collection.",
+    onboardingIndivTask: "Finally, register individual specimens to track their growth and history."
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
