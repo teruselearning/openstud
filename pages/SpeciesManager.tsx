@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
-import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen } from 'lucide-react';
+import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 interface SpeciesManagerProps {
@@ -11,6 +12,7 @@ interface SpeciesManagerProps {
 
 const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => {
   const { t } = useContext(LanguageContext);
+  const location = useLocation();
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
@@ -28,6 +30,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const [bulkTotal, setBulkTotal] = useState(0);
   const [bulkStatus, setBulkStatus] = useState('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Species>>({
     commonName: '',
@@ -52,10 +56,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     const projs = getProjects();
     setAllProjects(projs);
 
+    if (location.state?.onboarding) {
+       setShowOnboarding(true);
+       window.history.replaceState({}, document.title);
+    }
+
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
-  }, [currentProjectId, editingId]);
+  }, [currentProjectId, editingId, location.state]);
 
   const handleAutoFill = async () => {
     if (!formData.commonName && !formData.scientificName) return;
@@ -74,17 +83,14 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         }));
       }
 
-      // 1. Try Wikimedia with Scientific Name first (most reliable)
       setImageStatus('WIKIMEDIA (LATIN)...');
       let finalImageUrl = await fetchWikimediaImage(data?.scientificName || formData.scientificName || '');
       
-      // 2. Try Wikimedia with Common Name
       if (!finalImageUrl) {
         setImageStatus('WIKIMEDIA (COMMON)...');
         finalImageUrl = await fetchWikimediaImage(data?.commonName || formData.commonName || lookupName);
       }
       
-      // 3. Fallback to Gemini AI if both Wikimedia attempts fail
       if (!finalImageUrl) {
         setImageStatus('GEMINI AI DRAWING...');
         finalImageUrl = await generateSpeciesImage(lookupName, data?.scientificName || '', (data?.type || formData.type) as SpeciesType);
@@ -154,89 +160,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     handleCloseForm();
   };
 
-  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId);
-    if (!targetProjectId) {
-      alert("Please select a specific project in the navigator before uploading.");
-      return;
-    }
-
-    setIsProcessingBulk(true);
-    setBulkStatus('Reading file...');
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n').filter(l => l.trim().length > 0);
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s_]/g, ''));
-      const rows = lines.slice(1);
-      setBulkTotal(rows.length);
-      setBulkProgress(0);
-
-      const newSpecies: Species[] = [];
-      const currentList = getSpecies();
-      
-      for (let i = 0; i < rows.length; i++) {
-        const values = rows[i].split(',').map(v => v.trim());
-        const data: any = {};
-        headers.forEach((h, idx) => { data[h] = values[idx]; });
-
-        const commonName = data.commonname || data.name;
-        const scientificName = data.scientificname;
-        const primaryIdentifier = commonName || scientificName;
-        if (!primaryIdentifier) continue;
-
-        setBulkStatus(`Researching: ${primaryIdentifier}`);
-        setBulkProgress(i + 1);
-
-        let kingdom: SpeciesType = 'Animal';
-        const rawKingdom = (data.kingdom || data.type || '').toLowerCase();
-        if (rawKingdom.includes('flora') || rawKingdom.includes('plant')) kingdom = 'Plant';
-
-        try {
-          const aiData = await fetchSpeciesData(primaryIdentifier, kingdom, org?.location || '');
-          
-          // Better Bulk Image Resolve
-          let finalImageUrl = await fetchWikimediaImage(aiData?.scientificName || scientificName || '');
-          if (!finalImageUrl) finalImageUrl = await fetchWikimediaImage(primaryIdentifier);
-          if (!finalImageUrl) {
-            finalImageUrl = await generateSpeciesImage(primaryIdentifier, aiData?.scientificName || '', kingdom);
-          }
-
-          const speciesEntry: Species = {
-            id: `sp-${Date.now()}-${i}`,
-            projectId: targetProjectId,
-            commonName: commonName || aiData?.commonName || scientificName || 'Unknown Species',
-            scientificName: scientificName || aiData?.scientificName || commonName || 'Unknown',
-            type: kingdom,
-            plantClassification: (aiData?.plantClassification as PlantClassification) || data.plantclassification,
-            conservationStatus: aiData?.conservationStatus || data.conservationstatus || 'Unknown',
-            sexualMaturityAgeYears: Number(aiData?.sexualMaturityAgeYears || data.sexualmaturity || 0),
-            averageAdultWeightKg: Number(aiData?.averageAdultWeightKg || data.weight || 0),
-            lifeExpectancyYears: Number(aiData?.lifeExpectancyYears || data.lifeexpectancy || 0),
-            breedingSeasonStart: aiData?.breedingSeasonStart || 1,
-            breedingSeasonEnd: aiData?.breedingSeasonEnd || 12,
-            imageUrl: finalImageUrl || generatePattern(primaryIdentifier),
-            nativeStatusCountry: (aiData?.nativeStatusCountry as any) || 'Unknown',
-            nativeStatusLocal: (aiData?.nativeStatusLocal as any) || 'Unknown'
-          };
-          newSpecies.push(speciesEntry);
-        } catch (err) {
-          console.error(`Failed to enrich ${primaryIdentifier}`, err);
-        }
-      }
-      const updated = [...currentList, ...newSpecies];
-      saveSpecies(updated);
-      setAllSpecies(updated);
-      setIsProcessingBulk(false);
-      setShowBulkModal(false);
-    };
-    reader.readAsText(file);
-  };
-
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const filteredSpecies = allSpecies.filter(sp => 
     (isAll || sp.projectId === currentProjectId) && 
@@ -261,7 +184,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <input type="text" placeholder={t('searchSpecies')} className="w-full md:w-64 pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm outline-none focus:ring-2 focus:ring-emerald-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
-          <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold border border-slate-300 shadow-sm transition-all"><FileUp size={18} className="text-emerald-600" /><span>Bulk</span></button>
           <button onClick={() => setShowForm(true)} className="flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all"><Plus size={18} /><span>{t('add')}</span></button>
         </div>
       </div>
@@ -300,15 +222,6 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} /></div>
                           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} /></div>
-                          {isAll && allProjects.length > 1 && (
-                            <div className="space-y-1">
-                              <label className="text-xs font-bold text-slate-500 uppercase">Project Assignment</label>
-                              <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.projectId} onChange={e => setFormData({...formData, projectId: e.target.value})} required>
-                                <option value="">Select Project...</option>
-                                {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                              </select>
-                            </div>
-                          )}
                           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as SpeciesType, plantClassification: e.target.value === 'Plant' ? 'Monoecious' : undefined})}><option value="Animal">{t('animal')}</option><option value="Plant">{t('plant')}</option></select></div>
                           <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('conservationStatus')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.conservationStatus} onChange={e => setFormData({...formData, conservationStatus: e.target.value})} placeholder="e.g. Critically Endangered" /></div>
                        </div>
@@ -336,6 +249,23 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
         </div>
       )}
 
+      {showOnboarding && (
+        <div className="fixed inset-0 z-[5000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
+             <div className="p-8 text-center flex flex-col items-center">
+               <div className="mb-6 p-6 bg-emerald-50 rounded-full">
+                  <Dna className="text-emerald-500" size={48} />
+               </div>
+               <h3 className="text-2xl font-black text-slate-900 mb-3">{t('species')}</h3>
+               <p className="text-slate-500 mb-8 leading-relaxed px-4">{t('onboardingSpeciesTask')}</p>
+               <button onClick={() => setShowOnboarding(false)} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 flex items-center justify-center gap-2">
+                 Start Adding <ArrowRight size={20} />
+               </button>
+             </div>
+           </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedSpecies.map(species => (
           <div key={species.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full">
@@ -344,18 +274,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             </div>
             <div className="h-52 bg-slate-200 relative overflow-hidden">
                <img src={species.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
-               <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || t('unknownStatus')}</div>
+               <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || 'Unknown'}</div>
                <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
             </div>
             <div className="p-5 flex-1 flex flex-col">
               <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
               <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>
-              {allProjects.length > 1 && (
-                <div className="mb-4 text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1.5"><FolderOpen size={12}/> {allProjects.find(p => p.id === species.projectId)?.name || 'Unknown Project'}</div>
-              )}
               <div className="grid grid-cols-2 gap-3 mt-auto">
-                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} {t('years')}</span></div>
-                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} {t('years')}</span></div>
+                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} years</span></div>
+                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} years</span></div>
               </div>
             </div>
           </div>

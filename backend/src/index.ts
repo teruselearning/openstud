@@ -157,16 +157,20 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
             processedHtml = processedHtml.replace(regex, val);
         });
 
+        // Consistent FROM header using SMTP user
+        const fromAddress = settings.smtpFrom || settings.smtpUser;
+
         await transporter.sendMail({
-            from: `"OpenStudbook" <${settings.smtpUser}>`,
+            from: `"OpenStudbook" <${fromAddress}>`,
             to,
             subject: processedSubject,
             html: wrapEmailHtml(processedHtml)
         });
         
+        console.log(`[MAIL] Email successfully sent to ${to}`);
         return true;
     } catch (e) {
-        console.error("[MAIL] Error:", e);
+        console.error("[MAIL] Error sending email:", e);
         throw e;
     }
 };

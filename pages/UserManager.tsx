@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext } from 'react';
 import { getUsers, getProjects, inviteUser, deleteUser, getSession, saveUsers, getLanguages } from '../services/storage';
 import { User, UserRole, UserStatus, Project, LanguageConfig } from '../types';
@@ -178,11 +177,11 @@ const UserManager: React.FC = () => {
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button onClick={() => setShowRoleKey(!showRoleKey)} className="flex items-center justify-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-200 shadow-sm">
             <Info size={16} />
-            <span>Role Key</span>
+            <span className="hidden sm:inline">Role Key</span>
           </button>
           <button onClick={() => setShowBulkModal(true)} className="flex items-center justify-center space-x-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold border border-slate-300 shadow-sm transition-all">
             <Upload size={16} className="text-emerald-600" />
-            <span>{t('bulkInvite')}</span>
+            <span className="hidden sm:inline">{t('bulkInvite')}</span>
           </button>
           <button onClick={() => setShowForm(true)} className="flex-1 sm:flex-none flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
             <Plus size={16} />
@@ -191,7 +190,8 @@ const UserManager: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+      {/* Desktop Table View */}
+      <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <table className="w-full text-left">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
@@ -248,6 +248,57 @@ const UserManager: React.FC = () => {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-4">
+        {users.map(user => (
+          <div key={user.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                  {user.avatarUrl ? <img src={user.avatarUrl} alt={user.name} className="w-full h-full rounded-full object-cover" /> : <UserIcon size={24} />}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900 truncate">{user.name}</p>
+                  <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                </div>
+              </div>
+              {user.id !== currentUser?.id && (
+                <button onClick={() => setUserToDelete(user)} className="p-2 text-slate-400 hover:text-red-600 transition-colors">
+                  <Trash2 size={20} />
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Role</p>
+                <span className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
+                  <Shield size={14} className="text-slate-400" />
+                  {user.role}
+                </span>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${user.status === UserStatus.ACTIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {user.status === UserStatus.ACTIVE ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                  {user.status}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Access Scope</p>
+                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                   {user.role === UserRole.ADMIN || (user.role as string) === 'Super Admin' || !user.allowedProjectIds || user.allowedProjectIds.length === 0 ? (
+                     <span className="flex items-center gap-1 text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-tight"><Eye size={12}/> Global Access</span>
+                   ) : (
+                     <span className="flex items-center gap-1 font-bold text-slate-600"><Briefcase size={12} className="text-slate-400"/> {user.allowedProjectIds?.length || 0} Restricted Projects</span>
+                   )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Bulk Invite Modal */}

@@ -33,7 +33,7 @@ export const BASE_TRANSLATIONS = {
     registerOrg: "Register Organization",
     orgName: "Organization Name",
     orgFocus: "Focus",
-    orgFocusExplanation: "Selecting a focus presets settings like Kingdoms, sex terminology, and specific tracking modules for your organization.",
+    orgFocusExplanation: "Selecting the focus will pre-enable features most relevant to your organisation. You still have access to everything via organisation settings.",
     faunaManagement: "Fauna Management",
     floraManagement: "Flora Management",
     cityLocation: "City / Location",
@@ -90,7 +90,9 @@ export const BASE_TRANSLATIONS = {
     saveChanges: "Save Changes",
     saved: "Saved!",
     
-    // Forms
+    // Forms & Species
+    speciesDatabase: "Species Database",
+    speciesSubtitle: "Catalog and manage the biological profiles of your collection.",
     commonName: "Common Name",
     commonNamePlaceholder: "e.g. Red Panda",
     scientificName: "Scientific Name",
@@ -109,6 +111,24 @@ export const BASE_TRANSLATIONS = {
     searchSpecies: "Search Species...",
     searchIndividuals: "Search Specimens...",
 
+    // Specimens / Individuals
+    indivSubtitleAnimal: "Track and manage the specific specimens in your care.",
+    updateIndividual: "Update Individual",
+    registerIndividual: "Register Individual",
+    representativeImage: "Representative Image",
+    upload: "Upload",
+    noImageProvided: "No image provided",
+    saveSpecies: "Save Species",
+    updateSpecies: "Update Species",
+    lifespan: "Lifespan",
+    maturity: "Maturity",
+    noSpeciesFound: "No species found",
+    adultWeight: "Adult Weight",
+    classification: "Classification",
+    monoecious: "Monoecious",
+    dioecious: "Dioecious",
+    maturityFlowering: "Maturity / Flowering",
+
     // Super Admin & System
     saSubtitle: "Global system management and oversight.",
     security: "Security",
@@ -121,12 +141,37 @@ export const BASE_TRANSLATIONS = {
     loginAs: "Login As",
     hostTag: "Host",
     smtpTestSuccess: "SMTP test sent successfully!",
+    smtpSettings: "SMTP Settings",
+    smtpHost: "SMTP Host",
+    port: "Port",
+    username: "Username",
+    secureConnection: "Secure Connection (SSL/TLS)",
+    saveSettings: "Save Settings",
+    securitySettings: "Security Settings",
+    enableMfa: "Enable Two-Factor Auth",
+    enableOrgMfa: "Force Org Two-Factor Auth",
+    enableOrgMfaDesc: "Require all members of this organization to use MFA.",
+    theming: "Theming",
+    primaryColor: "Primary Color",
+    appLogo: "App Logo",
+    uploadLogo: "Upload Logo",
+    customCss: "Custom CSS",
+    enableRegistration: "Enable Registration",
+    featureCards: "Feature Cards",
+    addLanguage: "Add Language",
+    supportedLanguages: "Supported Languages",
+    heroTitle: "Hero Title",
+    heroSubtitle: "Hero Subtitle",
+    staticPages: "Static Pages",
+    clearCacheBtn: "Purge Local Data",
+    allOrganizations: "All Organizations",
+    searchName: "Search by name...",
     
     // Email templates
     emailVerifySubject: "Verify your email",
     emailVerifyBody: "<p>Your verification code is: <b>{{code}}</b></p>",
     emailInviteSubject: "Invitation to join {{orgName}}",
-    emailInviteBody: "<p>Hello {{userName}},</p><p>You have been invited to join <b>{{orgName}}</b>.</p><p><a href='{{inviteUrl}}'>Click here to accept the invitation</a></p>",
+    emailInviteBody: "<p>Hello {{userName}},</p><p>You have been invited to join the management team at <b>{{orgName}}</b>.</p><p>Please click the link below to confirm your account and set your password:</p><p><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background-color:#059669;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Confirm Account</a></p><p>If the button doesn't work, copy and paste this URL: {{inviteUrl}}</p>",
     emailNotifySubject: "System Notification",
     emailNotifyBody: "<p>Hello,</p><p>{{message}}</p>",
 
@@ -159,7 +204,26 @@ export const BASE_TRANSLATIONS = {
     onboardingSettingsTask: "Please review your organization settings below and click 'Save Changes' to continue.",
     onboardingSaveAndNext: "Save & Continue to Species",
     onboardingSpeciesTask: "Great! Now add your first species to start building your collection.",
-    onboardingIndivTask: "Finally, register individual specimens to track their growth and history."
+    onboardingIndivTask: "Finally, register individual specimens to track their growth and history.",
+
+    // Enclosures
+    enablePage: "Enable Feature",
+    dashBlockTitle: "Dashboard Message Title",
+    dashBlockContent: "Dashboard Message Content",
+    customDashBlock: "Custom Dashboard Announcement",
+    customDashBlockDesc: "Create a custom announcement block that appears on the top of the dashboard for all users.",
+    visibilityPrivacy: "Visibility & Privacy",
+    breedingLoanPolicy: "Breeding & Loan Policy",
+    allowBreedingRequests: "Allow Network Requests",
+    allowBreedingRequestsDesc: "Allow partner organizations to propose breeding loans via the network map.",
+    whoReceivesRequests: "Request Contact",
+    whoReceivesRequestsDesc: "Which user should be notified when a loan request is received?",
+    orgVisibility: "List in Directory",
+    orgVisibilityDesc: "Make your organization visible on the global network map.",
+    obscureLocation: "Obscure Map Location",
+    obscureLocationDesc: "Round your map coordinates to prevent precise site tracking by non-partners.",
+    speciesListVisibility: "Public Species List",
+    speciesListVisibilityDesc: "Allow anyone on the network to see which species you manage."
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
