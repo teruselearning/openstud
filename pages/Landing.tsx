@@ -48,21 +48,25 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash.includes('accept-invite')) {
+         // Robust parsing for /#/accept-invite?token=XYZ
          const queryString = hash.split('?')[1];
-         const params = new URLSearchParams(queryString);
-         const token = params.get('token');
-         if (token) {
-            setInviteToken(token);
-            handleCheckInvite(token);
+         if (queryString) {
+            const params = new URLSearchParams(queryString);
+            const token = params.get('token');
+            if (token) {
+               setInviteToken(token);
+               handleCheckInvite(token);
+               return;
+            }
          }
-      } else {
-         if (viewMode === 'accept_invite') setViewMode('landing');
       }
+      // Reset if not in invite mode and was previously
+      if (viewMode === 'accept_invite') setViewMode('landing');
     };
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [initialView]);
+  }, []);
   
   const handleCheckInvite = async (token: string) => {
      setIsLoading(true);
@@ -131,9 +135,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        // Keep coords in state but resolve name immediately for UI
         setRegData(prev => ({ ...prev, latitude, longitude }));
-        
         try {
           const resolvedLocation = await reverseGeocode(latitude, longitude);
           if (resolvedLocation && resolvedLocation !== "Unknown Location") {
@@ -154,24 +156,16 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     );
   };
 
-  useEffect(() => {
-    if (viewMode === 'register' && locationStatus === 'idle') {
-      detectLocation();
-    }
-  }, [viewMode]);
-
   const handleDemoLogin = async () => {
     setIsLoading(true);
     setError(null);
     try {
        localStorage.removeItem('os_token');
        localStorage.removeItem('os_session');
-       
        const loginResp = await fetch('/api/demo-login', {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' }
        });
-       
        if (loginResp.ok) {
           const data = await loginResp.json();
           localStorage.setItem('os_token', data.token);
@@ -184,8 +178,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           setIsLoading(false);
        }
     } catch (e: any) { 
-        console.error("Demo login error:", e);
-        setError("Failed to connect to backend. Ensure API server is online."); 
+        setError("Failed to connect to backend."); 
         setIsLoading(false); 
     }
   };
@@ -195,7 +188,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
-    
     try {
         const response = await fetch('/api/login', {
           method: 'POST',
@@ -204,7 +196,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
         });
         const data = await response.json();
         if (!response.ok) { setError(data.error || "Invalid credentials."); setIsLoading(false); return; }
-
         localStorage.setItem('os_token', data.token);
         const isMfaRequired = settings.enableMfa || data.organization?.enableMfa;
         if (isMfaRequired && !isMfaTrustedDevice(data.user.id)) {
@@ -218,7 +209,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             if (data.organization) saveOrg(data.organization, true);
             onLogin(data.user);
         }
-    } catch (err: any) { setError("Network error. Ensure the backend is running."); setIsLoading(false); }
+    } catch (err: any) { setError("Network error."); setIsLoading(false); }
   };
 
   const handleSendRegCode = async (e: React.FormEvent) => {
@@ -228,19 +219,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     if (!isRegistrationEnabled) { setError("Registration disabled."); setIsLoading(false); return; }
     if (settings.recaptchaSiteKey && !recaptchaToken) { setError("Please verify reCAPTCHA."); setIsLoading(false); return; }
     if (regData.password !== regData.confirmPassword) { setError("Passwords do not match."); setIsLoading(false); return; }
-
     try {
       const response = await fetch('/api/register/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: regData.email.toLowerCase().trim(),
-          orgName: regData.orgName
-        })
+        body: JSON.stringify({ email: regData.email.toLowerCase().trim(), orgName: regData.orgName })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to send verification code");
-
       setRegStep('verify');
     } catch(e: any) { setError(e.message); }
     finally { setIsLoading(false); }
@@ -250,7 +236,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    
     try {
       const response = await fetch('/api/register', {
         method: 'POST',
@@ -259,7 +244,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Registration failed");
-
       localStorage.setItem('os_token', data.token);
       saveSession(data.user);
       if (data.organization) saveOrg(data.organization, true);
@@ -337,8 +321,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       ? landingConfig.heroSubtitle 
       : t('landingSubtitle');
 
-  const registrationBanner = landingConfig?.registrationBanner || 'Important note: This is where you set up a new organisation. If your facility already has an account, you must ask the org admin to invite you';
-
   return (
     <div className="min-h-screen bg-white flex flex-col relative">
       {isLoading && (
@@ -373,8 +355,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
               </div>
             </div>
-
-            {/* Feature Tiles */}
             {landingConfig?.showFeatures !== false && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
                 {featuresToRender.map(feature => (
@@ -388,8 +368,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 ))}
               </div>
             )}
-
-            {/* Custom Content HTML Section */}
             {landingConfig?.customContentHtml && (
               <div className="prose prose-slate max-w-none text-left py-8 border-t border-slate-100" dangerouslySetInnerHTML={{ __html: landingConfig.customContentHtml }} />
             )}
@@ -416,82 +394,42 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           </div>
         )}
 
+        {viewMode === 'accept_invite' && inviteData && (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome to {inviteData.orgName}</h2>
+              <p className="text-slate-500 mb-6 text-sm">Hello {inviteData.name}, please set a password to activate your account for <strong>{inviteData.email}</strong>.</p>
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
+              <form onSubmit={handleAcceptInviteSubmit} className="space-y-4">
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><input type="password" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div>
+                <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors" disabled={isLoading}>Activate Account</button></div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {viewMode === 'register' && regStep === 'details' && (
           <div className="w-full max-w-lg animate-in fade-in zoom-in duration-300 text-left">
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
               <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
-              
-              <div className="mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3">
-                 <Info size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-                 <p className="text-xs text-indigo-700 leading-relaxed font-medium">
-                    {registrationBanner}
-                 </p>
-              </div>
-
+              {settings.landingPageConfig?.registrationBanner && (
+                <div className="mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3">
+                   <Info size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                   <p className="text-xs text-indigo-700 leading-relaxed font-medium">{settings.landingPageConfig.registrationBanner}</p>
+                </div>
+              )}
               <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('registerOrg')}</h2>
               <p className="text-slate-500 mb-6 text-sm">Create a new managed environment for your collection.</p>
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
-              
               <form onSubmit={handleSendRegCode} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('orgName')}</label><div className="relative"><Building2 size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="e.g. Island Sanctuary" value={regData.orgName} onChange={e => setRegData({...regData, orgName: e.target.value})} required /></div></div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">{t('orgFocus')}</label>
-                    <select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}>
-                      <option value="Fauna">{t('faunaManagement')}</option>
-                      <option value="Flora">{t('floraManagement')}</option>
-                    </select>
-                  </div>
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('orgFocus')}</label><select className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 font-bold" value={regData.focus} onChange={e => setRegData({...regData, focus: e.target.value as OrganizationFocus})}><option value="Fauna">{t('faunaManagement')}</option><option value="Flora">{t('floraManagement')}</option></select></div>
                 </div>
-                
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic">
-                    <Info size={12} className="inline mr-1 text-emerald-600" />
-                    {t('orgFocusExplanation')}
-                  </p>
-                </div>
-
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">{t('cityLocation')}</label>
-                   <div className="relative group">
-                      <MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-                      <input 
-                        className="w-full pl-10 pr-12 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" 
-                        placeholder="Detecting city..." 
-                        value={regData.location} 
-                        onChange={e => setRegData({...regData, location: e.target.value})} 
-                        required 
-                      />
-                      <button type="button" onClick={detectLocation} title="Detect My Location" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-slate-100 rounded-md transition-all text-emerald-600">
-                        {locationStatus === 'detecting' ? <Loader2 size={18} className="animate-spin"/> : <Crosshair size={18}/>}
-                      </button>
-                   </div>
-                   {locationStatus === 'detecting' && <p className="mt-1 text-[10px] text-emerald-600 font-bold animate-pulse uppercase tracking-widest">Resolving physical location...</p>}
-                </div>
-
-                <div className="pt-2 border-t border-slate-100 mt-2">
-                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{t('adminDetails')}</label>
-                   <div className="space-y-4">
-                      <div>
-                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('yourFullName')}</label>
-                         <div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div>
-                      </div>
-                      <div>
-                         <label className="block text-sm font-medium text-slate-700 mb-1">{t('workEmail')}</label>
-                         <div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label>
-                            <div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div>
-                         </div>
-                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">{t('confirmPassword')}</label>
-                            <div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div>
-                         </div>
-                      </div>
-                   </div>
-                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-[10px] text-slate-500 font-medium leading-relaxed italic"><Info size={12} className="inline mr-1 text-emerald-600" />{t('orgFocusExplanation')}</p></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('cityLocation')}</label><div className="relative group"><MapPin size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-12 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Detecting city..." value={regData.location} onChange={e => setRegData({...regData, location: e.target.value})} required /><button type="button" onClick={detectLocation} title="Detect My Location" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-slate-100 rounded-md transition-all text-emerald-600">{locationStatus === 'detecting' ? <Loader2 size={18} className="animate-spin"/> : <Crosshair size={18}/>}</button></div>{locationStatus === 'detecting' && <p className="mt-1 text-[10px] text-emerald-600 font-bold animate-pulse uppercase tracking-widest">Resolving physical location...</p>}</div>
+                <div className="pt-2 border-t border-slate-100 mt-2"><label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{t('adminDetails')}</label><div className="space-y-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('yourFullName')}</label><div className="relative"><UserIcon size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="John Doe" value={regData.userName} onChange={e => setRegData({...regData, userName: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('workEmail')}</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="admin@organisation.org" value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} required /></div></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('password')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} required /></div></div><div><label className="block text-sm font-medium text-slate-700 mb-1">{t('confirmPassword')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" value={regData.confirmPassword} onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required /></div></div></div></div></div>
                 {settings.recaptchaSiteKey && <div className="flex justify-center my-2 min-h-[78px]"><div ref={recaptchaRef}></div></div>}
                 <div className="pt-4"><button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-black transition-colors shadow-lg flex items-center justify-center gap-2" disabled={isLoading}>{isLoading ? <Loader2 size={20} className="animate-spin" /> : <Mail size={20}/>} {t('verifyEmailAndContinue')}</button></div>
               </form>
@@ -501,32 +439,15 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
 
         {viewMode === 'register' && regStep === 'verify' && (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
-            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left text-center">
+            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-center">
               <button onClick={() => setRegStep('details')} className="text-sm text-slate-400 hover:text-slate-600 mb-6 flex items-center gap-1">← {t('back')}</button>
-              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                 <Key size={32} />
-              </div>
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><Key size={32} /></div>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
               <p className="text-slate-500 mb-8 text-sm">We've sent a 6-digit verification code to <strong>{regData.email}</strong></p>
-              
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2"><Shield size={16} /> {error}</div>}
-              
               <form onSubmit={handleRegisterFinal} className="space-y-6">
-                <div>
-                  <input 
-                    className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" 
-                    placeholder="000000" 
-                    maxLength={6}
-                    value={regData.code} 
-                    onChange={e => setRegData({...regData, code: e.target.value.replace(/\D/g, '')})} 
-                    required 
-                    autoFocus
-                  />
-                </div>
-                <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2" disabled={isLoading || regData.code.length < 6}>
-                   {isLoading ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20}/>} 
-                   Complete Registration
-                </button>
+                <div><input className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" placeholder="000000" maxLength={6} value={regData.code} onChange={e => setRegData({...regData, code: e.target.value.replace(/\D/g, '')})} required autoFocus /></div>
+                <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2" disabled={isLoading || regData.code.length < 6}>{isLoading ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20}/>} Complete Registration</button>
                 <button type="button" onClick={handleSendRegCode} className="text-sm text-slate-400 font-medium hover:text-emerald-600 transition-colors">Resend Code</button>
               </form>
             </div>
@@ -535,14 +456,11 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
 
         {['about', 'privacy', 'terms'].includes(viewMode) && (
            <div className="w-full max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-300 text-left bg-white p-8 md:p-12 rounded-2xl shadow-xl border border-slate-100 overflow-y-auto max-h-[70vh]">
-              <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-6 flex items-center gap-1">← {t('backToLanding')}</button>
+              <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('backToLanding')}</button>
               {(() => {
                 const pageConfig = viewMode === 'about' ? settings.aboutPage : viewMode === 'privacy' ? settings.privacyPage : settings.termsPage;
                 return (
-                   <div className="prose prose-slate max-w-none">
-                      <h1 className="text-3xl font-extrabold text-slate-900 mb-6">{pageConfig?.title || 'System Information'}</h1>
-                      <div dangerouslySetInnerHTML={{ __html: pageConfig?.contentHtml || '<p>No content available.</p>' }} />
-                   </div>
+                   <div className="prose prose-slate max-w-none"><h1 className="text-3xl font-extrabold text-slate-900 mb-6">{pageConfig?.title || 'System Information'}</h1><div dangerouslySetInnerHTML={{ __html: pageConfig?.contentHtml || '<p>No content available.</p>' }} /></div>
                 );
               })()}
            </div>

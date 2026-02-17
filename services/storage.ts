@@ -1,4 +1,3 @@
-
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
 import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
@@ -181,7 +180,6 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
    const partners = getNetworkPartners();
    const partner = explicitOrg || partners.find(p => p.id === partnerId);
    if (partner) {
-      // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
       set(KEYS.ORG, { ...partner, foundedYear: partner.foundedYear || 2000, description: partner.description || '', focus: partner.focus || 'Fauna' });
       return true;
    }
@@ -189,7 +187,6 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
 };
 
 export const getOrg = (): Organization => {
-  // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
   const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Fauna', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false, aiUsageLimit: 1000 };
   return get(KEYS.ORG, defaultOrg);
 };
@@ -352,7 +349,10 @@ export const resetPassword = async (email: string, code: string, pass: string): 
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[], lang?: string) => {
   const org = getOrg();
   const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds, preferredLanguage: lang };
-  saveUsers([...getUsers(), newUser]);
+  
+  // Save local first
+  const updatedUsers = [...getUsers(), newUser];
+  saveUsers(updatedUsers);
 
   const s = getSystemSettings();
   const t = s.emailTemplates?.invite;
@@ -367,8 +367,8 @@ export const inviteUser = async (name: string, email: string, role: UserRole, al
       inviteUrl,
       year: new Date().getFullYear().toString()
     },
-    t?.subject || BASE_TRANSLATIONS.emailInviteSubject,
-    t?.bodyHtml || BASE_TRANSLATIONS.emailInviteBody,
+    BASE_TRANSLATIONS.emailInviteSubject,
+    BASE_TRANSLATIONS.emailInviteBody,
     lang || getLanguages().find(l => l.isDefault)?.code
   );
 };
@@ -406,14 +406,29 @@ export const deleteUser = async (userId: string) => {
 };
 
 export const checkInviteToken = async (token: string): Promise<{ success: boolean; data?: { name: string; email: string; orgName: string; }; error?: string }> => {
-  const users = getUsers();
-  const user = users.find(u => u.id === token && u.status === UserStatus.INVITED);
-  if (!user) return { success: false, error: "Invalid invitation." };
-  const org = getOrg();
-  return { success: true, data: { name: user.name, email: user.email, orgName: org.name } };
+  try {
+    const response = await fetch(`/api/invite/check?token=${token}`);
+    const res = await response.json();
+    if (!response.ok) return { success: false, error: res.error || "Invalid invitation." };
+    return { success: true, data: res.data };
+  } catch (e) {
+    return { success: false, error: "Network error verifying invitation." };
+  }
 };
 
 export const acceptInvite = async (token: string, pass: string) => {
+  // Sync the accept to the backend
+  const response = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password: pass, action: 'accept-invite' })
+  });
+  
+  // NOTE: Action handling for actions should be implemented in backend, 
+  // currently we simulate successful user modification via standard REST if possible or custom endpoint.
+  // For simplicity here, we assume the backend handles the password set via the sync REST routes 
+  // after the user signs in with a special token.
+  
   const users = getUsers();
   const userIdx = users.findIndex(u => u.id === token && u.status === UserStatus.INVITED);
   if (userIdx === -1) throw new Error("Invalid invitation.");

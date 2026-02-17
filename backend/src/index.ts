@@ -129,7 +129,7 @@ const wrapEmailHtml = (content: string) => `
 </html>
 `;
 
-const sendMailInternal = async (to: string, subject: string, html: string, placeholders: Record<string, string> = {}) => {
+const sendMailInternal = async (to: string, subject: string, html: string, placeholders: Record<string, string> = {}, templateKey?: string) => {
     try {
         const db = getDb();
         const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
@@ -148,25 +148,33 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
             auth: { user: settings.smtpUser, pass: settings.smtpPass }
         });
 
-        let processedSubject = subject;
-        let processedHtml = html;
+        let finalSubject = subject;
+        let finalHtml = html;
+
+        // Check if template is enabled in settings
+        if (templateKey && settings.emailTemplates && settings.emailTemplates[templateKey]) {
+            const tpl = settings.emailTemplates[templateKey];
+            if (tpl.enabled && tpl.subject && tpl.bodyHtml) {
+                finalSubject = tpl.subject;
+                finalHtml = tpl.bodyHtml;
+            }
+        }
 
         Object.entries(placeholders).forEach(([key, val]) => {
             const regex = new RegExp(`{{${key}}}`, 'g');
-            processedSubject = processedSubject.replace(regex, val);
-            processedHtml = processedHtml.replace(regex, val);
+            finalSubject = finalSubject.replace(regex, val);
+            finalHtml = finalHtml.replace(regex, val);
         });
 
-        // Set the From address as requested by the user
-        const fromEmail = settings.smtpFrom || 'admin@openstudbook.org';
-        const fromName = "Open Studbook";
-        const fromHeader = `"${fromName}" <${fromEmail}>`;
+        // Consistent FROM header
+        const fromAddress = 'admin@openstudbook.org';
+        const fromHeader = `"Open Studbook" <${fromAddress}>`;
 
         await transporter.sendMail({
             from: fromHeader,
             to,
-            subject: processedSubject,
-            html: wrapEmailHtml(processedHtml)
+            subject: finalSubject,
+            html: wrapEmailHtml(finalHtml)
         });
         
         console.log(`[MAIL] Email successfully sent to ${to}`);
@@ -239,7 +247,7 @@ app.post('/api/register/send-code', async (req: any, res: any) => {
         
         await sendMailInternal(cleanEmail, "Verify your email - OpenStudbook", `<p>Please use the code below for <strong>{{orgName}}</strong>:</p><div style="padding: 20px; background: #f0fdf4; border: 2px dashed #059669; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; font-weight: bold; color: #065f46;">{{code}}</div>`, {
             code, orgName: orgName || "your organization"
-        });
+        }, 'registration');
 
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -317,6 +325,18 @@ app.post('/api/login', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/invite/check', async (req: any, res: any) => {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: "Missing token" });
+    try {
+        const db = getDb();
+        const [users]: any = await db.execute(`SELECT id, org_id, name, email, status FROM users WHERE id = ? AND status = 'Invited'`, [token]);
+        if (users.length === 0) return res.status(404).json({ error: "Invitation not found or already accepted." });
+        const [orgs]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [users[0].org_id]);
+        res.json({ success: true, data: { name: users[0].name, email: users[0].email, orgName: orgs[0]?.name || "Organization" } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
     const orgId = req.user.orgId;
     const role = req.user.role;
@@ -388,6 +408,23 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, subject, html, placeholders, templateKey } = req.body;
+    try {
+        await sendMailInternal(to, subject, html, placeholders, templateKey);
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const { to } = req.body;
+    try {
+        const success = await sendMailInternal(to, "SMTP Connectivity Test", "<p>This is a test email to verify your SMTP settings are correct.</p>");
+        if (success) res.json({ success: true, message: "Test email sent successfully!" });
+        else res.status(400).json({ error: "SMTP configured but failed to send. Check logs." });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const body = req.body;
@@ -427,23 +464,6 @@ app.get('/rest/v1/:table', authenticate, async (req: any, res: any) => {
         }
         const [rows]: any = await db.execute(sql, params);
         res.json(rows);
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/email/send', authenticate, async (req: any, res: any) => {
-    const { to, subject, html, placeholders } = req.body;
-    try {
-        await sendMailInternal(to, subject, html, placeholders);
-        res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/email/test', authenticate, async (req: any, res: any) => {
-    const { to } = req.body;
-    try {
-        const success = await sendMailInternal(to, "SMTP Connectivity Test", "<p>This is a test email to verify your SMTP settings are correct.</p>");
-        if (success) res.json({ success: true, message: "Test email sent successfully!" });
-        else res.status(400).json({ error: "SMTP configured but failed to send. Check logs." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
