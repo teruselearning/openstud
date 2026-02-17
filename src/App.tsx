@@ -436,9 +436,9 @@ const App: React.FC = () => {
   };
 
   if (isLoading) return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center bg-slate-50 z-[10000]">
-      <Loader2 size={48} className="text-emerald-600 animate-spin mb-4" />
-      <span className="text-slate-800 font-bold uppercase tracking-widest text-sm">Initializing Studbook...</span>
+    <div id="boot-loader">
+      <div className="spinner"></div>
+      <div className="loader-text">Loading OpenStudbook...</div>
     </div>
   );
   

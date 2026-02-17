@@ -1,9 +1,8 @@
-
 import React, { useEffect, useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, getUsers, getOrg, getProjects } from '../services/storage';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import { Users, AlertTriangle, Leaf, Activity, Heart, ArrowRight, Dna, Info, FolderOpen, Megaphone, Settings, Layers } from 'lucide-react';
+import { Users, Leaf, Activity, Heart, ArrowRight, Dna, Info, FolderOpen, Megaphone, Settings, Layers } from 'lucide-react';
 import { Species, Individual, Sex, Project, Organization } from '../types';
 import { LanguageContext } from '../App';
 
@@ -40,12 +39,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
   const [speciesCount, setSpeciesCount] = useState(0);
   const [indivCount, setIndivCount] = useState(0);
   const [userCount, setUserCount] = useState(0);
-  const [endangeredCount, setEndangeredCount] = useState(0);
   const [sexRatio, setSexRatio] = useState("0.0.0");
   const [speciesData, setSpeciesData] = useState<any[]>([]);
   const [originData, setOriginData] = useState<any[]>([]);
   const [ageData, setAgeData] = useState<any[]>([]);
-  const [consStatusData, setConsStatusData] = useState<any[]>([]);
   const [recommendations, setRecommendations] = useState<BreedingRecommendation[]>([]);
   const [showBreedingSection, setShowBreedingSection] = useState(true);
   const [org, setOrg] = useState<Organization | null>(null);
@@ -79,14 +76,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
     setSexRatio(`${males}.${females}.${unknowns}`);
     
     const hasAnimalSpecies = projectSpecies.some(s => s.type === 'Animal');
-    // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
     setShowBreedingSection(currentOrg.focus === 'Fauna' || hasAnimalSpecies);
-
-    const endangered = projectSpecies.filter(x => x.conservationStatus?.toLowerCase().includes('endangered') || x.conservationStatus?.toLowerCase().includes('critical')).length;
-    setEndangeredCount(endangered);
-    
-    const safeCount = projectSpecies.length - endangered;
-    setConsStatusData(projectSpecies.length > 0 ? [{ name: 'Endangered', value: endangered }, { name: 'Least Concern', value: safeCount }].filter(d => d.value > 0) : []);
 
     // Population Stats
     const spPopMap: Record<string, number> = {};
@@ -171,10 +161,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
          </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard title={t('totalSpecies')} value={speciesCount} icon={Leaf} color="bg-emerald-500" />
         <StatCard title={t('totalIndividuals')} value={indivCount} subValue={`Ratio: ${sexRatio} (M.F.U)`} icon={Activity} color="bg-blue-500" />
-        <StatCard title={t('endangeredSpecies')} value={endangeredCount} icon={AlertTriangle} color="bg-amber-500" />
         <StatCard title={t('activeUsers')} value={userCount} icon={Users} color="bg-indigo-500" />
       </div>
 
@@ -218,20 +207,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {speciesData.length > 0 && (
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-             <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('popDist')}</h3>
-             <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={speciesData}><XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} /><YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
-           </div>
-        )}
-        {consStatusData.length > 0 && (
-           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-             <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('consStatus')}</h3>
-             <div className="h-64 flex justify-center items-center"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={consStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} fill="#8884d8" paddingAngle={5} dataKey="value"><Cell fill="#ef4444" /><Cell fill="#10b981" /></Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div>
-           </div>
-        )}
-      </div>
+      {speciesData.length > 0 && (
+         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+           <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('popDist')}</h3>
+           <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={speciesData}><XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} /><YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
+         </div>
+      )}
     </div>
   );
 };
