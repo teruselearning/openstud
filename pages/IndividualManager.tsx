@@ -306,6 +306,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                          <textarea className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Add any relevant history or specific traits..." />
                       </div>
 
+                      {/* Image section moved to the bottom */}
                       <div className="pt-6 border-t border-slate-100 space-y-4">
                          <h4 className="font-bold text-slate-800 flex items-center gap-2"><ImageIcon size={18} className="text-purple-500"/> Representative Media</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">

@@ -207,6 +207,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                           <div className="space-y-2">
                             <label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label>
                             <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} />
+                            {/* Autofill button now under common name */}
                             <button type="button" onClick={handleAutoFill} disabled={loadingAI || (!formData.commonName && !formData.scientificName)} className="w-full justify-center text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">
                                 {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile
                             </button>
@@ -229,6 +230,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
                        </div>
                     </div>
 
+                    {/* Image section moved to the bottom */}
                     <div className="space-y-4 pt-6 border-t border-slate-100">
                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><ImageIcon size={18} className="text-purple-500"/> Representative Media</h4>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">

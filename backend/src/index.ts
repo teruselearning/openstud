@@ -157,11 +157,13 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
             processedHtml = processedHtml.replace(regex, val);
         });
 
-        // Consistent FROM header using SMTP user
-        const fromAddress = settings.smtpFrom || settings.smtpUser;
+        // Set the From address as requested by the user
+        const fromEmail = settings.smtpFrom || 'admin@openstudbook.org';
+        const fromName = "Open Studbook";
+        const fromHeader = `"${fromName}" <${fromEmail}>`;
 
         await transporter.sendMail({
-            from: `"OpenStudbook" <${fromAddress}>`,
+            from: fromHeader,
             to,
             subject: processedSubject,
             html: wrapEmailHtml(processedHtml)
@@ -433,6 +435,15 @@ app.post('/api/email/send', authenticate, async (req: any, res: any) => {
     try {
         await sendMailInternal(to, subject, html, placeholders);
         res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/test', authenticate, async (req: any, res: any) => {
+    const { to } = req.body;
+    try {
+        const success = await sendMailInternal(to, "SMTP Connectivity Test", "<p>This is a test email to verify your SMTP settings are correct.</p>");
+        if (success) res.json({ success: true, message: "Test email sent successfully!" });
+        else res.status(400).json({ error: "SMTP configured but failed to send. Check logs." });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
