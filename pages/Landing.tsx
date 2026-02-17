@@ -48,7 +48,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash.includes('accept-invite')) {
-         // Robust parsing for /#/accept-invite?token=XYZ
          const queryString = hash.split('?')[1];
          if (queryString) {
             const params = new URLSearchParams(queryString);
@@ -60,7 +59,6 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
             }
          }
       }
-      // Reset if not in invite mode and was previously
       if (viewMode === 'accept_invite') setViewMode('landing');
     };
     handleHashChange();
@@ -257,10 +255,12 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setIsLoading(true);
     setError(null);
     try {
-       await acceptInvite(inviteToken, invitePassword.password);
-       setSuccess("Your account is now active! You can sign in below.");
-       setLoginData({ ...loginData, email: inviteData?.email || '' });
-       setViewMode('login');
+       const res = await acceptInvite(inviteToken, invitePassword.password);
+       if (res.success && res.user) {
+          onLogin(res.user);
+       } else {
+          setError(res.error || "Activation failed.");
+       }
     } catch (e: any) {
        setError(e.message);
     } finally {
@@ -401,8 +401,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <p className="text-slate-500 mb-6 text-sm">Hello {inviteData.name}, please set a password to activate your account for <strong>{inviteData.email}</strong>.</p>
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2"><Shield size={16} /> {error}</div>}
               <form onSubmit={handleAcceptInviteSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><input type="password" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">New Password</label><input type="password" name="new-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={invitePassword.password} onChange={e => setInvitePassword({...invitePassword, password: e.target.value})} required /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label><input type="password" name="confirm-password" placeholder="••••••••" className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={invitePassword.confirm} onChange={e => setInvitePassword({...invitePassword, confirm: e.target.value})} required /></div>
                 <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors" disabled={isLoading}>Activate Account</button></div>
               </form>
             </div>

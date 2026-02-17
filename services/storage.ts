@@ -350,12 +350,10 @@ export const inviteUser = async (name: string, email: string, role: UserRole, al
   const org = getOrg();
   const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds, preferredLanguage: lang };
   
-  // Save local first
-  const updatedUsers = [...getUsers(), newUser];
-  saveUsers(updatedUsers);
+  // Create user in backend first via standard REST
+  await syncPushUsers([newUser]);
 
   const s = getSystemSettings();
-  const t = s.emailTemplates?.invite;
   const inviteUrl = `${window.location.origin}/#/accept-invite?token=${newUser.id}`;
   
   await sendSystemEmail(
@@ -416,27 +414,24 @@ export const checkInviteToken = async (token: string): Promise<{ success: boolea
   }
 };
 
-export const acceptInvite = async (token: string, pass: string) => {
-  // Sync the accept to the backend
-  const response = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, password: pass, action: 'accept-invite' })
-  });
-  
-  // NOTE: Action handling for actions should be implemented in backend, 
-  // currently we simulate successful user modification via standard REST if possible or custom endpoint.
-  // For simplicity here, we assume the backend handles the password set via the sync REST routes 
-  // after the user signs in with a special token.
-  
-  const users = getUsers();
-  const userIdx = users.findIndex(u => u.id === token && u.status === UserStatus.INVITED);
-  if (userIdx === -1) throw new Error("Invalid invitation.");
-  const updatedUser = { ...users[userIdx], status: UserStatus.ACTIVE, password: pass };
-  const updatedList = [...users];
-  updatedList[userIdx] = updatedUser;
-  saveUsers(updatedList);
-  return { user: updatedUser };
+export const acceptInvite = async (token: string, pass: string): Promise<{ success: boolean; user?: User; organization?: Organization; token?: string; error?: string }> => {
+  try {
+    const response = await fetch('/api/invite/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: pass })
+    });
+    const res = await response.json();
+    if (!response.ok) return { success: false, error: res.error || "Failed to activate account." };
+    
+    localStorage.setItem(KEYS.TOKEN, res.token);
+    saveSession(res.user);
+    if (res.organization) saveOrg(res.organization, true);
+    
+    return { success: true, user: res.user, organization: res.organization, token: res.token };
+  } catch (e) {
+    return { success: false, error: "Network error activating account." };
+  }
 };
 
 export const importFullData = (data: any) => { if (data.org) saveOrg(data.org); if (data.projects) saveProjects(data.projects); if (data.users) saveUsers(data.users); if (data.species) saveSpecies(data.species); if (data.individuals) saveIndividuals(data.individuals); if (data.enclosures) saveEnclosures(data.enclosures); if (data.breedingEvents) saveBreedingEvents(data.breedingEvents); if (data.breedingLoans) saveBreedingLoans(data.breedingLoans); if (data.partnerships) savePartnerships(data.partnerships); if (data.settings) saveSystemSettings(data.settings); if (data.languages) saveLanguages(data.languages); };

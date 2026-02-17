@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64 } from '../services/geminiService';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
-import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen, Weight, Scale, Ruler, Trash, Camera, ImageIcon, Info, Crosshair } from 'lucide-react';
+import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, Trash2, MapPin, Users, LayoutGrid, List, Map as MapIcon, Maximize2, ArrowRight, ArrowLeft, RefreshCw, Sprout, Loader2, FileUp, FileSpreadsheet, Sparkles, Download, CheckCircle, CheckSquare, Square, Eye, EyeOff, Box, ChevronDown, Save, User as UserIcon, FolderOpen, Weight, Scale, Ruler, Trash, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2 } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -34,22 +34,13 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
   const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
-  const speciesDropdownRef = useRef<HTMLDivElement>(null);
+  const [addLocation, setAddLocation] = useState(false);
 
   const formMapRef = useRef<HTMLDivElement>(null);
   const formMapInstance = useRef<any>(null);
   const formMarker = useRef<any>(null);
-
-  const [showNewSpeciesForm, setShowNewSpeciesForm] = useState(false);
-  const [newSpeciesData, setNewSpeciesData] = useState<Partial<Species>>({
-    commonName: '',
-    scientificName: '',
-    type: 'Animal',
-    conservationStatus: 'Unknown'
-  });
 
   const [formData, setFormData] = useState<Partial<Individual>>({
     speciesId: '', projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId, enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
@@ -61,7 +52,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     const projs = getProjects();
     setAllProjects(projs);
     setAllEnclosures(getEnclosures());
-    setOrg(getOrg());
+    const currentOrg = getOrg();
+    setOrg(currentOrg);
 
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
@@ -76,6 +68,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         setFormData({ ...indToEdit });
         const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
         setSpeciesSearchQuery(sp?.commonName || '');
+        setAddLocation(!!(indToEdit.latitude || indToEdit.longitude));
         setShowForm(true);
         window.history.replaceState({}, document.title);
       }
@@ -84,7 +77,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
   // Form Map Initialization
   useEffect(() => {
-    if (showForm && formMapRef.current && !formMapInstance.current) {
+    if (showForm && addLocation && formMapRef.current && !formMapInstance.current) {
         const initialLat = formData.latitude || org?.latitude || 0;
         const initialLng = formData.longitude || org?.longitude || 0;
         const map = L.map(formMapRef.current).setView([initialLat, initialLng], 18);
@@ -105,7 +98,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         setTimeout(() => map.invalidateSize(), 300);
     }
     return () => { if (formMapInstance.current) { formMapInstance.current.remove(); formMapInstance.current = null; formMarker.current = null; } };
-  }, [showForm, org]);
+  }, [showForm, addLocation, org]);
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const filtered = (isAll ? allIndividuals : allIndividuals.filter(ind => ind.projectId === currentProjectId)).filter(ind => {
@@ -117,6 +110,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   const availableSpeciesForForm = allSpecies.filter(s => isAll ? (formData.projectId ? s.projectId === formData.projectId : true) : s.projectId === currentProjectId);
   const selectedSpecies = allSpecies.find(s => s.id === formData.speciesId);
   const isPlant = selectedSpecies?.type === 'Plant';
+  const isDioecious = selectedSpecies?.plantClassification === 'Dioecious';
+  const showSexField = !isPlant || isDioecious;
+  const showEnclosureField = !!org?.enableEnclosures;
 
   const handleOpenNewForm = () => {
     setEditingId(null);
@@ -132,17 +128,29 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       source: 'Bred in house', 
       notes: '', 
       imageUrl: '',
-      latitude: org?.latitude,
-      longitude: org?.longitude
+      latitude: undefined,
+      longitude: undefined
     });
     setSpeciesSearchQuery('');
+    setAddLocation(false);
     setShowForm(true);
-    setShowNewSpeciesForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.speciesId || !formData.studbookId) return;
+    
+    // Auto-generate name for plants if missing
+    let finalName = formData.name || '';
+    if (isPlant && !finalName) {
+      finalName = `${selectedSpecies?.commonName || 'Plant'} #${formData.studbookId}`;
+    }
+
+    if (!finalName && !isPlant) {
+      alert("Name is required for Fauna records.");
+      return;
+    }
+
     const targetProjectId = isAll ? formData.projectId : currentProjectId;
     if (!targetProjectId) { alert("Please select a project."); return; }
 
@@ -150,9 +158,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     try {
         const entry: Individual = {
             ...formData as Individual,
+            name: finalName,
             id: editingId || `ind-${Date.now()}`,
             projectId: targetProjectId,
-            weightKg: Number(formData.weightKg || 0)
+            weightKg: Number(formData.weightKg || 0),
+            latitude: addLocation ? formData.latitude : undefined,
+            longitude: addLocation ? formData.longitude : undefined
         };
         const updated = editingId ? allIndividuals.map(i => i.id === editingId ? entry : i) : [...allIndividuals, entry];
         setAllIndividuals(updated);
@@ -283,21 +294,28 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                             )}
                          </div>
                          <div><label className="text-xs font-bold text-slate-500 uppercase">{t('studbookId')} <span className="text-red-500">*</span></label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-mono" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required /></div>
-                         <div><label className="text-xs font-bold text-slate-500 uppercase">{t('name')} <span className="text-red-500">*</span></label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-bold" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required /></div>
-                         <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Sex / Genetic Group' : 'Sex'}</label><select className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}><option value={Sex.UNKNOWN}>{t('unknownSex')}</option><option value={Sex.MALE}>{t('males')}</option><option value={Sex.FEMALE}>{t('females')}</option></select></div>
+                         <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase">{t('name')} {!isPlant && <span className="text-red-500">*</span>}</label>
+                            <input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-bold placeholder:font-normal" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder={isPlant ? "(Optional for plants)" : "Full Name"} required={!isPlant} />
+                         </div>
+                         {showSexField && (
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Genetic Sex' : 'Sex'}</label><select className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none bg-white" value={formData.sex} onChange={e => setFormData({...formData, sex: e.target.value as Sex})}><option value={Sex.UNKNOWN}>{t('unknownSex')}</option><option value={Sex.MALE}>{t('males')}</option><option value={Sex.FEMALE}>{t('females')}</option></select></div>
+                         )}
                          <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Planted Date' : 'Birth Date'}</label><input type="date" className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} /></div>
                          <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Current Height (cm)' : 'Weight (kg)'}</label><input type="number" step="0.01" className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: parseFloat(e.target.value)})} /></div>
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-                         <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Source Propagation' : 'Acquisition Source'}</label><select className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as any})}><option value="Bred in house">Managed / In-house</option><option value="Captive Bred">Ex-situ / Partner</option><option value="Wild Caught">In-situ / Wild</option><option value="Other">Other / Unknown</option></select></div>
-                         <div><label className="text-xs font-bold text-slate-500 uppercase">Enclosure / Area</label><select className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none bg-white" value={formData.enclosureId} onChange={e => setFormData({...formData, enclosureId: e.target.value})}><option value="">None Assigned</option>{allEnclosures.filter(e => e.projectId === (isAll ? formData.projectId : currentProjectId)).map(enc => <option key={enc.id} value={enc.id}>{enc.name}</option>)}</select></div>
+                         <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Propagation Method' : 'Acquisition Source'}</label><select className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as any})}><option value="Bred in house">{isPlant ? 'In-house Propagation' : 'Bred in house'}</option><option value="Captive Bred">{isPlant ? 'Gifted / Exchange' : 'Captive Bred'}</option><option value="Wild Caught">{isPlant ? 'Wild Collected' : 'Wild Caught'}</option><option value="Other">Other / Unknown</option></select></div>
+                         {showEnclosureField && (
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Assigned Area' : 'Enclosure / Area'}</label><select className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none bg-white" value={formData.enclosureId} onChange={e => setFormData({...formData, enclosureId: e.target.value})}><option value="">None Assigned</option>{allEnclosures.filter(e => e.projectId === (isAll ? formData.projectId : currentProjectId)).map(enc => <option key={enc.id} value={enc.id}>{enc.name}</option>)}</select></div>
+                         )}
                       </div>
 
                       <div className="space-y-4 pt-4 border-t border-slate-100">
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div><label className="text-xs font-bold text-slate-500 uppercase">Sire ID / Lineage A</label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" value={formData.sireId} onChange={e => setFormData({...formData, sireId: e.target.value})} placeholder="Parent ID or Source" /></div>
-                            <div><label className="text-xs font-bold text-slate-500 uppercase">Dam ID / Lineage B</label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" value={formData.damId} onChange={e => setFormData({...formData, damId: e.target.value})} placeholder="Parent ID or Source" /></div>
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Lineage A (Parent)' : 'Sire ID'}</label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" value={formData.sireId} onChange={e => setFormData({...formData, sireId: e.target.value})} placeholder="Parent ID or Source" /></div>
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Lineage B (Parent)' : 'Dam ID'}</label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" value={formData.damId} onChange={e => setFormData({...formData, damId: e.target.value})} placeholder="Parent ID or Source" /></div>
                          </div>
                       </div>
 
@@ -306,7 +324,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                          <textarea className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Add any relevant history or specific traits..." />
                       </div>
 
-                      {/* Image section moved to the bottom */}
                       <div className="pt-6 border-t border-slate-100 space-y-4">
                          <h4 className="font-bold text-slate-800 flex items-center gap-2"><ImageIcon size={18} className="text-purple-500"/> Representative Media</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
@@ -323,22 +340,41 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
 
                    <div className="lg:col-span-4 space-y-6">
                       <div className="space-y-4">
-                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={14} className="text-red-500"/> Physical Location</h4>
-                         <div className="h-64 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 shadow-inner relative">
-                            <div ref={formMapRef} className="h-full w-full z-0" />
-                            <button type="button" onClick={detectGps} className="absolute bottom-2 right-2 z-10 bg-white/90 p-2 rounded-lg shadow-md text-emerald-600 hover:bg-white"><Crosshair size={16}/></button>
+                         <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={14} className="text-red-500"/> Physical Mapping</h4>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                               <span className="text-[10px] font-bold text-slate-400 uppercase">Pin to map</span>
+                               <div className="relative inline-flex items-center">
+                                  <input type="checkbox" className="sr-only peer" checked={addLocation} onChange={(e) => setAddLocation(e.target.checked)} />
+                                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                               </div>
+                            </label>
                          </div>
-                         <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                               <span className="text-[8px] font-black text-slate-400 uppercase block">Latitude</span>
-                               <span className="text-xs font-mono text-slate-600">{formData.latitude?.toFixed(5) || 'Not Set'}</span>
+                         
+                         {addLocation ? (
+                            <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-4">
+                               <div className="h-64 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 shadow-inner relative">
+                                  <div ref={formMapRef} className="h-full w-full z-0" />
+                                  <button type="button" onClick={detectGps} className="absolute bottom-2 right-2 z-10 bg-white/90 p-2 rounded-lg shadow-md text-emerald-600 hover:bg-white"><Crosshair size={16}/></button>
+                               </div>
+                               <div className="grid grid-cols-2 gap-2">
+                                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                     <span className="text-[8px] font-black text-slate-400 uppercase block">Latitude</span>
+                                     <span className="text-xs font-mono text-slate-600">{formData.latitude?.toFixed(5) || 'Not Set'}</span>
+                                  </div>
+                                  <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                     <span className="text-[8px] font-black text-slate-400 uppercase block">Longitude</span>
+                                     <span className="text-xs font-mono text-slate-600">{formData.longitude?.toFixed(5) || 'Not Set'}</span>
+                                  </div>
+                               </div>
+                               <p className="text-[10px] text-slate-400 italic">Click the map to precisely pin where this specimen is located on site.</p>
                             </div>
-                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                               <span className="text-[8px] font-black text-slate-400 uppercase block">Longitude</span>
-                               <span className="text-xs font-mono text-slate-600">{formData.longitude?.toFixed(5) || 'Not Set'}</span>
+                         ) : (
+                            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-8 text-center">
+                               <MapIcon2 className="mx-auto mb-2 text-slate-300 opacity-50" size={32} />
+                               <p className="text-xs text-slate-400 font-medium">Location data is disabled for this record.</p>
                             </div>
-                         </div>
-                         <p className="text-[10px] text-slate-400 italic">Click the map to precisely pin where this specimen is located on site.</p>
+                         )}
                       </div>
                    </div>
                 </div>
