@@ -40,6 +40,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   // Quick Add Species State
   const [showQuickSpeciesModal, setShowQuickSpeciesModal] = useState(false);
   const [isQuickSpeciesLoading, setIsQuickSpeciesLoading] = useState(false);
+  const [quickSpeciesStatus, setQuickSpeciesStatus] = useState('');
   const [quickSpeciesData, setQuickSpeciesData] = useState<Partial<Species>>({
     commonName: '',
     scientificName: '',
@@ -153,19 +154,43 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
     if (!quickSpeciesData.commonName) return;
     
     setIsQuickSpeciesLoading(true);
+    setQuickSpeciesStatus('Researching biology...');
     try {
         const targetProjectId = isAll ? formData.projectId : currentProjectId;
         if (!targetProjectId) throw new Error("Select a project first.");
 
+        // AI Enrichment in the background
+        let enrichedData: Partial<Species> = {};
+        try {
+            const aiResult = await fetchSpeciesData(quickSpeciesData.commonName, quickSpeciesData.type as SpeciesType, org?.location || '');
+            if (aiResult) enrichedData = aiResult;
+        } catch (e) {
+            console.warn("AI enrichment failed for quick add, falling back to manual input.");
+        }
+
+        // Image enrichment
+        setQuickSpeciesStatus('Finding scientific illustration...');
+        let enrichedImage = '';
+        try {
+            const searchName = enrichedData.scientificName || quickSpeciesData.scientificName || quickSpeciesData.commonName!;
+            enrichedImage = await fetchWikimediaImage(searchName) || '';
+            if (!enrichedImage) {
+                enrichedImage = await generateSpeciesImage(quickSpeciesData.commonName!, searchName, quickSpeciesData.type as SpeciesType) || '';
+            }
+        } catch (e) {
+            console.warn("Image retrieval failed for quick add.");
+        }
+
         const newSpecies: Species = {
           ...quickSpeciesData as Species,
+          ...enrichedData,
           id: `sp-${Date.now()}`,
           projectId: targetProjectId,
-          scientificName: quickSpeciesData.scientificName || quickSpeciesData.commonName!,
-          imageUrl: generatePattern(quickSpeciesData.commonName!),
-          sexualMaturityAgeYears: Number(quickSpeciesData.sexualMaturityAgeYears || 0),
-          lifeExpectancyYears: Number(quickSpeciesData.lifeExpectancyYears || 0),
-          averageAdultWeightKg: Number(quickSpeciesData.averageAdultWeightKg || 0)
+          scientificName: quickSpeciesData.scientificName || enrichedData.scientificName || quickSpeciesData.commonName!,
+          imageUrl: enrichedImage || generatePattern(quickSpeciesData.commonName!),
+          sexualMaturityAgeYears: Number(enrichedData.sexualMaturityAgeYears || quickSpeciesData.sexualMaturityAgeYears || 0),
+          lifeExpectancyYears: Number(enrichedData.lifeExpectancyYears || quickSpeciesData.lifeExpectancyYears || 0),
+          averageAdultWeightKg: Number(enrichedData.averageAdultWeightKg || quickSpeciesData.averageAdultWeightKg || 0)
         };
 
         const updatedSpecies = [...allSpecies, newSpecies];
@@ -180,12 +205,14 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
         alert(err.message);
     } finally {
         setIsQuickSpeciesLoading(false);
+        setQuickSpeciesStatus('');
     }
   };
 
   const handleQuickSpeciesAutofill = async () => {
     if (!quickSpeciesData.commonName) return;
     setIsQuickSpeciesLoading(true);
+    setQuickSpeciesStatus('Analyzing species taxonomy...');
     try {
       const data = await fetchSpeciesData(quickSpeciesData.commonName, quickSpeciesData.type as SpeciesType, org?.location || '');
       if (data) {
@@ -195,6 +222,7 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
       alert(e.message);
     } finally {
       setIsQuickSpeciesLoading(false);
+      setQuickSpeciesStatus('');
     }
   };
 
@@ -498,11 +526,19 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                     </div>
                  </div>
                  
-                 <div className="pt-6 border-t border-slate-100 flex gap-3">
-                    <button type="button" onClick={() => setShowQuickSpeciesModal(false)} className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-2xl transition-all">Cancel</button>
-                    <button type="submit" disabled={isQuickSpeciesLoading} className="flex-[2] py-3 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2">
-                       {isQuickSpeciesLoading ? <Loader2 size={20} className="animate-spin" /> : <Save size={20}/>} Create & Use Species
-                    </button>
+                 <div className="pt-6 border-t border-slate-100 flex flex-col gap-4">
+                    {isQuickSpeciesLoading && (
+                       <div className="flex items-center justify-center gap-3 py-2 text-emerald-600 font-bold animate-pulse">
+                          <Loader2 size={20} className="animate-spin" />
+                          <span className="text-xs uppercase tracking-widest">{quickSpeciesStatus || 'Processing...'}</span>
+                       </div>
+                    )}
+                    <div className="flex gap-3">
+                       <button type="button" onClick={() => setShowQuickSpeciesModal(false)} className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-2xl transition-all">Cancel</button>
+                       <button type="submit" disabled={isQuickSpeciesLoading || !quickSpeciesData.commonName} className="flex-[2] py-3 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                          {isQuickSpeciesLoading ? <Loader2 size={20} className="animate-spin" /> : <Save size={20}/>} Create & Use Species
+                       </button>
+                    </div>
                  </div>
               </form>
            </div>
