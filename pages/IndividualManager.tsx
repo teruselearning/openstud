@@ -266,40 +266,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
              
              <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                   <div className="lg:col-span-4 space-y-6">
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">{t('representativeImage')}</label>
-                        <div className="aspect-square bg-slate-100 rounded-2xl border-2 border-dashed border-slate-300 overflow-hidden relative group">
-                           {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center"><ImageIcon size={48} className="mb-2 opacity-20"/><p className="text-[10px] uppercase font-black tracking-widest">No Profile Image</p></div>}
-                           <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
-                              <Camera size={32} />
-                              <span className="text-[10px] font-bold uppercase mt-2">Upload Photo</span>
-                              <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setFormData({...formData, imageUrl: r.result as string}); r.readAsDataURL(f); } }} />
-                           </label>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-4 pt-4">
-                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={14} className="text-red-500"/> Physical Location</h4>
-                         <div className="h-48 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 shadow-inner relative">
-                            <div ref={formMapRef} className="h-full w-full z-0" />
-                            <button type="button" onClick={detectGps} className="absolute bottom-2 right-2 z-10 bg-white/90 p-2 rounded-lg shadow-md text-emerald-600 hover:bg-white"><Crosshair size={16}/></button>
-                         </div>
-                         <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                               <span className="text-[8px] font-black text-slate-400 uppercase block">Latitude</span>
-                               <span className="text-xs font-mono text-slate-600">{formData.latitude?.toFixed(5) || 'Not Set'}</span>
-                            </div>
-                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                               <span className="text-[8px] font-black text-slate-400 uppercase block">Longitude</span>
-                               <span className="text-xs font-mono text-slate-600">{formData.longitude?.toFixed(5) || 'Not Set'}</span>
-                            </div>
-                         </div>
-                      </div>
-                   </div>
-
                    <div className="lg:col-span-8 space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                          <div className="relative">
                             <label className="text-xs font-bold text-slate-500 uppercase">{t('species')} <span className="text-red-500">*</span></label>
                             <input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500" value={speciesSearchQuery} onChange={e => { setSpeciesSearchQuery(e.target.value); setIsSpeciesDropdownOpen(true); }} onFocus={() => setIsSpeciesDropdownOpen(true)} placeholder="Search species..." required />
@@ -336,6 +304,40 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
                       <div className="pt-4 border-t border-slate-100">
                          <label className="text-xs font-bold text-slate-500 uppercase">Notes & Biological History</label>
                          <textarea className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none" rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="Add any relevant history or specific traits..." />
+                      </div>
+
+                      <div className="pt-6 border-t border-slate-100 space-y-4">
+                         <h4 className="font-bold text-slate-800 flex items-center gap-2"><ImageIcon size={18} className="text-purple-500"/> Representative Media</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                            <div className="aspect-video w-full rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 overflow-hidden relative group shadow-inner">
+                               {formData.imageUrl ? <img src={formData.imageUrl} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center"><ImageIcon size={48} className="mb-2 opacity-20"/><p className="text-xs">{t('noImageProvided')}</p></div>}
+                            </div>
+                            <div className="space-y-3">
+                               <p className="text-xs text-slate-500 leading-relaxed">Provide a reference image for this specimen. You can upload a photo of the actual individual or plant.</p>
+                               <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 text-xs font-bold shadow-sm w-full"><Camera size={14} /> {t('upload')}<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setFormData({...formData, imageUrl: r.result as string}); r.readAsDataURL(f); } }} /></label>
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+
+                   <div className="lg:col-span-4 space-y-6">
+                      <div className="space-y-4">
+                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={14} className="text-red-500"/> Physical Location</h4>
+                         <div className="h-64 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 shadow-inner relative">
+                            <div ref={formMapRef} className="h-full w-full z-0" />
+                            <button type="button" onClick={detectGps} className="absolute bottom-2 right-2 z-10 bg-white/90 p-2 rounded-lg shadow-md text-emerald-600 hover:bg-white"><Crosshair size={16}/></button>
+                         </div>
+                         <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                               <span className="text-[8px] font-black text-slate-400 uppercase block">Latitude</span>
+                               <span className="text-xs font-mono text-slate-600">{formData.latitude?.toFixed(5) || 'Not Set'}</span>
+                            </div>
+                            <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                               <span className="text-[8px] font-black text-slate-400 uppercase block">Longitude</span>
+                               <span className="text-xs font-mono text-slate-600">{formData.longitude?.toFixed(5) || 'Not Set'}</span>
+                            </div>
+                         </div>
+                         <p className="text-[10px] text-slate-400 italic">Click the map to precisely pin where this specimen is located on site.</p>
                       </div>
                    </div>
                 </div>

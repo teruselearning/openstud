@@ -128,6 +128,8 @@ export const BASE_TRANSLATIONS = {
     monoecious: "Monoecious",
     dioecious: "Dioecious",
     maturityFlowering: "Maturity / Flowering",
+    studbookId: "Studbook ID",
+    name: "Name",
 
     // Super Admin & System
     saSubtitle: "Global system management and oversight.",
@@ -171,7 +173,7 @@ export const BASE_TRANSLATIONS = {
     emailVerifySubject: "Verify your email",
     emailVerifyBody: "<p>Your verification code is: <b>{{code}}</b></p>",
     emailInviteSubject: "Invitation to join {{orgName}}",
-    emailInviteBody: "<p>Hello {{userName}},</p><p>You have been invited to join the management team at <b>{{orgName}}</b>.</p><p>Please click the link below to confirm your account and set your password:</p><p><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background-color:#059669;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Confirm Account</a></p><p>If the button doesn't work, copy and paste this URL: {{inviteUrl}}</p>",
+    emailInviteBody: "<p>Hello {{userName}},</p><p>You have been invited to join the management team at <b>{{orgName}}</b>.</p><p>Please click the link below to confirm your account and set your password:</p><p style='margin: 30px 0;'><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background-color:#059669;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;'>Confirm My Account</a></p><p style='font-size: 12px; color: #64748b;'>If the button doesn't work, copy and paste this URL into your browser:<br>{{inviteUrl}}</p>",
     emailNotifySubject: "System Notification",
     emailNotifyBody: "<p>Hello,</p><p>{{message}}</p>",
 
