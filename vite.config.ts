@@ -10,12 +10,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Explicitly define process.env for standard Node-style libraries
-      'process.env': {
-        API_KEY: JSON.stringify(env.API_KEY || '')
-      },
-      // Individual key for direct access
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || '')
+      // No longer exposing API_KEY to the browser for security.
+      // AI calls are proxied through the backend.
     },
     build: {
       outDir: 'dist',

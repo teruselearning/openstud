@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import process from 'process';
 import nodemailer from 'nodemailer';
+import { GoogleGenAI, Type } from "@google/genai";
 
 declare const __dirname: string;
 
@@ -51,6 +52,64 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
+
+// --- AI Service Definitions ---
+const TEXT_MODEL = 'gemini-3-flash-preview';
+const IMAGE_MODEL = 'gemini-2.5-flash-image';
+
+const speciesSchema = {
+  type: Type.OBJECT,
+  properties: {
+    scientificName: { type: Type.STRING },
+    type: { type: Type.STRING, enum: ["Animal", "Plant"] },
+    conservationStatus: { type: Type.STRING },
+    sexualMaturityAgeYears: { type: Type.NUMBER },
+    averageAdultWeightKg: { type: Type.NUMBER },
+    lifeExpectancyYears: { type: Type.NUMBER },
+    breedingSeasonStart: { type: Type.INTEGER },
+    breedingSeasonEnd: { type: Type.INTEGER },
+    plantClassification: { type: Type.STRING },
+    nativeStatusCountry: { type: Type.STRING },
+    nativeStatusLocal: { type: Type.STRING },
+    description: { type: Type.STRING }
+  },
+  required: ["scientificName", "conservationStatus", "type"],
+};
+
+const translationSchema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      k: { type: Type.STRING },
+      v: { type: Type.STRING }
+    },
+    required: ["k", "v"]
+  }
+};
+
+const sanitizeJsonResponse = (text: string): string => {
+  if (!text) return "";
+  let clean = text.trim();
+  if (clean.startsWith("```")) {
+    clean = clean.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "");
+  }
+  const firstBrace = clean.indexOf('{');
+  const firstBracket = clean.indexOf('[');
+  let start = -1;
+  let end = -1;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    start = firstBrace;
+    end = clean.lastIndexOf('}');
+  } else if (firstBracket !== -1) {
+    start = firstBracket;
+    end = clean.lastIndexOf(']');
+  }
+  if (start !== -1 && end !== -1 && end > start) {
+    return clean.substring(start, end + 1);
+  }
+  return clean;
+};
 
 const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
@@ -98,6 +157,17 @@ const initDatabase = async () => {
     }
 };
 
+const authenticate = (req: any, res: any, next: any) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    (req as any).user = decoded;
+    next();
+  } catch (e) { return res.status(401).json({ error: "Session expired" }); }
+};
+
 // --- Installer Endpoints ---
 
 app.get('/api/install/status', async (req: any, res: any) => {
@@ -115,25 +185,106 @@ app.get('/api/install/status', async (req: any, res: any) => {
 app.post('/api/install/setup', async (req: any, res: any) => {
   const { host, user, password, database, port } = req.body;
   try {
-    // 1. Test Connection
     const testConn = await mysql.createConnection({ host, user, password, port: Number(port) || 3306 });
-    
-    // 2. Create DB if needed
     await testConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\`;`);
     await testConn.end();
-
-    // 3. Reset Pool
     resetPool({ host, user, password, database, port: Number(port) || 3306 });
-    
-    // 4. Run Migrations & Seed
     const db = getDb();
     await runMigrations(db);
     await seedDatabase(db);
-    
     isConfigured = true;
     res.json({ success: true, message: "Installation successful!" });
   } catch (e: any) {
     res.status(500).json({ error: `Installation failed: ${e.message}` });
+  }
+});
+
+// --- AI Proxy Endpoints ---
+
+app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
+  const { commonName, type, locationContext } = req.body;
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: speciesSchema,
+      },
+    });
+    if (response.text) {
+      const sanitized = sanitizeJsonResponse(response.text);
+      res.json(JSON.parse(sanitized));
+    } else {
+      res.status(500).json({ error: "AI returned empty response" });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/generate-image', authenticate, async (req: any, res: any) => {
+  const { prompt } = req.body;
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: { parts: [{ text: prompt }] }
+    });
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData) {
+            return res.json({ imageUrl: `data:image/png;base64,${part.inlineData.data}` });
+          }
+        }
+      }
+    }
+    res.status(404).json({ error: "No image generated" });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/translate', authenticate, async (req: any, res: any) => {
+  const { sourceData, targetLanguage } = req.body;
+  try {
+    const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
+    const response = await ai.models.generateContent({
+      model: TEXT_MODEL,
+      contents: prompt,
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: translationSchema
+      }
+    });
+    if (response.text) {
+      const sanitized = sanitizeJsonResponse(response.text);
+      res.json(JSON.parse(sanitized));
+    } else {
+      res.json([]);
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ai/reverse-geocode', authenticate, async (req: any, res: any) => {
+  const { lat, lng } = req.body;
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+      model: 'gemini-flash-lite-latest',
+      contents: `Identify location at: Lat ${lat}, Lng ${lng}. Return ONLY "City, Country".`,
+      config: { thinkingConfig: { thinkingBudget: 0 } }
+    });
+    res.json({ location: response.text?.trim() || "Unknown Location" });
+  } catch (e: any) {
+    res.json({ location: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
   }
 });
 
@@ -218,17 +369,6 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
         console.error("[MAIL] Error sending email:", e);
         throw e;
     }
-};
-
-const authenticate = (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    (req as any).user = decoded;
-    next();
-  } catch (e) { return res.status(401).json({ error: "Session expired" }); }
 };
 
 // --- Endpoints ---
