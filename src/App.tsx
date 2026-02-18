@@ -1,3 +1,4 @@
+
 import React, { Component, ReactNode, useState, useEffect, createContext, useContext, useRef, ErrorInfo } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
@@ -49,8 +50,9 @@ import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
 import EnclosureManager from './pages/EnclosureManager';
+import Installer from './components/Installer';
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
-import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
+import { fetchRemoteData, fetchPublicConfig, getInstallStatus } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 
@@ -215,6 +217,7 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsInstallation, setNeedsInstallation] = useState(false);
   const [impersonating, setImpersonating] = useState(false);
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -245,6 +248,20 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeApp = async () => {
        await initHighCapacityStorage();
+       
+       // 1. Check Installation Status
+       try {
+          const status = await getInstallStatus();
+          if (status.success && !status.installed) {
+             setNeedsInstallation(true);
+             setIsLoading(false);
+             return;
+          }
+       } catch (e) {
+          console.warn("Installation check failed, assuming backend is down.");
+          // We still stop loading to show standard fallback if needed, or let synchronization fail later.
+       }
+
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
        const session = getSession();
@@ -440,6 +457,12 @@ const App: React.FC = () => {
       <div className="spinner"></div>
       <div className="loader-text">Loading OpenStudbook...</div>
     </div>
+  );
+
+  if (needsInstallation) return (
+    <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
+       <Installer onInstalled={() => window.location.reload()} />
+    </LanguageContext.Provider>
   );
   
   if (!user) return (

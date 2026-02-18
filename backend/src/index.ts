@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
@@ -13,7 +14,7 @@ declare const __dirname: string;
 
 dotenv.config();
 
-const dbConfig = {
+let dbConfig = {
   host: process.env.DATABASE_HOST || 'localhost',
   user: process.env.DATABASE_USER || 'root',
   password: process.env.DATABASE_PASSWORD || '',
@@ -25,12 +26,21 @@ const dbConfig = {
 };
 
 let pool: mysql.Pool | null = null;
+let isConfigured = false;
 
 const getDb = () => {
   if (!pool) {
     pool = mysql.createPool(dbConfig);
   }
   return pool;
+};
+
+const resetPool = (newConfig: any) => {
+  if (pool) {
+    pool.end();
+  }
+  dbConfig = { ...dbConfig, ...newConfig };
+  pool = mysql.createPool(dbConfig);
 };
 
 const app: any = express();
@@ -42,63 +52,90 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
+const runMigrations = async (db: mysql.Pool) => {
+  await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS breeding_loans (id VARCHAR(255) PRIMARY KEY, partner_org_id VARCHAR(255), proposer_org_id VARCHAR(255), role VARCHAR(50), start_date VARCHAR(50), end_date VARCHAR(50), status VARCHAR(50), individual_ids JSON, terms LONGTEXT, notification_recipient_id VARCHAR(255), change_request JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS partnerships (id VARCHAR(255) PRIMARY KEY, org_id_1 VARCHAR(255), org_id_2 VARCHAR(255), status VARCHAR(50), established_date VARCHAR(50))`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS app_config (id VARCHAR(255) PRIMARY KEY, settings JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS verification_codes (email VARCHAR(255) PRIMARY KEY, code VARCHAR(10) NOT NULL, expires_at BIGINT NOT NULL)`);
+};
+
+const seedDatabase = async (db: mysql.Pool) => {
+  const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
+  if (orgs.length === 0) {
+    console.log('[DATABASE] Seeding initial data...');
+    await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Fauna', 1, 1, 0, 1)`);
+    const hashed = await bcrypt.hash('password', 10);
+    await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Super Admin', 'Active', ?)`, [hashed]);
+    await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Highland Sanctuary', 'Main animal collection')`);
+    await db.execute(`INSERT INTO app_config (id, settings) VALUES ('global-settings', ?)`, [JSON.stringify({ enableRegistration: true, themePrimaryColor: '#059669' })]);
+    await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-GB', 'English (UK)', 1, ?)`, [JSON.stringify({})]);
+    await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-US', 'English (US)', 0, ?)`, [JSON.stringify({})]);
+  }
+};
+
 const initDatabase = async () => {
-    console.log('[DATABASE] Initializing full schema and seeds...');
+    console.log('[DATABASE] Connecting...');
     try {
-        const connection = await mysql.createConnection({ 
-            host: dbConfig.host, 
-            user: dbConfig.user, 
-            password: dbConfig.password, 
-            port: dbConfig.port 
-        });
-        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`);
-        await connection.end();
-
         const db = getDb();
+        const connection = await db.getConnection();
+        connection.release();
         
-        await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS breeding_loans (id VARCHAR(255) PRIMARY KEY, partner_org_id VARCHAR(255), proposer_org_id VARCHAR(255), role VARCHAR(50), start_date VARCHAR(50), end_date VARCHAR(50), status VARCHAR(50), individual_ids JSON, terms LONGTEXT, notification_recipient_id VARCHAR(255), change_request JSON)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS partnerships (id VARCHAR(255) PRIMARY KEY, org_id_1 VARCHAR(255), org_id_2 VARCHAR(255), status VARCHAR(50), established_date VARCHAR(50))`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS app_config (id VARCHAR(255) PRIMARY KEY, settings JSON)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS languages (code VARCHAR(10) PRIMARY KEY, name VARCHAR(255), translations JSON, is_default TINYINT(1) DEFAULT 0, manual_overrides JSON, is_deleted TINYINT(1) DEFAULT 0)`);
-        await db.execute(`CREATE TABLE IF NOT EXISTS verification_codes (email VARCHAR(255) PRIMARY KEY, code VARCHAR(10) NOT NULL, expires_at BIGINT NOT NULL)`);
-        
-        const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
-        if (orgs.length === 0) {
-            console.log('[DATABASE] Seeding multiple organizations...');
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Fauna', 1, 1, 0, 1)`);
-            await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location) VALUES ('org-2', 'Oceanic Research Lab', 'Queensland, AU', 'Fauna', 1, 1, 0)`);
-            
-            const hashed = await bcrypt.hash('password', 10);
-            await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Super Admin', 'Active', ?)`, [hashed]);
-            
-            await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Highland Sanctuary', 'Main animal collection')`);
-            await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES ('p-2', 'org-2', 'Coral Nursery', 'Marine life restoration')`);
-            
-            await db.execute(`INSERT INTO species (id, project_id, common_name, scientific_name, type, conservation_status) VALUES ('sp-1', 'p-1', 'Snow Leopard', 'Panthera uncia', 'Animal', 'Vulnerable')`);
-            await db.execute(`INSERT INTO species (id, project_id, common_name, scientific_name, type, conservation_status) VALUES ('sp-2', 'p-2', 'Green Sea Turtle', 'Chelonia mydas', 'Animal', 'Endangered')`);
-            
-            await db.execute(`INSERT INTO enclosures (id, org_id, project_id, name, description, individual_ids) VALUES ('enc-1', 'org-1', 'p-1', 'Main Paddock', 'Primary leopard habitat', '[]')`);
-            await db.execute(`INSERT INTO app_config (id, settings) VALUES ('global-settings', ?)`, [JSON.stringify({ enableRegistration: true, themePrimaryColor: '#059669' })]);
-        }
-
-        const [langs]: any = await db.execute(`SELECT code FROM languages LIMIT 1`);
-        if (langs.length === 0) {
-            console.log('[DATABASE] Seeding core languages...');
-            await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-GB', 'English (UK)', 1, ?)`, [JSON.stringify({})]);
-            await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-US', 'English (US)', 0, ?)`, [JSON.stringify({})]);
-        }
-        console.log('[DATABASE] Initialization finished.');
+        await runMigrations(db);
+        await seedDatabase(db);
+        isConfigured = true;
+        console.log('[DATABASE] Connection successful.');
     } catch (e: any) { 
-        console.error("[DATABASE] Initialization Error:", e.message);
+        console.error("[DATABASE] Connection Failed:", e.message);
+        isConfigured = false;
     }
 };
+
+// --- Installer Endpoints ---
+
+app.get('/api/install/status', async (req: any, res: any) => {
+  try {
+    const db = getDb();
+    const connection = await db.getConnection();
+    connection.release();
+    const [rows]: any = await db.execute(`SHOW TABLES LIKE 'organizations'`);
+    res.json({ success: true, installed: rows.length > 0, connected: true });
+  } catch (e: any) {
+    res.json({ success: true, installed: false, connected: false, error: e.message });
+  }
+});
+
+app.post('/api/install/setup', async (req: any, res: any) => {
+  const { host, user, password, database, port } = req.body;
+  try {
+    // 1. Test Connection
+    const testConn = await mysql.createConnection({ host, user, password, port: Number(port) || 3306 });
+    
+    // 2. Create DB if needed
+    await testConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\`;`);
+    await testConn.end();
+
+    // 3. Reset Pool
+    resetPool({ host, user, password, database, port: Number(port) || 3306 });
+    
+    // 4. Run Migrations & Seed
+    const db = getDb();
+    await runMigrations(db);
+    await seedDatabase(db);
+    
+    isConfigured = true;
+    res.json({ success: true, message: "Installation successful!" });
+  } catch (e: any) {
+    res.status(500).json({ error: `Installation failed: ${e.message}` });
+  }
+});
 
 const wrapEmailHtml = (content: string) => `
 <!DOCTYPE html>
@@ -263,7 +300,6 @@ app.post('/api/register', async (req: any, res: any) => {
 
         const orgId = `org-${Date.now()}`;
         const userId = `u-${Date.now()}`;
-        const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const conn = await db.getConnection();
@@ -276,10 +312,6 @@ app.post('/api/register', async (req: any, res: any) => {
             await conn.execute(
                 `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,
                 [userId, orgId, userName, cleanEmail, hashedPassword]
-            );
-            await conn.execute(
-                `INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'General Collection', 'Default project created during registration.')`,
-                [projectId, orgId]
             );
             await conn.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
             await conn.commit();
@@ -323,41 +355,6 @@ app.post('/api/login', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/invite/check', async (req: any, res: any) => {
-    const { token } = req.query;
-    if (!token) return res.status(400).json({ error: "Missing token" });
-    try {
-        const db = getDb();
-        const [users]: any = await db.execute(`SELECT id, org_id, name, email, status FROM users WHERE id = ? AND status = 'Invited'`, [token]);
-        if (users.length === 0) return res.status(404).json({ error: "Invitation not found or already accepted." });
-        const [orgs]: any = await db.execute(`SELECT name FROM organizations WHERE id = ?`, [users[0].org_id]);
-        res.json({ success: true, data: { name: users[0].name, email: users[0].email, orgName: orgs[0]?.name || "Organization" } });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/invite/accept', async (req: any, res: any) => {
-    const { token, password } = req.body;
-    if (!token || !password) return res.status(400).json({ error: "Missing information." });
-    try {
-        const db = getDb();
-        const [users]: any = await db.execute(`SELECT * FROM users WHERE id = ? AND status = 'Invited'`, [token]);
-        const user = users[0];
-        if (!user) return res.status(404).json({ error: "Invitation expired or already used." });
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute(`UPDATE users SET password = ?, status = 'Active' WHERE id = ?`, [hashedPassword, token]);
-
-        const loginToken = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-        const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [user.org_id]);
-
-        res.json({ 
-            success: true, token: loginToken, 
-            user: { ...user, status: 'Active', orgId: user.org_id, avatarUrl: user.avatar_url, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : (user.allowed_project_ids || []) }, 
-            organization: orgRows[0] 
-        });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
 app.get('/api/sync', authenticate, async (req: any, res: any) => {
     const orgId = req.user.orgId;
     const role = req.user.role;
@@ -390,14 +387,8 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             usersRows = u;
-            
-            const [s]: any = await db.execute(`
-              SELECT s.* FROM species s 
-              JOIN projects p ON s.project_id = p.id 
-              JOIN organizations o ON p.org_id = o.id 
-              WHERE p.org_id = ? OR o.is_species_public = 1`, [orgId]);
+            const [s]: any = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             speciesRows = s;
-              
             const [i]: any = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             individualsRows = i;
             const [enc]: any = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
