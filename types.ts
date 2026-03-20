@@ -70,14 +70,33 @@ export interface EnclosurePoint {
   lng: number;
 }
 
+export type FeedUnit = 'g' | 'kg' | 'mL' | 'L' | 'units' | 'portions';
+export type FeedFrequency = 'daily' | 'weekly' | 'monthly';
+
+export interface FeedIngredient {
+  id: string;
+  name: string;
+  amount: number;
+  unit: FeedUnit;
+}
+
+export interface FeedSchedule {
+  id: string;
+  name: string;
+  frequency: FeedFrequency;
+  ingredients: FeedIngredient[];
+  notes?: string;
+}
+
 export interface Enclosure {
   id: string;
   orgId: string;
-  projectId?: string; // Scoped to a specific project
+  projectId?: string;
   name: string;
   description?: string;
-  boundary?: EnclosurePoint[]; // Array of points for the polygon
-  individualIds: string[]; // Associated individuals
+  boundary?: EnclosurePoint[];
+  individualIds: string[];
+  feedSchedules?: FeedSchedule[];
 }
 
 export interface ExternalPartner {

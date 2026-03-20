@@ -1,121 +1,42 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { Species, SpeciesType } from "../types";
 import { checkAndIncrementAiUsage, generatePattern } from "./storage";
 
 /**
- * OpenStudbook AI Model Configuration
- * ----------------------------------
- * Logic/Deep Research: gemini-3-flash-preview
- * High-Speed Tasks (Location): gemini-flash-lite-latest
- * Images: gemini-2.5-flash-image
+ * OpenStudbook AI Proxy Interface
+ * ------------------------------
+ * All AI logic is now handled by the backend to secure the API key.
  */
-const TEXT_MODEL = 'gemini-3-flash-preview';
-const FAST_MODEL = 'gemini-flash-lite-latest';
-const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
-// Schema for species data
-const speciesSchema = {
-  type: Type.OBJECT,
-  properties: {
-    scientificName: { type: Type.STRING, description: "The scientific (Latin) name of the species." },
-    type: { type: Type.STRING, description: "Whether this is an 'Animal' or a 'Plant'.", enum: ["Animal", "Plant"] },
-    conservationStatus: { type: Type.STRING, description: "IUCN conservation status (e.g., Endangered, Vulnerable)." },
-    sexualMaturityAgeYears: { type: Type.NUMBER, description: "Average age of sexual maturity in years." },
-    averageAdultWeightKg: { type: Type.NUMBER, description: "Average weight of an adult in Kilograms (if Animal)." },
-    lifeExpectancyYears: { type: Type.NUMBER, description: "Average life expectancy in years in captivity." },
-    breedingSeasonStart: { type: Type.INTEGER, description: "Start month of breeding season or flowering season (1-12)." },
-    breedingSeasonEnd: { type: Type.INTEGER, description: "End month of breeding season or flowering season (1-12)." },
-    plantClassification: { type: Type.STRING, description: "If plant, 'Dioecious' or 'Monoecious'. Else 'N/A'." },
-    nativeStatusCountry: { type: Type.STRING, description: "Is this species Native, Introduced, or Invasive to the organization's country?" },
-    nativeStatusLocal: { type: Type.STRING, description: "Is this species Native, Introduced, or Invasive to the specific local city/region/area?" },
-    description: { type: Type.STRING, description: "Brief biological description." }
-  },
-  required: ["scientificName", "conservationStatus", "type"],
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('os_token');
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': token ? `Bearer ${token.replace(/"/g, '')}` : ''
+  };
 };
 
-const translationSchema = {
-  type: Type.ARRAY,
-  items: {
-    type: Type.OBJECT,
-    properties: {
-      k: { type: Type.STRING, description: "The original translation key." },
-      v: { type: Type.STRING, description: "The translated text value for this key." }
-    },
-    required: ["k", "v"]
-  }
-};
-
-/**
- * Checks if the user has selected a paid API key for high-quality Pro models.
- */
 export const ensureApiKeySelection = async () => {
-  if (typeof window.aistudio !== 'undefined') {
-    const hasKey = await window.aistudio.hasSelectedApiKey();
-    if (!hasKey) {
-      await window.aistudio.openSelectKey();
-    }
-  }
+  // Key selection is now handled on the server deployment,
+  // so we just check if the session is active.
 };
 
 const handleAiError = async (error: any) => {
   console.error("AI Service Error Detail:", error);
   let message = error.message || "An unknown AI error occurred.";
-  
-  if (message.includes("503") || message.toLowerCase().includes("overloaded") || message.toLowerCase().includes("unavailable")) {
-    throw new Error("The AI model is temporarily overloaded. Please wait about 15 seconds.");
-  }
-
-  if (message.includes("Requested entity was not found.")) {
-    throw new Error("API Key issue detected. Please re-select your API key.");
-  }
-  
-  if (message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
-    throw new Error("API Quota reached. Please try again in a few minutes.");
-  }
-
-  throw error;
+  throw new Error(message);
 };
 
-const sanitizeJsonResponse = (text: string): string => {
-  if (!text) return "";
-  let clean = text.trim();
-  if (clean.startsWith("```")) {
-    clean = clean.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "");
-  }
-  const firstBrace = clean.indexOf('{');
-  const firstBracket = clean.indexOf('[');
-  let start = -1;
-  let end = -1;
-  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
-    start = firstBrace;
-    end = clean.lastIndexOf('}');
-  } else if (firstBracket !== -1) {
-    start = firstBracket;
-    end = clean.lastIndexOf(']');
-  }
-  if (start !== -1 && end !== -1 && end > start) {
-    return clean.substring(start, end + 1);
-  }
-  return clean;
-};
-
-/**
- * High Speed Reverse Geocode
- * Uses the Lite model with zero thinking budget for instant form responses.
- */
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: FAST_MODEL,
-      contents: `Identify location at: Lat ${lat}, Lng ${lng}. Return ONLY "City, Country".`,
-      config: {
-        thinkingConfig: { thinkingBudget: 0 }
-      }
+    const response = await fetch('/api/ai/reverse-geocode', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ lat, lng })
     });
-    return response.text?.trim() || "Unknown Location";
+    const data = await response.json();
+    return data.location || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   } catch (error) {
-    console.warn("Fast geocode failed, returning coordinates.");
+    console.warn("Proxy geocode failed, returning coordinates.");
     return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   }
 };
@@ -155,7 +76,7 @@ export const fetchWikimediaImage = async (query: string): Promise<string | null>
     const data = await response.json();
     const pages = data?.query?.pages;
     if (!pages) return null;
-    
+
     const pageId = Object.keys(pages)[0];
     const imageUrl = pages[pageId]?.thumbnail?.source;
     if (imageUrl) return await urlToBase64(imageUrl);
@@ -171,57 +92,33 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
     if (!checkAndIncrementAiUsage()) {
       throw new Error("INTERNAL_LIMIT: AI usage limit reached.");
     }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: speciesSchema,
-      },
+    const response = await fetch('/api/ai/species-data', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ commonName, type, locationContext })
     });
-    if (response.text) {
-      const sanitized = sanitizeJsonResponse(response.text);
-      return JSON.parse(sanitized) as Partial<Species>;
-    }
-    return null;
+    if (!response.ok) throw new Error("AI Proxy Request Failed");
+    return await response.json();
   } catch (error: any) {
     return handleAiError(error);
   }
 };
 
-/**
- * Improved Image Generation
- */
 export const generateSpeciesImage = async (commonName: string, scientificName: string, type: SpeciesType): Promise<string | null> => {
   try {
     if (!checkAndIncrementAiUsage()) {
       throw new Error("INTERNAL_LIMIT: AI usage limit reached.");
     }
-    
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    // Detailed prompt for scientific accuracy
     const prompt = `A clean, centered professional scientific illustration of a ${commonName} (Species scientific name: ${scientificName}) on a solid white background. High resolution, detailed biology textbook botanical or zoological illustration style. No text.`;
-    
-    const response = await ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: { parts: [{ text: prompt }] }
-    });
 
-    if (response.candidates && response.candidates.length > 0) {
-      const candidate = response.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        for (const part of candidate.content.parts) {
-          if (part.inlineData) {
-            console.log(`[AI IMAGE] Successfully generated image for ${commonName}`);
-            return `data:image/png;base64,${part.inlineData.data}`;
-          }
-        }
-      }
-    }
-    
-    console.warn(`[AI IMAGE] No image data found in candidates for ${commonName}`);
-    return null;
+    const response = await fetch('/api/ai/generate-image', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ prompt })
+    });
+    if (!response.ok) throw new Error("AI Image Proxy Request Failed");
+    const data = await response.json();
+    return data.imageUrl || null;
   } catch (error: any) {
     console.error("AI Image generation failed:", error.message);
     return generatePattern(commonName);
@@ -233,28 +130,14 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     if (!checkAndIncrementAiUsage()) {
       throw new Error("INTERNAL_LIMIT: AI usage limit reached.");
     }
-    const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
-    if (payload.length === 0) return [];
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: translationSchema
-      }
+    const response = await fetch('/api/ai/translate', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ sourceData, targetLanguage })
     });
-    if (response.text) {
-      const sanitized = sanitizeJsonResponse(response.text);
-      const parsed = JSON.parse(sanitized) as {k: string, v: string}[];
-      return parsed.map(item => ({
-        ...item,
-        v: typeof item.v === 'string' ? item.v.replace(/\\n/g, ' ').replace(/\n/g, ' ').trim() : item.v
-      }));
-    }
-    return [];
-  } catch (e) { 
+    if (!response.ok) throw new Error("AI Translation Proxy Request Failed");
+    return await response.json();
+  } catch (e) {
     return handleAiError(e);
   }
 };

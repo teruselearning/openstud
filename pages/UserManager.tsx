@@ -190,6 +190,20 @@ const UserManager: React.FC = () => {
         </div>
       </div>
 
+      {showRoleKey && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 animate-in fade-in">
+          <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Shield size={16}/> Role Permissions Guide</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {ROLE_KEY.map(({ role, color, bg, desc }) => (
+              <div key={role} className={`${bg} rounded-lg p-3 border border-slate-100`}>
+                <span className={`text-xs font-black uppercase tracking-widest ${color}`}>{role}</span>
+                <p className="text-xs text-slate-600 leading-relaxed mt-1">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Desktop Table View */}
       <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <table className="w-full text-left">

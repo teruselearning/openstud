@@ -225,7 +225,17 @@ export const BASE_TRANSLATIONS = {
     obscureLocation: "Obscure Map Location",
     obscureLocationDesc: "Round your map coordinates to prevent precise site tracking by non-partners.",
     speciesListVisibility: "Public Species List",
-    speciesListVisibilityDesc: "Allow anyone on the network to see which species you manage."
+    speciesListVisibilityDesc: "Allow anyone on the network to see which species you manage.",
+
+    // Network / Partners
+    noPartnersFound: "No partners found.",
+    connectNewPartner: "Connect New Partner",
+    yourInviteCode: "Your Invite Code",
+    redeemCode: "Redeem Code",
+
+    // Super Admin – Security
+    siteKey: "Site Key",
+    secretKey: "Secret Key"
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;

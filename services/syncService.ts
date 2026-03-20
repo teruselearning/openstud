@@ -133,9 +133,10 @@ const fromDbInd = (i: any): Individual => ({
   healthHistory: safeParse(i.health_history, []) 
 });
 
-const fromDbEnclosure = (e: any): Enclosure => ({ 
-  id: e.id, orgId: e.org_id, projectId: e.project_id, name: e.name, description: e.description, 
-  boundary: safeParse(e.boundary, []), individualIds: safeParse(e.individual_ids, []) 
+const fromDbEnclosure = (e: any): Enclosure => ({
+  id: e.id, orgId: e.org_id, projectId: e.project_id, name: e.name, description: e.description,
+  boundary: safeParse(e.boundary, []), individualIds: safeParse(e.individual_ids, []),
+  feedSchedules: safeParse(e.feed_schedules, [])
 });
 
 const fromDbEvent = (e: any): BreedingEvent => ({ 
@@ -295,8 +296,9 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
   project_id: e.projectId || null, 
   name: e.name || 'Unnamed Enclosure', 
   description: e.description || null, 
-  boundary: e.boundary || [], 
-  individual_ids: e.individualIds || [] 
+  boundary: e.boundary || [],
+  individual_ids: e.individualIds || [],
+  feed_schedules: e.feedSchedules || []
 });
 
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
@@ -368,4 +370,21 @@ export const fetchRemoteData = async () => {
     console.error("Sync Pull Failed:", error);
     return { success: false, message: error.message || "Failed to connect to API" };
   }
+};
+
+export const getInstallStatus = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/install/status?t=${Date.now()}`);
+    if (!response.ok) return { success: false, installed: false };
+    return await response.json();
+  } catch (e) { return { success: false, installed: false }; }
+};
+
+export const runInstallSetup = async (config: any) => {
+  const response = await fetch(`${API_BASE_URL}/api/install/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  return await response.json();
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects } from '../services/storage';
+import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals } from '../services/storage';
+import { Individual } from '../types';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight } from 'lucide-react';
@@ -14,6 +15,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const { t } = useContext(LanguageContext);
   const location = useLocation();
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
+  const [allIndividuals, setAllIndividuals] = useState<Individual[]>([]);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [org, setOrg] = useState<Organization | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -52,6 +54,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
   useEffect(() => {
     setAllSpecies(getSpecies());
+    setAllIndividuals(getIndividuals());
     setOrg(getOrg());
     const projs = getProjects();
     setAllProjects(projs);
@@ -282,7 +285,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
               <button onClick={() => handleEdit(species)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all"><Pencil size={16} /></button>
             </div>
             <div className="h-52 bg-slate-200 relative overflow-hidden">
-               <img src={species.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
+               <img src={species.imageUrl || allIndividuals.find(i => i.speciesId === species.id && i.imageUrl)?.imageUrl || generatePattern(species.commonName)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
                <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || 'Unknown'}</div>
                <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
             </div>

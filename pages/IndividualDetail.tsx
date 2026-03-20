@@ -78,21 +78,34 @@ const IndividualDetail: React.FC = () => {
     e.preventDefault();
     if (!individual) return;
     const formData = new FormData(e.currentTarget);
+    const date = formData.get('date') as string;
+    const value = Number(formData.get('weight'));
+    const note = formData.get('note') as string;
+
     const newRecord: WeightRecord = {
       id: `w-${Date.now()}`,
-      date: formData.get('date') as string,
-      weightKg: Number(formData.get('weight')),
-      note: formData.get('note') as string,
+      date,
+      weightKg: value,
+      note,
       imageUrl: pendingLogImage || undefined
     };
 
-    // Auto-update profile image if a photo was provided in the log
-    const updatedInd = { 
-       ...individual, 
-       imageUrl: pendingLogImage || individual.imageUrl,
-       weightHistory: [newRecord, ...(individual.weightHistory || [])] 
+    // For plants: also create a health history entry so it appears on the History tab
+    const newHealthEntry: HealthRecord | null = isPlant ? {
+      id: `h-${Date.now()}`,
+      date,
+      type: 'Growth Measurement' as any,
+      description: `Height recorded: ${value} cm${note ? ` — ${note}` : ''}`,
+      performedBy: '',
+      imageUrl: pendingLogImage || undefined
+    } : null;
+
+    const updatedInd = {
+      ...individual,
+      weightHistory: [newRecord, ...(individual.weightHistory || [])],
+      ...(newHealthEntry ? { healthHistory: [newHealthEntry, ...(individual.healthHistory || [])] } : {})
     };
-    
+
     const allInds = getIndividuals().map(i => i.id === individual.id ? updatedInd : i);
     saveIndividuals(allInds);
     setIndividual(updatedInd);
@@ -240,14 +253,16 @@ const IndividualDetail: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-300">
            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold text-slate-800">Medical & Health Logs</h3>
-                 <button onClick={() => { setShowHealthModal(true); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ New Log</button>
+                 <h3 className="font-bold text-slate-800">{isPlant ? 'Observations & History' : 'Medical & Health Logs'}</h3>
+                 <button onClick={() => { setShowHealthModal(true); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ {isPlant ? 'Add Observation' : 'New Log'}</button>
               </div>
               <div className="divide-y divide-slate-100">
                  {(individual.healthHistory || []).length > 0 ? (
                     individual.healthHistory?.map(log => (
                        <div key={log.id} className="p-6 hover:bg-slate-50 transition-colors flex gap-6">
-                          <div className="p-2 bg-blue-50 text-blue-600 rounded-lg h-fit flex-shrink-0"><Stethoscope size={20}/></div>
+                          <div className={`p-2 rounded-lg h-fit flex-shrink-0 ${log.type === 'Growth Measurement' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
+                            {log.type === 'Growth Measurement' ? <Activity size={20}/> : <Stethoscope size={20}/>}
+                          </div>
                           <div className="flex-1 min-w-0">
                              <div className="flex justify-between items-start mb-1">
                                 <h4 className="font-bold text-slate-900">{log.type}</h4>
@@ -257,7 +272,10 @@ const IndividualDetail: React.FC = () => {
                              {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">Performed by: {log.performedBy}</p>}
                              
                              {log.imageUrl && (
-                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setGalleryIndex(999)}>
+                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => {
+                                 const imgs = (individual.healthHistory || []).filter(h => h.imageUrl);
+                                 setGalleryIndex(imgs.findIndex(h => h.id === log.id));
+                               }}>
                                   <img src={log.imageUrl} className="w-full h-full object-cover" />
                                </div>
                              )}
@@ -267,7 +285,7 @@ const IndividualDetail: React.FC = () => {
                  ) : (
                     <div className="p-12 text-center text-slate-400 opacity-50 flex flex-col items-center">
                        <Archive size={48} strokeWidth={1} className="mb-2" />
-                       <p>No health records found.</p>
+                       <p>{isPlant ? 'No observations recorded yet.' : 'No health records found.'}</p>
                     </div>
                  )}
               </div>
@@ -311,7 +329,7 @@ const IndividualDetail: React.FC = () => {
 
       {/* Weight Modal */}
       {showWeightModal && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                  <h3 className="font-bold">Log {isPlant ? 'Measurement' : 'Weight'}</h3>
@@ -362,10 +380,10 @@ const IndividualDetail: React.FC = () => {
 
       {/* Health Modal */}
       {showHealthModal && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
            <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold">New Medical Record</h3>
+                 <h3 className="font-bold">{isPlant ? 'New Observation' : 'New Medical Record'}</h3>
                  <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
               </div>
               <form onSubmit={(e) => {
@@ -382,8 +400,7 @@ const IndividualDetail: React.FC = () => {
                  };
 
                  const updated = {
-                    ...individual, 
-                    imageUrl: pendingLogImage || individual.imageUrl,
+                    ...individual,
                     healthHistory: [log, ...(individual.healthHistory || [])]
                  };
                  
@@ -401,17 +418,29 @@ const IndividualDetail: React.FC = () => {
                     <div>
                        <label className="text-[10px] font-bold text-slate-400 uppercase">Type</label>
                        <select name="type" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" required>
-                          <option value="Checkup">Checkup</option>
-                          <option value="Vaccination">Vaccination</option>
-                          <option value="Treatment">Treatment</option>
-                          <option value="Injury">Injury</option>
-                          <option value="Other">Other</option>
+                          {isPlant ? <>
+                            <option value="Observation">Observation</option>
+                            <option value="Flowering">Flowering</option>
+                            <option value="Fruiting">Fruiting</option>
+                            <option value="Pruning">Pruning</option>
+                            <option value="Pest/Disease">Pest / Disease</option>
+                            <option value="Fertilising">Fertilising</option>
+                            <option value="Watering">Watering</option>
+                            <option value="Repotting">Repotting</option>
+                            <option value="Other">Other</option>
+                          </> : <>
+                            <option value="Checkup">Checkup</option>
+                            <option value="Vaccination">Vaccination</option>
+                            <option value="Treatment">Treatment</option>
+                            <option value="Injury">Injury</option>
+                            <option value="Other">Other</option>
+                          </>}
                        </select>
                     </div>
                  </div>
                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Performed By</label>
-                    <input type="text" name="who" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Veterinarian Name" />
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">{isPlant ? 'Recorded By' : 'Performed By'}</label>
+                    <input type="text" name="who" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder={isPlant ? 'Your name' : 'Veterinarian Name'} />
                  </div>
                  <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
@@ -419,7 +448,7 @@ const IndividualDetail: React.FC = () => {
                  </div>
                  
                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Attach Medical Photo</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">{isPlant ? 'Attach Photo' : 'Attach Medical Photo'}</label>
                     <div className="flex items-center gap-3">
                        <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
                           {pendingLogImage ? (
@@ -446,6 +475,52 @@ const IndividualDetail: React.FC = () => {
            </div>
         </div>
       )}
+      {/* Image Gallery Lightbox */}
+      {galleryIndex >= 0 && (() => {
+        const galleryImages = (individual.healthHistory || [])
+          .filter(h => h.imageUrl)
+          .map(h => ({ url: h.imageUrl!, label: h.type, date: h.date }));
+        if (galleryImages.length === 0) return null;
+        const current = galleryImages[galleryIndex] || galleryImages[0];
+        return (
+          <div className="fixed inset-0 z-[99999] bg-black/95 flex flex-col items-center justify-center" onClick={() => setGalleryIndex(-1)}>
+            {/* Close */}
+            <button className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors z-10" onClick={() => setGalleryIndex(-1)}>
+              <X size={28} />
+            </button>
+            {/* Counter */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/50 text-sm font-bold tracking-widest">
+              {galleryIndex + 1} / {galleryImages.length}
+            </div>
+            {/* Prev */}
+            {galleryIndex > 0 && (
+              <button className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 rounded-full hover:bg-white/10 transition-colors z-10"
+                onClick={e => { e.stopPropagation(); setGalleryIndex(i => i - 1); }}>
+                <ChevronLeft size={36} />
+              </button>
+            )}
+            {/* Next */}
+            {galleryIndex < galleryImages.length - 1 && (
+              <button className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 rounded-full hover:bg-white/10 transition-colors z-10"
+                onClick={e => { e.stopPropagation(); setGalleryIndex(i => i + 1); }}>
+                <ChevronRight size={36} />
+              </button>
+            )}
+            {/* Image */}
+            <img
+              src={current.url}
+              className="max-h-[80vh] max-w-[90vw] object-contain rounded-xl shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            />
+            {/* Caption */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-center">
+              <p className="text-white font-bold text-sm">{current.label}</p>
+              <p className="text-white/50 text-xs mt-0.5">{current.date}</p>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 };

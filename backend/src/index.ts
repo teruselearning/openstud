@@ -117,7 +117,8 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
   await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON, feed_schedules JSON)`);
+  try { await db.execute(`ALTER TABLE enclosures ADD COLUMN feed_schedules JSON`); } catch (e: any) { if (!e.message?.includes('Duplicate column')) throw e; }
   await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS breeding_loans (id VARCHAR(255) PRIMARY KEY, partner_org_id VARCHAR(255), proposer_org_id VARCHAR(255), role VARCHAR(50), start_date VARCHAR(50), end_date VARCHAR(50), status VARCHAR(50), individual_ids JSON, terms LONGTEXT, notification_recipient_id VARCHAR(255), change_request JSON)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS partnerships (id VARCHAR(255) PRIMARY KEY, org_id_1 VARCHAR(255), org_id_2 VARCHAR(255), status VARCHAR(50), established_date VARCHAR(50))`);
@@ -126,14 +127,15 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS verification_codes (email VARCHAR(255) PRIMARY KEY, code VARCHAR(10) NOT NULL, expires_at BIGINT NOT NULL)`);
 };
 
-const seedDatabase = async (db: mysql.Pool) => {
+const seedDatabase = async (db: mysql.Pool, orgName?: string, adminPassword?: string) => {
   const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
   if (orgs.length === 0) {
     console.log('[DATABASE] Seeding initial data...');
-    await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', 'Wild Conservation Soc.', 'Oregon, USA', 'Fauna', 1, 1, 0, 1)`);
-    const hashed = await bcrypt.hash('password', 10);
-    await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-demo', 'org-1', 'Sarah Jenkins', 'sarah@wild.org', 'Super Admin', 'Active', ?)`, [hashed]);
-    await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Highland Sanctuary', 'Main animal collection')`);
+    const name = orgName || 'My Organisation';
+    const hashed = await bcrypt.hash(adminPassword || 'password', 10);
+    await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', ?, '', 'Fauna', 1, 1, 0, 1)`, [name]);
+    await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-admin', 'org-1', 'Administrator', 'admin@openstudbook.local', 'Super Admin', 'Active', ?)`, [hashed]);
+    await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Default Project', 'Main collection')`);
     await db.execute(`INSERT INTO app_config (id, settings) VALUES ('global-settings', ?)`, [JSON.stringify({ enableRegistration: true, themePrimaryColor: '#059669' })]);
     await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-GB', 'English (UK)', 1, ?)`, [JSON.stringify({})]);
     await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-US', 'English (US)', 0, ?)`, [JSON.stringify({})]);
@@ -183,7 +185,7 @@ app.get('/api/install/status', async (req: any, res: any) => {
 });
 
 app.post('/api/install/setup', async (req: any, res: any) => {
-  const { host, user, password, database, port } = req.body;
+  const { host, user, password, database, port, orgName, adminPassword } = req.body;
   try {
     const testConn = await mysql.createConnection({ host, user, password, port: Number(port) || 3306 });
     await testConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\`;`);
@@ -191,7 +193,7 @@ app.post('/api/install/setup', async (req: any, res: any) => {
     resetPool({ host, user, password, database, port: Number(port) || 3306 });
     const db = getDb();
     await runMigrations(db);
-    await seedDatabase(db);
+    await seedDatabase(db, orgName, adminPassword);
     isConfigured = true;
     res.json({ success: true, message: "Installation successful!" });
   } catch (e: any) {
@@ -317,7 +319,17 @@ const wrapEmailHtml = (content: string) => `
 </html>
 `;
 
-const sendMailInternal = async (to: string, subject: string, html: string, placeholders: Record<string, string> = {}, templateKey?: string) => {
+// Maps email template keys to their i18n translation keys
+const EMAIL_TRANSLATION_KEYS: Record<string, { subject: string; body: string }> = {
+    invite:        { subject: 'emailInviteSubject',  body: 'emailInviteBody'  },
+    registration:  { subject: 'emailVerifySubject',  body: 'emailVerifyBody'  },
+    mfa:           { subject: 'emailVerifySubject',  body: 'emailVerifyBody'  },
+    notification:  { subject: 'emailNotifySubject',  body: 'emailNotifyBody'  },
+    password_reset:{ subject: 'emailVerifySubject',  body: 'emailVerifyBody'  },
+    removal:       { subject: 'emailNotifySubject',  body: 'emailNotifyBody'  },
+};
+
+const sendMailInternal = async (to: string, subject: string, html: string, placeholders: Record<string, string> = {}, templateKey?: string, language?: string) => {
     try {
         const db = getDb();
         const [rows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
@@ -339,11 +351,36 @@ const sendMailInternal = async (to: string, subject: string, html: string, place
         let finalSubject = subject;
         let finalHtml = html;
 
+        // Start with the stored English template (if any)
         if (templateKey && settings.emailTemplates && settings.emailTemplates[templateKey]) {
             const tpl = settings.emailTemplates[templateKey];
             if (tpl.enabled && tpl.subject && tpl.bodyHtml) {
                 finalSubject = tpl.subject;
                 finalHtml = tpl.bodyHtml;
+            }
+        }
+
+        // Override with translated strings if a non-English language is requested
+        if (language && language !== 'en' && language !== 'en-GB' && templateKey && EMAIL_TRANSLATION_KEYS[templateKey]) {
+            try {
+                const langCode = language.split('-')[0]; // e.g. 'fr-FR' → 'fr'
+                const [langRows]: any = await db.execute(
+                    `SELECT translations, manual_overrides FROM languages WHERE (code = ? OR code = ?) AND is_deleted = 0 LIMIT 1`,
+                    [language, langCode]
+                );
+                if (langRows.length > 0) {
+                    const rawTrans = langRows[0].translations || {};
+                    const rawOverrides = langRows[0].manual_overrides || {};
+                    const translations = typeof rawTrans === 'string' ? JSON.parse(rawTrans) : rawTrans;
+                    const overrides = typeof rawOverrides === 'string' ? JSON.parse(rawOverrides) : rawOverrides;
+                    const merged = { ...translations, ...overrides };
+                    const keys = EMAIL_TRANSLATION_KEYS[templateKey];
+                    if (merged[keys.subject]) finalSubject = merged[keys.subject];
+                    if (merged[keys.body])    finalHtml    = merged[keys.body];
+                    console.log(`[MAIL] Using ${language} translations for ${templateKey} email.`);
+                }
+            } catch (translationErr) {
+                console.warn("[MAIL] Could not load language translations, falling back to English:", translationErr);
             }
         }
 
@@ -560,10 +597,77 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/email/send', authenticate, async (req: any, res: any) => {
-    const { to, subject, html, placeholders, templateKey } = req.body;
+app.post('/api/proxy-image', authenticate, async (req: any, res: any) => {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' });
     try {
-        await sendMailInternal(to, subject, html, placeholders, templateKey);
+        // Convert Google Drive share URLs → direct download URL
+        let fetchUrl = url.trim();
+        const gdFile = fetchUrl.match(/\/file\/d\/([^\/\?&]+)/);
+        const gdOpen = fetchUrl.match(/[?&]id=([^&]+)/);
+        if (gdFile) {
+            fetchUrl = `https://drive.google.com/uc?export=download&id=${gdFile[1]}`;
+        } else if (gdOpen && fetchUrl.includes('drive.google.com')) {
+            fetchUrl = `https://drive.google.com/uc?export=download&id=${gdOpen[1]}`;
+        }
+
+        const response = await fetch(fetchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenStudbook/1.0)' },
+            redirect: 'follow',
+        });
+        if (!response.ok) return res.status(502).json({ error: `Remote fetch failed: ${response.status}` });
+
+        const contentType = (response.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+        if (!contentType.startsWith('image/')) return res.status(415).json({ error: `URL did not return an image (got ${contentType})` });
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const base64 = buffer.toString('base64');
+        res.json({ success: true, base64, mimeType: contentType });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/invite/check', async (req: any, res: any) => {
+    const { token } = req.query;
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(
+            `SELECT u.id, u.name, u.email, u.status, o.name as org_name FROM users u JOIN organizations o ON u.org_id = o.id WHERE u.id = ?`,
+            [token]
+        );
+        const user = rows[0];
+        if (!user) return res.status(404).json({ error: "Invalid or expired invitation." });
+        if (user.status !== 'Invited') return res.status(400).json({ error: "This invitation has already been used." });
+        res.json({ success: true, data: { name: user.name, email: user.email, orgName: user.org_name } });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/invite/accept', async (req: any, res: any) => {
+    const { token, password } = req.body;
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(
+            `SELECT u.*, o.name as org_name FROM users u JOIN organizations o ON u.org_id = o.id WHERE u.id = ?`,
+            [token]
+        );
+        const user = rows[0];
+        if (!user) return res.status(404).json({ error: "Invalid or expired invitation." });
+        if (user.status !== 'Invited') return res.status(400).json({ error: "Invitation already used." });
+        const hashed = await bcrypt.hash(password, 10);
+        await db.execute(`UPDATE users SET password = ?, status = 'Active' WHERE id = ?`, [hashed, token]);
+        const jwtToken = jwt.sign({ id: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ? AND is_deleted = 0`, [user.org_id]);
+        res.json({
+            success: true, token: jwtToken,
+            user: { id: user.id, orgId: user.org_id, name: user.name, email: user.email, role: user.role, status: 'Active', allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids || '[]') : (user.allowed_project_ids || []) },
+            organization: orgRows[0]
+        });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/send', authenticate, async (req: any, res: any) => {
+    const { to, subject, html, placeholders, templateKey, language } = req.body;
+    try {
+        await sendMailInternal(to, subject, html, placeholders, templateKey, language);
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });

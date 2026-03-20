@@ -45,13 +45,14 @@ import BreedingManager from './pages/BreedingManager';
 import IndividualDetail from './pages/IndividualDetail';
 import Network from './pages/Network';
 import Landing, { ViewMode } from './pages/Landing';
+import AcceptInvite from './pages/AcceptInvite';
 import Notifications from './pages/Notifications';
 import PlantMap from './pages/PlantMap';
 import SuperAdminPage from './pages/SuperAdmin';
 import EnclosureManager from './pages/EnclosureManager';
-import SetupWizard from './components/SetupWizard';
+import Installer from './components/Installer';
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
-import { fetchRemoteData, fetchPublicConfig } from './services/syncService';
+import { fetchRemoteData, fetchPublicConfig, getInstallStatus } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 
@@ -243,6 +244,7 @@ const App: React.FC = () => {
   const [languages, setLanguages] = useState<LanguageConfig[]>([]);
   const [currentLangCode, setCurrentLangCode] = useState('en-GB');
   const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [needsInstallation, setNeedsInstallation] = useState(false);
 
   const handleProjectChange = (id: string) => { 
     setCurrentProjectIdState(id); 
@@ -253,6 +255,18 @@ const App: React.FC = () => {
   useEffect(() => {
     const initializeApp = async () => {
        await initHighCapacityStorage();
+
+       try {
+          const status = await getInstallStatus();
+          if (status.success && !status.installed) {
+             setNeedsInstallation(true);
+             setIsLoading(false);
+             return;
+          }
+       } catch (e) {
+          console.warn("Installation check failed, assuming backend is down.");
+       }
+
        const storedLangs = getLanguages();
        setLanguages(storedLangs);
        const session = getSession();
@@ -429,12 +443,24 @@ const App: React.FC = () => {
   };
 
   if (isLoading) return null;
-  
-  if (!user) return (
+
+  if (needsInstallation) return (
     <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
-       <Landing onLogin={handleLogin} initialView={initialLandingView} />
+      <Installer onInstalled={() => window.location.reload()} />
     </LanguageContext.Provider>
   );
+
+  if (!user) {
+    const isInviteLink = window.location.hash.startsWith('#/accept-invite');
+    return (
+      <LanguageContext.Provider value={{ language: currentLangCode, setLanguage: setCurrentLangCode, t, refreshTranslations, availableLanguages: languages }}>
+        {isInviteLink
+          ? <AcceptInvite onAccepted={handleLogin} />
+          : <Landing onLogin={handleLogin} initialView={initialLandingView} />
+        }
+      </LanguageContext.Provider>
+    );
+  }
 
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;

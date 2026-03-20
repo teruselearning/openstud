@@ -349,8 +349,9 @@ export const resetPassword = async (email: string, code: string, pass: string): 
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[], lang?: string) => {
   const org = getOrg();
   const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds, preferredLanguage: lang };
-  
-  // Create user in backend first via standard REST
+
+  // Save locally first so the UI updates immediately, then sync to backend
+  saveUsers([...getUsers(), newUser], true);
   await syncPushUsers([newUser]);
 
   const s = getSystemSettings();
