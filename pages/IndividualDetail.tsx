@@ -31,6 +31,7 @@ const IndividualDetail: React.FC = () => {
 
   // Form Media State
   const [pendingLogImage, setPendingLogImage] = useState<string>('');
+  const [useAsCardImage, setUseAsCardImage] = useState(true);
 
   useEffect(() => {
     if (!id) return;
@@ -151,7 +152,7 @@ const IndividualDetail: React.FC = () => {
       {/* Tabs */}
       <div className="flex border-b border-slate-200 space-x-8">
         <button onClick={() => setActiveTab('overview')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'overview' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Overview</button>
-        <button onClick={() => setActiveTab('history')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'history' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Health & History</button>
+        <button onClick={() => setActiveTab('history')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'history' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{isPlant ? 'History' : 'Health & History'}</button>
         <button onClick={() => setActiveTab('genetics')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'genetics' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Genetics</button>
       </div>
 
@@ -384,7 +385,7 @@ const IndividualDetail: React.FC = () => {
            <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                  <h3 className="font-bold">{isPlant ? 'New Observation' : 'New Medical Record'}</h3>
-                 <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                 <button onClick={() => { setShowHealthModal(false); setPendingLogImage(''); setUseAsCardImage(true); }} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
               </div>
               <form onSubmit={(e) => {
                  e.preventDefault();
@@ -401,14 +402,16 @@ const IndividualDetail: React.FC = () => {
 
                  const updated = {
                     ...individual,
+                    ...(pendingLogImage && useAsCardImage ? { imageUrl: pendingLogImage } : {}),
                     healthHistory: [log, ...(individual.healthHistory || [])]
                  };
-                 
+
                  const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
                  saveIndividuals(all);
                  setIndividual(updated);
                  setShowHealthModal(false);
                  setPendingLogImage('');
+                 setUseAsCardImage(true);
               }} className="p-6 space-y-4">
                  <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -462,13 +465,24 @@ const IndividualDetail: React.FC = () => {
                           <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
                        </label>
                        {pendingLogImage && (
-                          <button type="button" onClick={() => setPendingLogImage('')} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
+                          <button type="button" onClick={() => { setPendingLogImage(''); setUseAsCardImage(true); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
                        )}
                     </div>
+                    {pendingLogImage && (
+                       <label className="flex items-center gap-2.5 cursor-pointer mt-1 select-none">
+                          <input
+                             type="checkbox"
+                             checked={useAsCardImage}
+                             onChange={e => setUseAsCardImage(e.target.checked)}
+                             className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span className="text-sm text-slate-600">Use this image on this individual's card</span>
+                       </label>
+                    )}
                  </div>
 
                  <div className="pt-4 flex gap-2">
-                    <button type="button" onClick={() => setShowHealthModal(false)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
+                    <button type="button" onClick={() => { setShowHealthModal(false); setPendingLogImage(''); setUseAsCardImage(true); }} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
                     <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">Save Record</button>
                  </div>
               </form>

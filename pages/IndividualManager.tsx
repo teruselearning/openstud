@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
-import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2 } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 declare const L: any;
@@ -30,6 +30,8 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId 
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSpeciesId, setFilterSpeciesId] = useState<string>('');
+  const [deceasedFilter, setDeceasedFilter] = useState<'living' | 'deceased' | 'all'>('living');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -363,6 +365,12 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
   }, [currentProjectId, editingId]);
 
   useEffect(() => {
+    if (locState?.filterSpeciesId) {
+      setFilterSpeciesId(locState.filterSpeciesId);
+    }
+  }, [locState?.filterSpeciesId]);
+
+  useEffect(() => {
     if (locState?.editId && allIndividuals.length > 0) {
       const indToEdit = allIndividuals.find(i => i.id === locState.editId);
       if (indToEdit) {
@@ -410,7 +418,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
   const filtered = (isAll ? allIndividuals : allIndividuals.filter(ind => ind.projectId === currentProjectId)).filter(ind => {
     const matchesSearch = (ind.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (ind.studbookId || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
-    return matchesSearch && matchesSpecies;
+    const matchesDeceased = deceasedFilter === 'all' ? true : deceasedFilter === 'deceased' ? !!ind.isDeceased : !ind.isDeceased;
+    return matchesSearch && matchesSpecies && matchesDeceased;
   });
 
   useEffect(() => {
@@ -592,6 +601,33 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
      });
   };
 
+  const toggleSelect = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const handleSelectAll = () =>
+    setSelectedIds(selectedIds.size === filtered.length ? new Set() : new Set(filtered.map(i => i.id)));
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Permanently delete ${selectedIds.size} individual(s)? This cannot be undone.`)) return;
+    const updated = allIndividuals.filter(i => !selectedIds.has(i.id));
+    setAllIndividuals(updated);
+    await saveIndividuals(updated);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkMarkDeceased = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const updated = allIndividuals.map(i =>
+      selectedIds.has(i.id) ? { ...i, isDeceased: true, deathDate: i.deathDate || today } : i
+    );
+    setAllIndividuals(updated);
+    await saveIndividuals(updated);
+    setSelectedIds(new Set());
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -613,10 +649,53 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
         </div>
       </div>
 
-      <div className="relative w-full">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        </div>
+        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm shrink-0">
+          {(['living', 'all', 'deceased'] as const).map(f => (
+            <button key={f} onClick={() => { setDeceasedFilter(f); setSelectedIds(new Set()); }}
+              className={`px-3 py-1.5 rounded-md text-sm font-semibold capitalize transition-colors ${deceasedFilter === f ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}>
+              {f === 'living' ? 'Living' : f === 'deceased' ? 'Deceased' : 'All'}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-lg animate-in slide-in-from-bottom-2 duration-200">
+          <input type="checkbox" checked={selectedIds.size === filtered.length} onChange={handleSelectAll}
+            className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500 cursor-pointer" />
+          <span className="text-sm font-bold flex-1">{selectedIds.size} selected</span>
+          <button onClick={handleBulkMarkDeceased}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-amber-600 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-colors">
+            <XIcon size={15}/> Mark Deceased
+          </button>
+          <button onClick={handleBulkDelete}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-red-600 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-colors">
+            <Trash2 size={15}/> Delete
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-slate-400 hover:text-white p-1 rounded transition-colors">
+            <XIcon size={18}/>
+          </button>
+        </div>
+      )}
+
+      {/* Select all row (when not in bulk mode yet) */}
+      {filtered.length > 0 && selectedIds.size === 0 && (
+        <div className="flex items-center gap-2">
+          <button onClick={handleSelectAll} className="text-xs text-slate-400 hover:text-emerald-600 font-medium flex items-center gap-1.5 transition-colors">
+            <div className="w-4 h-4 border-2 border-slate-300 rounded flex items-center justify-center">
+              <div className="w-2 h-2 rounded-sm"></div>
+            </div>
+            Select all {filtered.length}
+          </button>
+        </div>
+      )}
+
 
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -626,13 +705,21 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
             const displayName = isPlantInd ? ind.studbookId : ind.name;
             const displayImg = ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
             return (
-              <div key={ind.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group flex flex-col">
-                <Link to={`/individuals/${ind.id}`} className="h-48 bg-slate-100 relative overflow-hidden block">
-                  <img src={displayImg} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={displayName} />
+              <div key={ind.id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all group flex flex-col ${selectedIds.has(ind.id) ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-slate-200'}`}>
+                <div className="h-48 bg-slate-100 relative overflow-hidden">
+                  <button onClick={e => { e.stopPropagation(); toggleSelect(ind.id); }}
+                    className={`absolute top-2 left-2 z-10 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all shadow-sm
+                      ${selectedIds.has(ind.id) ? 'bg-emerald-600 border-emerald-600' : 'bg-white/80 border-slate-300 opacity-0 group-hover:opacity-100'}`}>
+                    {selectedIds.has(ind.id) && <Check size={13} className="text-white" strokeWidth={3}/>}
+                  </button>
+                  <Link to={`/individuals/${ind.id}`} className="block w-full h-full">
+                    <img src={displayImg} className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${ind.isDeceased ? 'grayscale opacity-60' : ''}`} alt={displayName} />
+                  </Link>
                   {!isPlantInd && <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>}
-                </Link>
+                  {ind.isDeceased && <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide">Deceased</div>}
+                </div>
                 <div className="p-4 flex-1">
-                  <Link to={`/individuals/${ind.id}`} className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate block">{displayName}</Link>
+                  <Link to={`/individuals/${ind.id}`} className={`font-bold truncate block transition-colors ${ind.isDeceased ? 'text-slate-400 line-through' : 'text-slate-900 group-hover:text-emerald-700'}`}>{displayName}</Link>
                   <p className="text-xs text-slate-500 mb-2 truncate">{sp?.commonName}</p>
                   <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-50">
                     {!isPlantInd && <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>}
@@ -648,6 +735,11 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
            <table className="w-full text-left">
               <thead className="bg-slate-50 border-b border-slate-200">
                  <tr>
+                    <th className="px-4 py-4 w-8">
+                      <button onClick={handleSelectAll} className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${selectedIds.size === filtered.length && filtered.length > 0 ? 'bg-emerald-600 border-emerald-600' : 'border-slate-300 hover:border-emerald-400'}`}>
+                        {selectedIds.size === filtered.length && filtered.length > 0 && <Check size={11} className="text-white" strokeWidth={3}/>}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Individual</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Species</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">ID</th>
@@ -660,8 +752,16 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                     const isPlantInd = sp?.type === 'Plant';
                     const displayName = isPlantInd ? ind.studbookId : ind.name;
                     return (
-                       <tr key={ind.id} className="hover:bg-slate-50 transition-colors group">
-                          <td className="px-6 py-4 font-bold text-slate-900">{displayName}</td>
+                       <tr key={ind.id} className={`transition-colors group ${selectedIds.has(ind.id) ? 'bg-emerald-50' : ind.isDeceased ? 'bg-slate-50 opacity-70' : 'hover:bg-slate-50'}`}>
+                          <td className="px-4 py-4">
+                            <button onClick={() => toggleSelect(ind.id)} className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${selectedIds.has(ind.id) ? 'bg-emerald-600 border-emerald-600' : 'border-slate-300 hover:border-emerald-400'}`}>
+                              {selectedIds.has(ind.id) && <Check size={11} className="text-white" strokeWidth={3}/>}
+                            </button>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`font-bold ${ind.isDeceased ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{displayName}</span>
+                            {ind.isDeceased && <span className="ml-2 text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">Deceased</span>}
+                          </td>
                           <td className="px-6 py-4 text-sm text-slate-600">{sp?.commonName}</td>
                           <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{isPlantInd ? '' : ind.studbookId}</td>
                           <td className="px-6 py-4 text-right">
