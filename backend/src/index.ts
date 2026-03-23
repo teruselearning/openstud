@@ -23,7 +23,8 @@ let dbConfig = {
   port: Number(process.env.DATABASE_PORT) || 3306,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  charset: "utf8mb4"
 };
 
 let pool: mysql.Pool | null = null;
