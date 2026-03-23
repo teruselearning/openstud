@@ -172,16 +172,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
           <div className="p-4 bg-emerald-50 rounded-2xl mb-5">
             <Leaf size={40} className="text-emerald-400" />
           </div>
-          <h3 className="text-xl font-bold text-slate-800 mb-2">Your dashboard is ready</h3>
+          <h3 className="text-xl font-bold text-slate-800 mb-2">{t('dashboardReady')}</h3>
           <p className="text-slate-500 max-w-md mb-8 leading-relaxed">
-            Metrics, charts, and breeding insights will all appear here once you've added some species and individuals to your collection.
+            {t('dashboardReadyDesc')}
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link to="/species" className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm transition-colors">
-              <Dna size={17}/> Add a Species
+              <Dna size={17}/> {t('addSpecies')}
             </Link>
             <Link to="/individuals" className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-5 py-2.5 rounded-xl font-bold shadow-sm transition-colors">
-              <PawPrint size={17}/> Add an Individual
+              <PawPrint size={17}/> {t('addIndividual')}
             </Link>
           </div>
         </div>

@@ -367,15 +367,12 @@ const App: React.FC = () => {
               }
            }
            
-           const session = getSession();
-           if (session && session.role === UserRole.ADMIN && (!data.species || data.species.length === 0)) {
-              setShowSetupWizard(true);
-           }
+           // Wizard trigger moved to loadData (only fires on explicit login)
         }
      } catch (e: any) { setSyncError(e.message); } finally { setIsSyncing(false); }
   };
 
-  const loadData = async (session: User) => {
+  const loadData = async (session: User, isNewLogin = false) => {
     await performSync();
     setUser(session);
     if (session.preferredLanguage) setCurrentLangCode(session.preferredLanguage);
@@ -407,9 +404,21 @@ const App: React.FC = () => {
     setCurrentProjectIdState(savedPid);
     calculateFeatureVisibility(savedPid);
     setUnreadCount(getNotifications().filter(n => n.recipientId === session.id && !n.isRead).length);
+    if (isNewLogin) {
+      const isSuperAdmin = session.role === UserRole.SUPER_ADMIN || (session.role as string) === 'Super Admin';
+      const isOrgAdmin = session.role === UserRole.ADMIN;
+      const hasSpecies = getSpecies().length > 0;
+      if (isSuperAdmin) {
+        // Post-install: send Super Admin straight to the system admin panel
+        window.location.hash = '#/super-admin';
+      } else if (isOrgAdmin && !hasSpecies) {
+        // Newly registered org: launch the setup wizard
+        setShowSetupWizard(true);
+      }
+    }
   };
 
-  const handleLogin = (u: User) => loadData(u);
+  const handleLogin = (u: User) => loadData(u, true);
   const handleLogout = () => { logout(); setUser(null); setImpersonating(false); };
 
   const handleCreateProject = () => {
