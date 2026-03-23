@@ -221,7 +221,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       const response = await fetch('/api/register/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: regData.email.toLowerCase().trim(), orgName: regData.orgName })
+        body: JSON.stringify({ email: regData.email.toLowerCase().trim(), orgName: regData.orgName, language })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to send verification code");
@@ -338,7 +338,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div className="absolute top-full right-0 md:left-auto md:right-0 mt-2 bg-white border border-slate-200 shadow-xl rounded-xl overflow-hidden z-50 w-48 animate-in fade-in slide-in-from-top-2 duration-200"><div className="py-2">{availableLanguages.map(l => (<button key={l.code} onClick={() => { setLanguage(l.code); setIsLangOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${language === l.code ? 'font-bold text-emerald-700 bg-emerald-50/50' : 'text-slate-600'}`}><span>{l.name}</span>{language === l.code && <CheckCircle2 size={14} />}</button>))}</div></div>
              )}
           </div>
-          <button onClick={handleDemoLogin} className="text-slate-600 hover:text-emerald-700 font-medium text-sm disabled:opacity-50" disabled={isLoading}>{t('demoLogin')}</button>
+          {/* Demo login hidden */}
           {viewMode === 'landing' && <button onClick={() => setViewMode('login')} className="text-slate-600 hover:text-emerald-700 font-bold text-sm disabled:opacity-50" disabled={isLoading}>{t('signIn')}</button>}
           {(viewMode === 'landing' && isRegistrationEnabled) && <button onClick={() => { setViewMode('register'); setRegStep('details'); }} className="hidden md:block bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50" disabled={isLoading}>{t('getStarted')}</button>}
         </div>
@@ -352,7 +352,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{displaySubtitle}</p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 {isRegistrationEnabled && (<button onClick={() => { setViewMode('register'); setRegStep('details'); }} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
-                <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
+                {/* Explore demo button hidden */}
               </div>
             </div>
             {landingConfig?.showFeatures !== false && (
