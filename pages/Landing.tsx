@@ -17,6 +17,7 @@ interface LandingProps {
 const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
   const [regStep, setRegStep] = useState<'details' | 'verify'>('details');
+  const [fallbackCode, setFallbackCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -225,6 +226,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to send verification code");
+      if (data.fallbackCode) setFallbackCode(data.fallbackCode);
       setRegStep('verify');
     } catch(e: any) { setError(e.message); }
     finally { setIsLoading(false); }
@@ -443,7 +445,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <button onClick={() => setRegStep('details')} className="text-sm text-slate-400 hover:text-slate-600 mb-6 flex items-center gap-1">← {t('back')}</button>
               <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><Key size={32} /></div>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
-              <p className="text-slate-500 mb-8 text-sm">We've sent a 6-digit verification code to <strong>{regData.email}</strong></p>
+              <p className="text-slate-500 mb-4 text-sm">We've sent a 6-digit verification code to <strong>{regData.email}</strong></p>
+              {fallbackCode && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+                  <p className="text-amber-800 text-xs font-bold uppercase tracking-wide mb-1">⚠ Email not configured</p>
+                  <p className="text-amber-700 text-sm mb-2">SMTP is not set up yet. Your verification code is:</p>
+                  <div className="text-center font-mono text-3xl font-bold tracking-[0.4em] text-amber-900 py-2">{fallbackCode}</div>
+                </div>
+              )}
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2"><Shield size={16} /> {error}</div>}
               <form onSubmit={handleRegisterFinal} className="space-y-6">
                 <div><input className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" placeholder="000000" maxLength={6} value={regData.code} onChange={e => setRegData({...regData, code: e.target.value.replace(/\D/g, '')})} required autoFocus /></div>

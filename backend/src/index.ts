@@ -281,7 +281,7 @@ app.post('/api/ai/translate', authenticate, async (req: any, res: any) => {
   }
 });
 
-app.post('/api/ai/reverse-geocode', authenticate, async (req: any, res: any) => {
+app.post('/api/ai/reverse-geocode', async (req: any, res: any) => {
   const { lat, lng } = req.body;
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
@@ -463,11 +463,11 @@ app.post('/api/register/send-code', async (req: any, res: any) => {
 
         console.log(`[EMAIL LOG] Verification code for ${cleanEmail}: ${code}`);
         
-        await sendMailInternal(cleanEmail, "Verify your email - OpenStudbook", `<p>Please use the code below for <strong>{{orgName}}</strong>:</p><div style="padding: 20px; background: #f0fdf4; border: 2px dashed #059669; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; font-weight: bold; color: #065f46;">{{code}}</div>`, {
+        const emailSent = await sendMailInternal(cleanEmail, "Verify your email - OpenStudbook", `<p>Please use the code below for <strong>{{orgName}}</strong>:</p><div style="padding: 20px; background: #f0fdf4; border: 2px dashed #059669; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; font-weight: bold; color: #065f46;">{{code}}</div>`, {
             code, orgName: orgName || "your organization"
         }, 'registration', language || 'en-GB');
 
-        res.json({ success: true });
+        res.json({ success: true, ...(!emailSent ? { fallbackCode: code } : {}) });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
