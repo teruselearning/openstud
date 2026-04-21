@@ -156,7 +156,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     };
     const updated = editingId ? allSpecies.map(sp => sp.id === editingId ? finalSpecies : sp) : [...allSpecies, finalSpecies];
     setAllSpecies(updated);
-    saveSpecies(updated);
+    try {
+      await saveSpecies(updated);
+    } catch (e: any) {
+      alert('Species could not be saved to the server. Your data is stored locally but may be lost if you clear browser storage.');
+    }
     handleCloseForm();
   };
 

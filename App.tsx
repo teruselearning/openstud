@@ -335,8 +335,8 @@ const App: React.FC = () => {
            if (data.languages) { saveLanguages(data.languages, true); setLanguages(data.languages); }
            if (data.projects) saveProjects(data.projects, true);
            if (data.users) saveUsers(data.users, true);
-           if (data.species) saveSpecies(data.species, true);
-           if (data.individuals) saveIndividuals(data.individuals, true);
+           if (data.species) await saveSpecies(data.species, true);
+           if (data.individuals) await saveIndividuals(data.individuals, true);
            if (data.enclosures) saveEnclosures(data.enclosures, true);
 
            const activeOrg = getOrg();
