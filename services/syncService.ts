@@ -302,12 +302,34 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
 export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
 export const syncPushProjects = async (projects: Project[]) => apiRequest('/rest/v1/projects', 'POST', projects.map(mapProjectToDb));
-export const syncPushSpecies = async (species: Species[]) => apiRequest('/rest/v1/species', 'POST', species.map(mapSpeciesToDb));
+export const syncPushSpecies = async (species: Species[]) => {
+  // Push core data without images — images are large base64 blobs that can exceed
+  // max_allowed_packet limits when batched, causing the entire push to silently fail.
+  const coreData = species.map(s => { const { image_url, ...core } = mapSpeciesToDb(s); return core; });
+  await apiRequest('/rest/v1/species', 'POST', coreData);
+  // Push images one at a time, fire-and-forget — failures don't block core data sync.
+  for (const s of species) {
+    if (s.imageUrl) {
+      apiRequest('/rest/v1/species', 'POST', [{ id: s.id, image_url: s.imageUrl }]).catch(() => {});
+    }
+  }
+};
 export const syncPushIndividuals = async (individuals: Individual[]) => {
-  const pass1Data = individuals.map(i => ({ ...mapIndToDb(i), sire_id: null, dam_id: null }));
+  // Pass 1: core data without images or parent refs (avoid FK ordering issues)
+  const pass1Data = individuals.map(i => { const { image_url, thumbnail_url, ...rest } = { ...mapIndToDb(i), sire_id: null, dam_id: null }; return rest; });
   await apiRequest('/rest/v1/individuals', 'POST', pass1Data);
+  // Pass 2: update parent refs (no images)
   const indWithParents = individuals.filter(i => i.sireId || i.damId);
-  if (indWithParents.length > 0) await apiRequest('/rest/v1/individuals', 'POST', indWithParents.map(mapIndToDb));
+  if (indWithParents.length > 0) {
+    const pass2Data = indWithParents.map(i => { const { image_url, thumbnail_url, ...rest } = mapIndToDb(i); return rest; });
+    await apiRequest('/rest/v1/individuals', 'POST', pass2Data);
+  }
+  // Push images one at a time, fire-and-forget
+  for (const i of individuals) {
+    if (i.imageUrl) {
+      apiRequest('/rest/v1/individuals', 'POST', [{ id: i.id, image_url: i.imageUrl, thumbnail_url: i.thumbnailUrl || null }]).catch(() => {});
+    }
+  }
 };
 export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
