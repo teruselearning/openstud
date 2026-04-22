@@ -1,12 +1,12 @@
 
 /**
  * OpenStudbook High-Capacity Local Database
- * Uses IndexedDB to store large records (images, DNA, histories, translations) 
+ * Uses IndexedDB to store large records (images, DNA, histories, translations)
  * that exceed the 5MB localStorage limit.
  */
 
 const DB_NAME = 'OpenStudbookDB';
-const DB_VERSION = 3; 
+const DB_VERSION = 3;
 const STORES = {
   INDIVIDUALS: 'individuals',
   SPECIES: 'species',
@@ -16,44 +16,65 @@ const STORES = {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-const getDB = (): Promise<IDBDatabase> => {
-  if (dbPromise) return dbPromise;
+const setupStores = (event: any) => {
+  const db = event.target.result;
+  if (!db.objectStoreNames.contains(STORES.INDIVIDUALS)) {
+    db.createObjectStore(STORES.INDIVIDUALS, { keyPath: 'id' });
+  }
+  if (!db.objectStoreNames.contains(STORES.SPECIES)) {
+    db.createObjectStore(STORES.SPECIES, { keyPath: 'id' });
+  }
+  if (!db.objectStoreNames.contains(STORES.LANGUAGES)) {
+    db.createObjectStore(STORES.LANGUAGES, { keyPath: 'code' });
+  }
+  if (!db.objectStoreNames.contains(STORES.ENCLOSURES)) {
+    db.createObjectStore(STORES.ENCLOSURES, { keyPath: 'id' });
+  }
+};
 
-  dbPromise = new Promise((resolve, reject) => {
+const openDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      // Handle version collisions/multiple tabs
       request.onblocked = () => {
         console.warn('IndexedDB is blocked. Please close other tabs of this app.');
-        // Resolve with a mock or let it time out to avoid complete hang
       };
-
-      request.onupgradeneeded = (event: any) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORES.INDIVIDUALS)) {
-          db.createObjectStore(STORES.INDIVIDUALS, { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains(STORES.SPECIES)) {
-          db.createObjectStore(STORES.SPECIES, { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains(STORES.LANGUAGES)) {
-          db.createObjectStore(STORES.LANGUAGES, { keyPath: 'code' });
-        }
-        if (!db.objectStoreNames.contains(STORES.ENCLOSURES)) {
-          db.createObjectStore(STORES.ENCLOSURES, { keyPath: 'id' });
-        }
-      };
-
+      request.onupgradeneeded = setupStores;
       request.onsuccess = (event: any) => resolve(event.target.result);
-      request.onerror = (event: any) => {
-        console.error('IndexedDB error:', event.target.error);
-        reject(event.target.error);
-      };
+      request.onerror = (event: any) => reject(event.target.error);
     } catch (e) {
       reject(e);
     }
   });
+};
+
+const deleteDB = (): Promise<void> => {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve(); // resolve even on failure — best effort
+      req.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+};
+
+const getDB = (): Promise<IDBDatabase> => {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = openDB().catch(async (firstErr) => {
+    // Chrome/Edge can fail to open IndexedDB immediately after "Clear site data" because
+    // the backing-store files are in a half-deleted state.  Deleting the database and
+    // retrying gives the browser a chance to recreate clean backing files.
+    console.warn('IndexedDB open failed — attempting recovery (delete + reopen):', firstErr);
+    await deleteDB();
+    return openDB(); // second attempt; let this one propagate if it also fails
+  });
+
+  // If both attempts fail, clear dbPromise so callers can retry on the next operation.
+  dbPromise.catch(() => { dbPromise = null; });
 
   return dbPromise;
 };
@@ -81,7 +102,7 @@ export const localDb = {
       return new Promise((resolve, reject) => {
         const transaction = db.transaction(storeName, 'readwrite');
         const store = transaction.objectStore(storeName);
-        
+
         store.clear();
         items.forEach(item => {
           try { store.put(item); } catch (e) { console.error('Error putting item into store:', e); }

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
-import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, Eye, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
 import UserManager from './UserManager';
@@ -25,9 +25,21 @@ const OrgSettings: React.FC = () => {
   const [individuals, setIndividuals] = useState<Individual[]>([]);
   const [isSaved, setIsSaved] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
-  
+
+  // Project management state
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState('');
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<Project | null>(null);
+  const [migrationProjectId, setMigrationProjectId] = useState<string>('');
+
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Gemini API key state (key is write-only; we only store a boolean client-side)
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [isSavingGeminiKey, setIsSavingGeminiKey] = useState(false);
+  const [geminiKeySaved, setGeminiKeySaved] = useState(false);
 
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<any>(null);
@@ -104,10 +116,36 @@ const OrgSettings: React.FC = () => {
     finally { setIsGeocoding(false); }
   };
 
+  const handleSaveGeminiKey = async (clear = false) => {
+    setIsSavingGeminiKey(true);
+    try {
+      const token = (localStorage.getItem('os_token') || '').replace(/"/g, '');
+      const response = await fetch('/api/org/gemini-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key: clear ? '' : geminiKeyInput }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        setOrg(prev => prev ? { ...prev, hasOwnGeminiKey: result.has_gemini_api_key } : prev);
+        setGeminiKeyInput('');
+        setGeminiKeySaved(true);
+        setTimeout(() => setGeminiKeySaved(false), 3000);
+      } else {
+        alert('Failed to save API key: ' + (result.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      alert('Failed to save API key: ' + e.message);
+    } finally {
+      setIsSavingGeminiKey(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (org) {
       saveOrg(org);
+      window.dispatchEvent(new CustomEvent('org-settings-updated'));
       setIsSaved(true);
       
       const isNew = species.length === 0;
@@ -125,6 +163,43 @@ const OrgSettings: React.FC = () => {
   const handleDashboardBlockChange = (field: string, value: any) => {
      if(!org) return;
      setOrg({ ...org, dashboardBlock: { ...org.dashboardBlock, [field]: value } as any });
+  };
+
+  const handleRenameProject = (p: Project) => {
+    setEditingProjectId(p.id);
+    setEditingProjectName(p.name);
+  };
+
+  const handleSaveProjectName = () => {
+    if (!editingProjectId || !editingProjectName.trim()) return;
+    const updated = projects.map(p => p.id === editingProjectId ? { ...p, name: editingProjectName.trim() } : p);
+    const allProjects = getProjects().map(p => p.id === editingProjectId ? { ...p, name: editingProjectName.trim() } : p);
+    saveProjects(allProjects);
+    setProjects(updated);
+    setEditingProjectId(null);
+  };
+
+  const handleDeleteProject = () => {
+    if (!deleteProjectTarget) return;
+    const pid = deleteProjectTarget.id;
+    if (migrationProjectId) {
+      const updatedSpecies = species.map(s => s.projectId === pid ? { ...s, projectId: migrationProjectId } : s);
+      const updatedInds = individuals.map(i => i.projectId === pid ? { ...i, projectId: migrationProjectId } : i);
+      saveSpecies(updatedSpecies);
+      saveIndividuals(updatedInds);
+      setSpecies(updatedSpecies);
+      setIndividuals(updatedInds);
+    } else {
+      saveSpecies(species.filter(s => s.projectId !== pid));
+      saveIndividuals(individuals.filter(i => i.projectId !== pid));
+      setSpecies(species.filter(s => s.projectId !== pid));
+      setIndividuals(individuals.filter(i => i.projectId !== pid));
+    }
+    const allProjects = getProjects().filter(p => p.id !== pid);
+    saveProjects(allProjects);
+    setProjects(projects.filter(p => p.id !== pid));
+    setDeleteProjectTarget(null);
+    setMigrationProjectId('');
   };
 
   const session = getSession();
@@ -230,6 +305,150 @@ const OrgSettings: React.FC = () => {
          </div>
       )}
 
+      {/* Gemini API Key — shown on general tab for Admin / Super Admin */}
+      {activeTab === 'general' && !isDemoOrg && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-emerald-600" />
+            <h3 className="font-medium text-slate-900">AI Integration — Gemini API Key</h3>
+            {org?.hasOwnGeminiKey && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 ml-1">
+                <Check size={12} /> Active
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500">
+            By default this installation uses the server's shared Gemini API key and enforces a monthly usage limit.
+            Entering your organisation's own key removes all usage limits — your key is stored securely on the server and is never exposed to browsers.
+            Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-emerald-600 underline hover:text-emerald-700">aistudio.google.com/apikey</a>.
+          </p>
+          {org?.hasOwnGeminiKey && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-lg text-sm text-emerald-800 border border-emerald-200">
+              <Check size={16} className="shrink-0" />
+              <span>A custom Gemini API key is active for this organisation. AI features are <strong>unlimited</strong>.</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKeyInput}
+                onChange={e => setGeminiKeyInput(e.target.value)}
+                placeholder={org?.hasOwnGeminiKey ? 'Enter new key to replace existing…' : 'Paste your Gemini API key here…'}
+                className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-900 font-mono text-sm"
+              />
+              <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveGeminiKey(false)}
+              disabled={!geminiKeyInput.trim() || isSavingGeminiKey}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
+            >
+              {isSavingGeminiKey ? <Loader2 size={16} className="animate-spin" /> : geminiKeySaved ? <Check size={16} /> : <Save size={16} />}
+              {geminiKeySaved ? 'Saved!' : 'Save Key'}
+            </button>
+            {org?.hasOwnGeminiKey && (
+              <button
+                type="button"
+                onClick={() => { if (window.confirm('Remove the custom Gemini API key? The shared server key will be used again (usage limits apply).')) handleSaveGeminiKey(true); }}
+                disabled={isSavingGeminiKey}
+                className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium text-sm transition-colors"
+              >
+                <X size={16} /> Remove Key
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={12} /> Your key is stored encrypted on the server. It is never sent to your browser after being saved.</p>
+        </div>
+      )}
+
+      {activeTab === 'general' && projects.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4 animate-in fade-in">
+          <h3 className="font-medium text-slate-900 flex items-center gap-2"><FolderOpen size={18}/> Project Management</h3>
+          <p className="text-sm text-slate-500">Rename or delete projects. Deleting a project lets you migrate its records to another project first.</p>
+          <div className="space-y-2">
+            {projects.map(p => {
+              const spCount = species.filter(s => s.projectId === p.id).length;
+              const indCount = individuals.filter(i => i.projectId === p.id).length;
+              return (
+                <div key={p.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  {editingProjectId === p.id ? (
+                    <input
+                      className="flex-1 px-3 py-1.5 border border-emerald-400 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                      value={editingProjectName}
+                      onChange={e => setEditingProjectName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSaveProjectName(); if (e.key === 'Escape') setEditingProjectId(null); }}
+                      autoFocus
+                    />
+                  ) : (
+                    <span className="flex-1 font-medium text-slate-800 text-sm">{p.name}</span>
+                  )}
+                  <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">{spCount} sp · {indCount} ind</span>
+                  {editingProjectId === p.id ? (
+                    <button onClick={handleSaveProjectName} className="text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-lg hover:bg-emerald-200">Save</button>
+                  ) : (
+                    <button onClick={() => handleRenameProject(p)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><Pencil size={14}/></button>
+                  )}
+                  <button onClick={() => { setDeleteProjectTarget(p); setMigrationProjectId(''); }} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={14}/></button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'general' && !isDemoOrg && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4 animate-in fade-in">
+          <h3 className="font-medium text-slate-900 flex items-center gap-2"><Database size={18}/> Data Management</h3>
+          <p className="text-sm text-slate-500">Export a full backup of your organisation data, or restore from a previously exported file.</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => {
+                const data = exportFullData();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `openstudbook-backup-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-lg font-medium text-sm shadow-sm transition-colors"
+            >
+              <Download size={16}/> Export Backup
+            </button>
+            <label className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-5 py-2.5 rounded-lg font-medium text-sm shadow-sm transition-colors cursor-pointer">
+              <Upload size={16} className="text-emerald-600"/> Import Backup
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    try {
+                      const data = JSON.parse(ev.target?.result as string);
+                      importFullData(data);
+                      window.location.reload();
+                    } catch {
+                      alert('Invalid backup file. Please select a valid OpenStudBook JSON export.');
+                    }
+                  };
+                  reader.readAsText(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+          <p className="text-xs text-amber-600 flex items-center gap-1.5"><AlertTriangle size={12}/> Importing will overwrite all current organisation data.</p>
+        </div>
+      )}
+
       {showOnboarding && (
         <div className="fixed inset-0 z-[5000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
@@ -244,6 +463,45 @@ const OrgSettings: React.FC = () => {
                </button>
              </div>
            </div>
+        </div>
+      )}
+
+      {deleteProjectTarget && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-100 text-red-600 rounded-xl"><Trash2 size={20}/></div>
+              <h3 className="text-lg font-bold text-slate-900">Delete "{deleteProjectTarget.name}"?</h3>
+            </div>
+            <p className="text-sm text-slate-500 mb-4">
+              This project contains <strong>{species.filter(s => s.projectId === deleteProjectTarget.id).length} species</strong> and <strong>{individuals.filter(i => i.projectId === deleteProjectTarget.id).length} individuals</strong>.
+              Choose what to do with them:
+            </p>
+            <div className="space-y-3 mb-6">
+              <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                <input type="radio" name="migrate" checked={migrationProjectId === ''} onChange={() => setMigrationProjectId('')} className="text-red-600" />
+                <div>
+                  <p className="text-sm font-bold text-red-700">Delete all records</p>
+                  <p className="text-xs text-slate-400">All species and individuals in this project will be permanently removed.</p>
+                </div>
+              </label>
+              {projects.filter(p => p.id !== deleteProjectTarget.id).map(p => (
+                <label key={p.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+                  <input type="radio" name="migrate" checked={migrationProjectId === p.id} onChange={() => setMigrationProjectId(p.id)} className="text-emerald-600" />
+                  <div>
+                    <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><ArrowRightLeft size={13} className="text-emerald-600"/> Move to "{p.name}"</p>
+                    <p className="text-xs text-slate-400">All records will be reassigned to this project.</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteProjectTarget(null)} className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold">Cancel</button>
+              <button onClick={handleDeleteProject} className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold">
+                {migrationProjectId ? 'Move & Delete' : 'Delete Everything'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

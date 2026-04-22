@@ -68,7 +68,8 @@ const fromDbOrg = (o: any): Organization => ({
   aiUsageLimit: o.ai_usage_limit,
   aiUsageCount: o.ai_usage_count,
   aiUsageLastReset: o.ai_usage_last_reset,
-  deleted: !!o.is_deleted 
+  hasOwnGeminiKey: !!o.has_gemini_api_key,
+  deleted: !!o.is_deleted
 });
 
 const fromDbProject = (p: any): Project => ({ id: p.id, name: p.name, description: p.description, orgId: p.org_id });
@@ -115,8 +116,9 @@ const fromDbInd = (i: any): Individual => ({
   weightKg: i.weight_kg, 
   sireId: i.sire_id, 
   damId: i.dam_id, 
-  imageUrl: i.image_url, 
-  dnaSequence: i.dna_sequence, 
+  imageUrl: i.image_url,
+  thumbnailUrl: i.thumbnail_url || undefined,
+  dnaSequence: i.dna_sequence,
   notes: i.notes, 
   source: i.source, 
   sourceDetails: i.source_details, 
@@ -133,9 +135,10 @@ const fromDbInd = (i: any): Individual => ({
   healthHistory: safeParse(i.health_history, []) 
 });
 
-const fromDbEnclosure = (e: any): Enclosure => ({ 
-  id: e.id, orgId: e.org_id, projectId: e.project_id, name: e.name, description: e.description, 
-  boundary: safeParse(e.boundary, []), individualIds: safeParse(e.individual_ids, []) 
+const fromDbEnclosure = (e: any): Enclosure => ({
+  id: e.id, orgId: e.org_id, projectId: e.project_id, name: e.name, description: e.description,
+  boundary: safeParse(e.boundary, []), individualIds: safeParse(e.individual_ids, []),
+  feedSchedules: safeParse(e.feed_schedules, [])
 });
 
 const fromDbEvent = (e: any): BreedingEvent => ({ 
@@ -209,7 +212,7 @@ export const mapOrgToDb = (o: Organization) => ({
   dashboard_block: o.dashboardBlock || null, 
   enable_mfa: o.enableMfa ?? false, 
   enable_enclosures: o.enableEnclosures ?? false, 
-  ai_usage_limit: sanitizeNum(o.aiUsageLimit, 100),
+  ai_usage_limit: sanitizeNum(o.aiUsageLimit, 0), // 0 = unlimited (default for new orgs)
   ai_usage_count: sanitizeNum(o.aiUsageCount, 0),
   ai_usage_last_reset: o.aiUsageLastReset || null,
   is_deleted: o.deleted || false 
@@ -268,9 +271,10 @@ export const mapIndToDb = (i: Individual) => ({
   weight_kg: sanitizeNum(i.weightKg), 
   sire_id: i.sireId || null, 
   dam_id: i.damId || null, 
-  image_url: i.imageUrl || null, 
+  image_url: i.imageUrl || null,
+  thumbnail_url: i.thumbnailUrl || null,
   // Fixed: Correct property name is dnaSequence
-  dna_sequence: i.dnaSequence || null, 
+  dna_sequence: i.dnaSequence || null,
   notes: i.notes || null, 
   source: i.source || null, 
   source_details: i.sourceDetails || null, 
@@ -295,8 +299,9 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
   project_id: e.projectId || null, 
   name: e.name || 'Unnamed Enclosure', 
   description: e.description || null, 
-  boundary: e.boundary || [], 
-  individual_ids: e.individualIds || [] 
+  boundary: e.boundary || [],
+  individual_ids: e.individualIds || [],
+  feed_schedules: e.feedSchedules || []
 });
 
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
@@ -307,10 +312,12 @@ export const syncPushSpecies = async (species: Species[]) => {
   // max_allowed_packet limits when batched, causing the entire push to silently fail.
   const coreData = species.map(s => { const { image_url, ...core } = mapSpeciesToDb(s); return core; });
   await apiRequest('/rest/v1/species', 'POST', coreData);
-  // Push images one at a time, fire-and-forget — failures don't block core data sync.
+  // Push images one at a time via PATCH (partial update), fire-and-forget.
+  // PATCH avoids MySQL NOT NULL errors that occur with INSERT ... ON DUPLICATE KEY UPDATE
+  // when only { id, image_url } is provided (MySQL validates NOT NULL cols before dedup).
   for (const s of species) {
     if (s.imageUrl) {
-      apiRequest('/rest/v1/species', 'POST', [{ id: s.id, image_url: s.imageUrl }]).catch(() => {});
+      apiRequest('/rest/v1/species', 'PATCH', { id: s.id, image_url: s.imageUrl }).catch(() => {});
     }
   }
 };
@@ -324,10 +331,10 @@ export const syncPushIndividuals = async (individuals: Individual[]) => {
     const pass2Data = indWithParents.map(i => { const { image_url, thumbnail_url, ...rest } = mapIndToDb(i); return rest; });
     await apiRequest('/rest/v1/individuals', 'POST', pass2Data);
   }
-  // Push images one at a time, fire-and-forget
+  // Push images one at a time via PATCH (partial update), fire-and-forget.
   for (const i of individuals) {
     if (i.imageUrl) {
-      apiRequest('/rest/v1/individuals', 'POST', [{ id: i.id, image_url: i.imageUrl, thumbnail_url: i.thumbnailUrl || null }]).catch(() => {});
+      apiRequest('/rest/v1/individuals', 'PATCH', { id: i.id, image_url: i.imageUrl, thumbnail_url: i.thumbnailUrl || null }).catch(() => {});
     }
   }
 };
@@ -390,4 +397,51 @@ export const fetchRemoteData = async () => {
     console.error("Sync Pull Failed:", error);
     return { success: false, message: error.message || "Failed to connect to API" };
   }
+};
+
+export const fetchIndividualImage = async (id: string): Promise<string | null> => {
+  try {
+    const data = await apiRequest(`/api/individuals/${id}/image`, 'GET');
+    return data.imageUrl || null;
+  } catch { return null; }
+};
+
+export const fetchSpeciesImage = async (id: string): Promise<string | null> => {
+  try {
+    const data = await apiRequest(`/api/species/${id}/image`, 'GET');
+    return data.imageUrl || null;
+  } catch { return null; }
+};
+
+export const getInstallStatus = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/install/status?t=${Date.now()}`);
+    if (!response.ok) return { success: false, installed: false };
+    return await response.json();
+  } catch (e) { return { success: false, installed: false }; }
+};
+
+export const testInstallConnection = async (config: { host: string; user: string; password: string; port: string }) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/install/test-connection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    return await response.json();
+  } catch (e: any) {
+    return { success: false, error: e.message || 'Could not reach the backend.' };
+  }
+};
+
+export const runInstallSetup = async (config: any) => {
+  const response = await fetch(`${API_BASE_URL}/api/install/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok || response.headers.get('content-length') === '0') {
+    throw new Error(`Server error (${response.status}). Check backend logs.`);
+  }
+  return await response.json();
 };
