@@ -198,17 +198,44 @@ export const saveOrg = (o: Organization, skipSync = false) => {
 
 export const checkAndIncrementAiUsage = (): boolean => {
   const org = getOrg();
+  // Orgs with their own server-stored Gemini key are always unlimited.
+  if (org.hasOwnGeminiKey) return true;
+  // aiUsageLimit === 0 means unlimited (e.g. superadmin / default org).
+  const limit = org.aiUsageLimit ?? 0;
+  if (limit === 0) return true;
+
   const now = new Date();
   const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
   let count = org.aiUsageCount || 0;
   let lastReset = org.aiUsageLastReset || "";
   if (lastReset !== currentMonthStr) { count = 0; lastReset = currentMonthStr; }
-  
-  const limit = org.aiUsageLimit || 1000;
+
   if (count >= limit) return false;
-  
+
   saveOrg({ ...org, aiUsageCount: count + 1, aiUsageLastReset: currentMonthStr });
   return true;
+};
+
+/** Returns a snapshot of the current org's AI usage for display in the UI. */
+export const getAiUsageInfo = () => {
+  const org = getOrg();
+  // Orgs with their own Gemini key are always unlimited — usage counting is irrelevant.
+  if (org.hasOwnGeminiKey) {
+    return { count: 0, limit: 0, isUnlimited: true, isAtLimit: false, percentUsed: 0, hasOwnKey: true };
+  }
+  const limit = org.aiUsageLimit ?? 0;
+  const isUnlimited = limit === 0;
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
+  const count = (org.aiUsageLastReset || '') !== currentMonthStr ? 0 : (org.aiUsageCount || 0);
+  return {
+    count,
+    limit,
+    isUnlimited,
+    isAtLimit: !isUnlimited && count >= limit,
+    percentUsed: isUnlimited ? 0 : Math.min(100, Math.round((count / limit) * 100)),
+    hasOwnKey: false,
+  };
 };
 
 export const getProjects = (): Project[] => get(KEYS.PROJECTS, []);
@@ -230,14 +257,28 @@ export const getSpecies = (): Species[] => speciesCache;
 export const saveSpecies = async (s: Species[], skipSync = false) => {
   speciesCache = s || [];
   await localDb.saveAll('species', speciesCache);
-  if (!skipSync) await syncPushSpecies(speciesCache);
+  if (!skipSync) {
+    try {
+      await syncPushSpecies(speciesCache);
+    } catch (e: any) {
+      console.error('Species sync failed:', e);
+      window.dispatchEvent(new CustomEvent('os-sync-error', { detail: 'Species could not be saved to the server. Your data is stored locally but may be lost if you clear browser storage. Error: ' + (e?.message || e) }));
+    }
+  }
 };
 
 export const getIndividuals = (): Individual[] => individualsCache;
 export const saveIndividuals = async (i: Individual[], skipSync = false) => {
   individualsCache = i || [];
   await localDb.saveAll('individuals', individualsCache);
-  if (!skipSync) await syncPushIndividuals(individualsCache);
+  if (!skipSync) {
+    try {
+      await syncPushIndividuals(individualsCache);
+    } catch (e: any) {
+      console.error('Individuals sync failed:', e);
+      window.dispatchEvent(new CustomEvent('os-sync-error', { detail: 'Individuals could not be saved to the server. Your data is stored locally but may be lost if you clear browser storage. Error: ' + (e?.message || e) }));
+    }
+  }
 };
 
 export const deleteIndividual = async (id: string) => {
@@ -349,8 +390,9 @@ export const resetPassword = async (email: string, code: string, pass: string): 
 export const inviteUser = async (name: string, email: string, role: UserRole, allowedProjectIds: string[], lang?: string) => {
   const org = getOrg();
   const newUser: User = { id: `u-${Date.now()}`, orgId: org.id, name, email, role, status: UserStatus.INVITED, allowedProjectIds, preferredLanguage: lang };
-  
-  // Create user in backend first via standard REST
+
+  // Save locally first so the UI updates immediately, then sync to backend
+  saveUsers([...getUsers(), newUser], true);
   await syncPushUsers([newUser]);
 
   const s = getSystemSettings();
