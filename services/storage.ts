@@ -163,6 +163,27 @@ export const logout = () => {
    localStorage.removeItem(KEYS.BACKUP);
 };
 
+/** Wipe all local caches (in-memory + IndexedDB + localStorage data keys).
+ *  Preserves the auth token/session so the user stays logged in.
+ *  Use when you need a guaranteed clean slate regardless of browser storage restrictions. */
+export const clearLocalData = async (): Promise<void> => {
+  // Reset in-memory caches
+  individualsCache = [];
+  speciesCache = [];
+  enclosuresCache = [];
+  languagesCache = [];
+  isLoaded = false;
+
+  // Clear IndexedDB stores (best-effort — may fail in managed Chrome environments)
+  await localDb.clearAll();
+
+  // Clear all localStorage data keys (but keep auth token/session)
+  const keysToKeep = new Set([KEYS.SESSION, KEYS.TOKEN, KEYS.IMPERSONATING, KEYS.BACKUP]);
+  Object.values(KEYS).forEach(key => {
+    if (!keysToKeep.has(key)) localStorage.removeItem(key);
+  });
+};
+
 export const isImpersonating = () => !!localStorage.getItem(KEYS.IMPERSONATING);
 export const restoreMainOrg = () => {
    if (isImpersonating()) {

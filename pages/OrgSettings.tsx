@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
+import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession, clearLocalData } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
 import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, Eye, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight } from 'lucide-react';
@@ -40,6 +40,8 @@ const OrgSettings: React.FC = () => {
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [isSavingGeminiKey, setIsSavingGeminiKey] = useState(false);
   const [geminiKeySaved, setGeminiKeySaved] = useState(false);
+
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<any>(null);
@@ -139,6 +141,13 @@ const OrgSettings: React.FC = () => {
     } finally {
       setIsSavingGeminiKey(false);
     }
+  };
+
+  const handleClearLocalCache = async () => {
+    if (!window.confirm('This will wipe all locally cached data (species, individuals, projects, etc.) from this browser and reload the page. Server data is unaffected. Continue?')) return;
+    setIsClearingCache(true);
+    await clearLocalData();
+    window.location.reload();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -362,6 +371,25 @@ const OrgSettings: React.FC = () => {
             )}
           </div>
           <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={12} /> Your key is stored encrypted on the server. It is never sent to your browser after being saved.</p>
+        </div>
+      )}
+
+      {activeTab === 'general' && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-3 animate-in fade-in">
+          <h3 className="font-medium text-slate-900 flex items-center gap-2"><Database size={18}/> Local Cache</h3>
+          <p className="text-sm text-slate-500">
+            Clear all data cached in this browser (IndexedDB + localStorage). Use this if you see stale or duplicated data after a database reset.
+            Your server data is not affected — everything will re-sync on the next login.
+          </p>
+          <button
+            type="button"
+            onClick={handleClearLocalCache}
+            disabled={isClearingCache}
+            className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium text-sm transition-colors"
+          >
+            {isClearingCache ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {isClearingCache ? 'Clearing…' : 'Clear Local Cache'}
+          </button>
         </div>
       )}
 
