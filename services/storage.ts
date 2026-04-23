@@ -308,6 +308,12 @@ export const deleteIndividual = async (id: string) => {
   try { await syncDeleteRecord('individuals', id); } catch (e) {}
 };
 
+export const deleteSpecies = async (id: string) => {
+  speciesCache = speciesCache.filter(s => s.id !== id);
+  await localDb.saveAll('species', speciesCache);
+  try { await syncDeleteRecord('species', id); } catch (e) {}
+};
+
 export const getEnclosures = (): Enclosure[] => enclosuresCache;
 export const saveEnclosures = async (e: Enclosure[], skipSync = false) => {
   enclosuresCache = e || [];
