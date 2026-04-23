@@ -114,5 +114,22 @@ export const localDb = {
     } catch (e) {
       console.error(`LocalDB save failed for ${storeName}:`, e);
     }
+  },
+
+  async clearAll(): Promise<void> {
+    const storeNames = Object.values(STORES);
+    for (const storeName of storeNames) {
+      try {
+        const db = await getDB();
+        await new Promise<void>((resolve) => {
+          const transaction = db.transaction(storeName, 'readwrite');
+          transaction.objectStore(storeName).clear();
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => resolve(); // best-effort
+        });
+      } catch (e) {
+        console.warn(`clearAll: could not clear store ${storeName}:`, e);
+      }
+    }
   }
 };
