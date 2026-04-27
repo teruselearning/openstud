@@ -909,7 +909,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
             const sp = allSpecies.find(s => s.id === ind.speciesId);
             const isPlantInd = sp?.type === 'Plant';
             const displayName = isPlantInd ? ind.studbookId : ind.name;
-            const displayImg = ind.thumbnailUrl || ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
+            const latestObsImg = ind.weightHistory?.find(w => w.imageUrl)?.imageUrl || ind.healthHistory?.find(h => h.imageUrl)?.imageUrl;
+            const displayImg = latestObsImg || ind.thumbnailUrl || ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
             return (
               <div key={ind.id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all group flex flex-col ${selectedIds.has(ind.id) ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-slate-200'}`}>
                 <div className="h-48 bg-slate-100 relative overflow-hidden">

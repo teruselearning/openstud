@@ -54,8 +54,8 @@ import EnclosureManager from './pages/EnclosureManager';
 import Installer from './components/Installer';
 import SetupWizard from './components/SetupWizard';
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
-import { fetchRemoteData, fetchPublicConfig, getInstallStatus } from './services/syncService';
-import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig } from './types';
+import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fetchSpeciesImage, fetchIndividualImage } from './services/syncService';
+import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig, Species, Individual } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 
 // --- Components ---
@@ -144,8 +144,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   const path = location.pathname;
   const { t, language, setLanguage, availableLanguages } = useContext(LanguageContext);
   const org = getOrg();
-  // Fix: Changed 'Plants' to 'Flora' to match OrganizationFocus type
-  const enclosureLabel = org.focus === 'Flora' ? 'Areas' : 'Enclosures';
+  const enclosureLabel = org.focus === 'Flora' ? t('areas') : t('enclosures');
   
   const isSuper = user.role === UserRole.SUPER_ADMIN || (user.role as string) === 'Super Admin';
   const isAdmin = user.role === UserRole.ADMIN || isSuper;
@@ -161,7 +160,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
             <button onClick={onClose} className="lg:hidden text-slate-500"><X size={24} /></button>
           </div>
           <div className="relative">
-             <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> Current Project</div>
+             <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider"><FolderOpen size={12} /> {t('currentProject')}</div>
              <select 
                value={currentProjectId} 
                onChange={(e) => e.target.value === 'NEW' ? onAddProject() : onChangeProject(e.target.value)} 
@@ -169,12 +168,12 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
                disabled={!isAdmin && projects.length <= 1}
              >
                {hasGlobalAccess && projects.length > 1 && (
-                 <option value="ALL_PROJECTS">🌐 All Projects</option>
+                 <option value="ALL_PROJECTS">🌐 {t('allProjects')}</option>
                )}
                {projects.length > 0 ? (
                  projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
                ) : (
-                 <option value="">No Projects Found</option>
+                 <option value="">{t('noProjectsFound')}</option>
                )}
                {isAdmin && (
                  <>
@@ -238,7 +237,7 @@ const App: React.FC = () => {
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
-  const [showBreeding, setShowBreeding] = useState(true);
+  const [showBreeding, setShowBreeding] = useState(false);
   const [showPlantMap, setShowPlantMap] = useState(false);
   const [showEnclosures, setShowEnclosures] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -357,11 +356,13 @@ const App: React.FC = () => {
   const calculateFeatureVisibility = (pid: string) => {
      if (!pid) return;
      const org = getOrg();
+     if (!org) return;
      const allSpecies = getSpecies();
      const allInds = getIndividuals();
      const projectSpecies = pid === 'ALL_PROJECTS' ? allSpecies : allSpecies.filter(s => s.projectId === pid);
-     // Fix: Changed 'Animals' to 'Fauna' to match OrganizationFocus type
-     setShowBreeding(org.focus === 'Fauna' || projectSpecies.some(s => s.type === 'Animal'));
+     const hasAnimalSpecies = projectSpecies.some(s => s.type === 'Animal');
+     // Hide breeding for Flora-focus orgs that have no animal species
+     setShowBreeding(org.focus !== 'Flora' || hasAnimalSpecies);
      setShowEnclosures(!!org.enableEnclosures);
      const hasMappedPlants = allInds.some(i => (pid === 'ALL_PROJECTS' || i.projectId === pid) && i.latitude != null && i.longitude != null && allSpecies.find(s => s.id === i.speciesId)?.type === 'Plant');
      setShowPlantMap(hasMappedPlants);
@@ -420,6 +421,23 @@ const App: React.FC = () => {
                console.log(`[Sync] Saving ${mergedSpecies.length} species to cache...`);
                await saveSpecies(mergedSpecies, true);
                console.log(`[Sync] Species saved. Cache now: ${getSpecies().length}`);
+               if (localOnlySpecies.length > 0) syncPushSpecies(localOnlySpecies).catch(() => {});
+               // Restore images for species that have none locally (e.g. after cache clear)
+               const speciesMissingImages = mergedSpecies.filter(s => !s.imageUrl);
+               if (speciesMissingImages.length > 0) {
+                 Promise.all(speciesMissingImages.map(async s => {
+                   const imageUrl = await fetchSpeciesImage(s.id);
+                   return imageUrl ? { ...s, imageUrl } : null;
+                 })).then(async results => {
+                   const restored = results.filter(Boolean) as Species[];
+                   if (restored.length > 0) {
+                     const restoredMap = new Map(restored.map(s => [s.id, s]));
+                     const patched = getSpecies().map(s => restoredMap.get(s.id) || s);
+                     await saveSpecies(patched, true);
+                     setSyncVersion(v => v + 1);
+                   }
+                 }).catch(() => {});
+               }
              }
              if (data.individuals) {
                const localInds = getIndividuals();
@@ -432,6 +450,23 @@ const App: React.FC = () => {
                console.log(`[Sync] Saving ${mergedInds.length} individuals to cache...`);
                await saveIndividuals(mergedInds, true);
                console.log(`[Sync] Individuals saved. Cache now: ${getIndividuals().length}`);
+               if (localOnlyInds.length > 0) syncPushIndividuals(localOnlyInds).catch(() => {});
+               // Restore images for individuals that have none locally (e.g. after cache clear)
+               const indsMissingImages = mergedInds.filter(i => !i.imageUrl);
+               if (indsMissingImages.length > 0) {
+                 Promise.all(indsMissingImages.map(async i => {
+                   const imageUrl = await fetchIndividualImage(i.id);
+                   return imageUrl ? { ...i, imageUrl } : null;
+                 })).then(async results => {
+                   const restored = results.filter(Boolean) as Individual[];
+                   if (restored.length > 0) {
+                     const restoredMap = new Map(restored.map(i => [i.id, i]));
+                     const patched = getIndividuals().map(i => restoredMap.get(i.id) || i);
+                     await saveIndividuals(patched, true);
+                     setSyncVersion(v => v + 1);
+                   }
+                 }).catch(() => {});
+               }
              }
              if (data.enclosures) saveEnclosures(data.enclosures, true);
            } catch (dataErr: any) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg, getEnclosures } from '../services/storage';
+import { getIndividuals, saveIndividuals, getSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg, getEnclosures, getSession } from '../services/storage';
 import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, BreedingEvent, ExternalPartner, Partnership, Enclosure, Sex } from '../types';
 import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode, Box, Trash2, Loader2, Upload, ImageIcon } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -86,11 +86,9 @@ const IndividualDetail: React.FC = () => {
       imageUrl: pendingLogImage || undefined
     };
 
-    // Auto-update profile image if a photo was provided in the log
-    const updatedInd = { 
-       ...individual, 
-       imageUrl: pendingLogImage || individual.imageUrl,
-       weightHistory: [newRecord, ...(individual.weightHistory || [])] 
+    const updatedInd = {
+       ...individual,
+       weightHistory: [newRecord, ...(individual.weightHistory || [])]
     };
     
     const allInds = getIndividuals().map(i => i.id === individual.id ? updatedInd : i);
@@ -101,6 +99,9 @@ const IndividualDetail: React.FC = () => {
   };
 
   const getDisplayImage = () => {
+    const latestObs = individual?.healthHistory?.find(h => h.imageUrl)?.imageUrl
+      || individual?.weightHistory?.find(w => w.imageUrl)?.imageUrl;
+    if (latestObs) return latestObs;
     if (individual?.imageUrl && !individual.imageUrl.startsWith('data:image/svg+xml')) return individual.imageUrl;
     if (species?.imageUrl && !species.imageUrl.startsWith('data:image/svg+xml')) return species.imageUrl;
     return generatePattern(individual?.name || 'Individual');
@@ -110,6 +111,17 @@ const IndividualDetail: React.FC = () => {
 
   const isPlant = species?.type === 'Plant';
   const weightData = (individual.weightHistory || []).map(w => ({ date: w.date, value: w.weightKg })).reverse();
+
+  const allObsImages = [
+    ...(individual.healthHistory || []).filter(h => h.imageUrl).map(h => h.imageUrl!),
+    ...(individual.weightHistory || []).filter(w => w.imageUrl).map(w => w.imageUrl!),
+  ];
+  const originalProfileImg = (individual.imageUrl && !individual.imageUrl.startsWith('data:image/svg+xml'))
+    ? individual.imageUrl
+    : (species?.imageUrl && !species.imageUrl.startsWith('data:image/svg+xml'))
+      ? species.imageUrl
+      : null;
+  const galleryImages = [...allObsImages, ...(originalProfileImg ? [originalProfileImg] : [])];
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500">
@@ -185,27 +197,56 @@ const IndividualDetail: React.FC = () => {
           <div className="lg:col-span-2 space-y-6">
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-6">
-                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" /> Growth Trend</h3>
-                   <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> Log {isPlant ? 'Height' : 'Weight'}</button>
+                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" />{isPlant ? 'Growth Trend' : 'Weight Trend'}</h3>
+                   <div className="flex items-center gap-2">
+                     {isPlant && weightData.length > 0 && (
+                       <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-100 flex items-center gap-1"><Plus size={12}/> Log height</button>
+                     )}
+                     <button onClick={() => { isPlant ? (setShowHealthModal(true), setPendingLogImage('')) : (setShowWeightModal(true), setPendingLogImage('')); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> {isPlant ? 'Add Observation' : 'Log Weight'}</button>
+                   </div>
                 </div>
-                <div className="h-64">
-                   {weightData.length > 1 ? (
-                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={weightData}>
-                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                           <XAxis dataKey="date" hide />
-                           <YAxis hide domain={['auto', 'auto']} />
-                           <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                           <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} activeDot={{ r: 6 }} />
-                        </LineChart>
-                     </ResponsiveContainer>
-                   ) : (
-                     <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-2 italic">
-                        <Scale size={48} className="opacity-20" />
-                        <p>Insufficient historical data for chart</p>
-                     </div>
-                   )}
-                </div>
+                {isPlant && weightData.length === 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Species Info</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Scientific Name</p>
+                        <p className="font-medium text-slate-700 italic">{species?.scientificName || '—'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Classification</p>
+                        <p className="font-medium text-slate-700">{species?.plantClassification || '—'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Conservation Status</p>
+                        <p className="font-medium text-slate-700">{species?.conservationStatus || '—'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Native Status</p>
+                        <p className="font-medium text-slate-700">{species?.nativeStatusLocal || species?.nativeStatusCountry || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64">
+                    {weightData.length > 1 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                         <LineChart data={weightData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="date" hide />
+                            <YAxis hide domain={['auto', 'auto']} />
+                            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                            <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} activeDot={{ r: 6 }} />
+                         </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-2 italic">
+                         <Scale size={48} className="opacity-20" />
+                         <p>Insufficient historical data for chart</p>
+                      </div>
+                    )}
+                  </div>
+                )}
              </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -257,7 +298,7 @@ const IndividualDetail: React.FC = () => {
                              {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">Performed by: {log.performedBy}</p>}
                              
                              {log.imageUrl && (
-                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setGalleryIndex(999)}>
+                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setGalleryIndex(Math.max(0, allObsImages.indexOf(log.imageUrl!)))}>
                                   <img src={log.imageUrl} className="w-full h-full object-cover" />
                                </div>
                              )}
@@ -324,7 +365,7 @@ const IndividualDetail: React.FC = () => {
                  </div>
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Height (cm)' : 'Weight (kg)'}</label>
-                    <input type="number" step="0.01" name="weight" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" required autoFocus />
+                    <input type="number" step="0.01" name="weight" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" autoFocus />
                  </div>
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">Note</label>
@@ -365,7 +406,7 @@ const IndividualDetail: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
            <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold">New Medical Record</h3>
+                 <h3 className="font-bold">{isPlant ? 'New Observation' : 'New Medical Record'}</h3>
                  <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
               </div>
               <form onSubmit={(e) => {
@@ -382,8 +423,7 @@ const IndividualDetail: React.FC = () => {
                  };
 
                  const updated = {
-                    ...individual, 
-                    imageUrl: pendingLogImage || individual.imageUrl,
+                    ...individual,
                     healthHistory: [log, ...(individual.healthHistory || [])]
                  };
                  
@@ -401,21 +441,32 @@ const IndividualDetail: React.FC = () => {
                     <div>
                        <label className="text-[10px] font-bold text-slate-400 uppercase">Type</label>
                        <select name="type" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" required>
-                          <option value="Checkup">Checkup</option>
-                          <option value="Vaccination">Vaccination</option>
-                          <option value="Treatment">Treatment</option>
-                          <option value="Injury">Injury</option>
-                          <option value="Other">Other</option>
+                          {isPlant ? <>
+                            <option value="Observation">Observation</option>
+                            <option value="Flowering">Flowering</option>
+                            <option value="Fruiting">Fruiting</option>
+                            <option value="Pruning">Pruning</option>
+                            <option value="Repotting">Repotting</option>
+                            <option value="Pest/Disease">Pest / Disease</option>
+                            <option value="Dormancy">Dormancy</option>
+                            <option value="Other">Other</option>
+                          </> : <>
+                            <option value="Checkup">Checkup</option>
+                            <option value="Vaccination">Vaccination</option>
+                            <option value="Treatment">Treatment</option>
+                            <option value="Injury">Injury</option>
+                            <option value="Other">Other</option>
+                          </>}
                        </select>
                     </div>
                  </div>
                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Performed By</label>
-                    <input type="text" name="who" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Veterinarian Name" />
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">{isPlant ? 'Recorded By' : 'Performed By'}</label>
+                    <input type="text" name="who" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder={isPlant ? 'Your name' : 'Veterinarian Name'} defaultValue={getSession()?.name || ''} />
                  </div>
                  <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
-                    <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." required />
+                    <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." />
                  </div>
                  
                  <div className="space-y-2">
@@ -444,6 +495,32 @@ const IndividualDetail: React.FC = () => {
                  </div>
               </form>
            </div>
+        </div>
+      )}
+      {galleryIndex !== -1 && galleryImages.length > 0 && (
+        <div className="fixed inset-0 z-[500] bg-black/90 flex items-center justify-center p-4" onClick={() => setGalleryIndex(-1)}>
+          <button className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors" onClick={() => setGalleryIndex(-1)}>
+            <X size={32} />
+          </button>
+          {galleryIndex > 0 && (
+            <button className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors" onClick={e => { e.stopPropagation(); setGalleryIndex(galleryIndex - 1); }}>
+              <ChevronLeft size={40} />
+            </button>
+          )}
+          {galleryIndex < galleryImages.length - 1 && (
+            <button className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors" onClick={e => { e.stopPropagation(); setGalleryIndex(galleryIndex + 1); }}>
+              <ChevronRight size={40} />
+            </button>
+          )}
+          <img
+            src={galleryImages[galleryIndex]}
+            className="max-h-[85vh] max-w-full object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <div className="absolute bottom-4 text-center text-white/50 text-xs select-none">
+            {galleryIndex === galleryImages.length - 1 && originalProfileImg ? 'Original profile photo' : `Observation ${galleryIndex + 1}`}
+            {' · '}{galleryIndex + 1} / {galleryImages.length}
+          </div>
         </div>
       )}
     </div>

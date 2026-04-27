@@ -208,7 +208,30 @@ export const BASE_TRANSLATIONS = {
     onboardingSpeciesTask: "Great! Now add your first species to start building your collection.",
     onboardingIndivTask: "Finally, register individual specimens to track their growth and history.",
 
-    // Enclosures
+    // Enclosures / Areas
+    enclosures: "Enclosures",
+    enclosure: "Enclosure",
+    areas: "Areas",
+    area: "Area",
+    enclosuresDescription: "Physical management of collections by site location.",
+    enableEnclosures: "Enable Enclosures",
+    enableAreas: "Enable Areas",
+    enableEnclosuresModuleDesc: "Enable advanced mapping and species grouping by physical location.",
+    orgWideView: "Organization-Wide View",
+
+    // Network
+    networkDescription: "Discover other organizations and establish breeding partnerships.",
+    myPartners: "My Partners",
+
+    // Plant Map
+    plantMapDescription: "Spatial distribution and precise physical tracking of your botanical collection.",
+    allManagedAreas: "All Managed Areas",
+    projectScope: "Project Scope",
+    hideLabels: "Hide Labels",
+    showLabels: "Show Labels",
+    noProjectsFound: "No Projects Found",
+
+    // Enclosures settings
     enablePage: "Enable Feature",
     dashBlockTitle: "Dashboard Message Title",
     dashBlockContent: "Dashboard Message Content",
@@ -248,7 +271,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       createOrgBtn: "Create Organisation",
       about: "About",
       privacyPolicy: "Privacy Policy",
-      termsConditions: "Terms & Conditions"
+      termsConditions: "Terms & Conditions",
+      orgWideView: "Organisation-Wide View",
+      networkDescription: "Discover other organisations and establish breeding partnerships."
     }
   },
   {
