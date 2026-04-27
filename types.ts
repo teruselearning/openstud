@@ -244,8 +244,8 @@ export interface GrowthRecord {
 export interface HealthRecord {
   id: string;
   date: string;
-  type: 'Checkup' | 'Vaccination' | 'Injury' | 'Treatment' | 'Other';
-  description: string;
+  type: 'Observation' | 'Checkup' | 'Vaccination' | 'Injury' | 'Treatment' | 'Other' | 'Flowering' | 'Fruiting' | 'Pruning' | 'Repotting' | 'Pest/Disease' | 'Dormancy';
+  description?: string;
   performedBy?: string;
   imageUrl?: string;
 }

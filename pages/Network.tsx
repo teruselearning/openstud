@@ -196,12 +196,12 @@ const Network: React.FC = () => {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 flex-shrink-0">
         <div>
            <h2 className="text-2xl font-bold text-slate-900">{t('networkMap')}</h2>
-           <p className="text-slate-500">Discover other organizations and establish breeding partnerships.</p>
+           <p className="text-slate-500">{t('networkDescription')}</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-center">
           <div className="flex bg-slate-100 p-1 rounded-lg">
              <button onClick={() => setViewMode('map')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'map' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}><Globe2 size={16} className="inline mr-1.5" />{t('network')}</button>
-             <button onClick={() => setViewMode('partners')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'partners' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-900'}`}><Handshake size={16} className="inline mr-1.5" />My Partners</button>
+             <button onClick={() => setViewMode('partners')} className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${viewMode === 'partners' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-900'}`}><Handshake size={16} className="inline mr-1.5" />{t('myPartners')}</button>
           </div>
           <div className="relative flex-1 min-w-[200px]">
              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />

@@ -256,8 +256,8 @@ const OrgSettings: React.FC = () => {
                  
                  <div className="flex items-center justify-between bg-emerald-50 p-4 rounded-lg border border-emerald-100">
                     <div>
-                      <h4 className="font-medium text-slate-900 flex items-center gap-2"><Box size={16} className="text-emerald-600"/> {org.focus === 'Flora' ? 'Enable Areas' : 'Enable Enclosures'}</h4>
-                      <p className="text-sm text-slate-500">Enable advanced mapping and species grouping by physical location.</p>
+                      <h4 className="font-medium text-slate-900 flex items-center gap-2"><Box size={16} className="text-emerald-600"/> {org.focus === 'Flora' ? t('enableAreas') : t('enableEnclosures')}</h4>
+                      <p className="text-sm text-slate-500">{t('enableEnclosuresModuleDesc')}</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" checked={org.enableEnclosures || false} onChange={() => setOrg({...org, enableEnclosures: !org.enableEnclosures})} disabled={isDemoOrg} />

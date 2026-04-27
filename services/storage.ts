@@ -1,6 +1,6 @@
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
-import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord } from './syncService';
+import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord, uploadImageToServer } from './syncService';
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 import { localDb } from './localDb';
@@ -253,9 +253,24 @@ export const saveUsers = (u: User[], skipSync = false) => {
   if (!skipSync) syncPushUsers(u).catch(() => {});
 };
 
+const isBase64DataUrl = (s: string) => typeof s === 'string' && s.startsWith('data:') && s.includes(';base64,');
+
+const uploadBase64Image = async (dataUrl: string): Promise<string> => {
+  try { return await uploadImageToServer(dataUrl); } catch { return dataUrl; }
+};
+
 export const getSpecies = (): Species[] => speciesCache;
 export const saveSpecies = async (s: Species[], skipSync = false) => {
-  speciesCache = s || [];
+  let resolved = s || [];
+  if (!skipSync) {
+    resolved = await Promise.all(resolved.map(async sp => {
+      if (isBase64DataUrl(sp.imageUrl || '')) {
+        return { ...sp, imageUrl: await uploadBase64Image(sp.imageUrl!) };
+      }
+      return sp;
+    }));
+  }
+  speciesCache = resolved;
   await localDb.saveAll('species', speciesCache);
   if (!skipSync) {
     try {
@@ -269,7 +284,16 @@ export const saveSpecies = async (s: Species[], skipSync = false) => {
 
 export const getIndividuals = (): Individual[] => individualsCache;
 export const saveIndividuals = async (i: Individual[], skipSync = false) => {
-  individualsCache = i || [];
+  let resolved = i || [];
+  if (!skipSync) {
+    resolved = await Promise.all(resolved.map(async ind => {
+      const updates: Partial<Individual> = {};
+      if (isBase64DataUrl(ind.imageUrl || '')) updates.imageUrl = await uploadBase64Image(ind.imageUrl!);
+      if (isBase64DataUrl(ind.thumbnailUrl || '')) updates.thumbnailUrl = await uploadBase64Image(ind.thumbnailUrl!);
+      return Object.keys(updates).length ? { ...ind, ...updates } : ind;
+    }));
+  }
+  individualsCache = resolved;
   await localDb.saveAll('individuals', individualsCache);
   if (!skipSync) {
     try {

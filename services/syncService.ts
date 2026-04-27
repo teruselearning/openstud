@@ -304,6 +304,11 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
   feed_schedules: e.feedSchedules || []
 });
 
+export const uploadImageToServer = async (dataUrl: string): Promise<string> => {
+  const data = await apiRequest('/api/upload', 'POST', { data: dataUrl });
+  return data.url as string;
+};
+
 export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
 export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
 export const syncPushProjects = async (projects: Project[]) => apiRequest('/rest/v1/projects', 'POST', projects.map(mapProjectToDb));
@@ -317,7 +322,8 @@ export const syncPushSpecies = async (species: Species[]) => {
   // when only { id, image_url } is provided (MySQL validates NOT NULL cols before dedup).
   for (const s of species) {
     if (s.imageUrl) {
-      apiRequest('/rest/v1/species', 'PATCH', { id: s.id, image_url: s.imageUrl }).catch(() => {});
+      apiRequest('/rest/v1/species', 'PATCH', { id: s.id, image_url: s.imageUrl })
+        .catch(e => console.error(`[Sync] Failed to save image for species ${s.id}:`, e?.message));
     }
   }
 };
