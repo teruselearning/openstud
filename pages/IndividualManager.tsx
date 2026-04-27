@@ -767,9 +767,12 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
 
   const handleBulkDelete = async () => {
     if (!confirm(`Permanently delete ${selectedIds.size} individual(s)? This cannot be undone.`)) return;
-    const updated = allIndividuals.filter(i => !selectedIds.has(i.id));
-    setAllIndividuals(updated);
-    await saveIndividuals(updated);
+    // Delete each record individually so the server receives a proper DELETE request.
+    // saveIndividuals(filtered) only upserts the remaining records — it never removes.
+    for (const id of selectedIds) {
+      await deleteIndividual(id);
+    }
+    setAllIndividuals(getIndividuals());
     setSelectedIds(new Set());
   };
 

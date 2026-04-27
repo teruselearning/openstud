@@ -412,15 +412,12 @@ const App: React.FC = () => {
              if (data.species) {
                const localSpecies = getSpecies();
                const localSpeciesMap = new Map(localSpecies.map(s => [s.id, s]));
-               const serverSpeciesIds = new Set(data.species.map((s: any) => s.id));
-               const localOnlySpecies = localSpecies.filter(s => !serverSpeciesIds.has(s.id));
-               const mergedSpecies = [
-                 ...data.species.map((s: any) => ({
-                   ...s,
-                   imageUrl: s.imageUrl || localSpeciesMap.get(s.id)?.imageUrl || undefined,
-                 })),
-                 ...localOnlySpecies,
-               ];
+               // Server is authoritative — only merge server records (plus cached imageUrls).
+               // Do NOT push local-only items back; items are pushed at creation/edit time.
+               const mergedSpecies = data.species.map((s: any) => ({
+                 ...s,
+                 imageUrl: s.imageUrl || localSpeciesMap.get(s.id)?.imageUrl || undefined,
+               }));
                console.log(`[Sync] Saving ${mergedSpecies.length} species to cache...`);
                await saveSpecies(mergedSpecies, true);
                console.log(`[Sync] Species saved. Cache now: ${getSpecies().length}`);
@@ -445,15 +442,11 @@ const App: React.FC = () => {
              if (data.individuals) {
                const localInds = getIndividuals();
                const localIndMap = new Map(localInds.map(i => [i.id, i]));
-               const serverIndIds = new Set(data.individuals.map((i: any) => i.id));
-               const localOnlyInds = localInds.filter(i => !serverIndIds.has(i.id));
-               const mergedInds = [
-                 ...data.individuals.map((i: any) => ({
-                   ...i,
-                   imageUrl: i.imageUrl || localIndMap.get(i.id)?.imageUrl || undefined,
-                 })),
-                 ...localOnlyInds,
-               ];
+               // Server is authoritative — only merge server records (plus cached imageUrls).
+               const mergedInds = data.individuals.map((i: any) => ({
+                 ...i,
+                 imageUrl: i.imageUrl || localIndMap.get(i.id)?.imageUrl || undefined,
+               }));
                console.log(`[Sync] Saving ${mergedInds.length} individuals to cache...`);
                await saveIndividuals(mergedInds, true);
                console.log(`[Sync] Individuals saved. Cache now: ${getIndividuals().length}`);
