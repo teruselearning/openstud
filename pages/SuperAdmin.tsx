@@ -2,12 +2,12 @@ import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
 import { translateDictionary } from '../services/geminiService';
-import { 
-  Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2, 
-  Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette, 
+import {
+  Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2,
+  Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette,
   Lock, FileText, Type, Image as ImageIcon, Sparkles, UserPlus, AlertTriangle, Wand2,
   Building2, Briefcase, MapPin, GripVertical, Info, Database, Zap, Check, Search,
-  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf, MessageSquare, Code
+  ChevronDown, ChevronRight, Dna, Users, Activity, Leaf, MessageSquare, Code, Github
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner, Project, Individual, Species, Sex } from '../types';
@@ -550,6 +550,18 @@ const SuperAdmin: React.FC = () => {
                      </div>
                   </div>
                   
+                  <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                     <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Github size={14} className="text-slate-700"/> GitHub Button</label>
+                        <label className="relative inline-flex items-center cursor-pointer scale-75">
+                           <input type="checkbox" className="sr-only peer" checked={settings.landingPageConfig?.githubButton?.enabled ?? false} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, githubButton: { url: settings.landingPageConfig?.githubButton?.url || '', enabled: e.target.checked }}})} />
+                           <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                     </div>
+                     <input className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium" placeholder="https://github.com/your-org/your-repo" value={settings.landingPageConfig?.githubButton?.url || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, githubButton: { enabled: settings.landingPageConfig?.githubButton?.enabled ?? false, url: e.target.value }}})} />
+                     <p className="text-[10px] text-slate-400 italic">When enabled, a GitHub button appears next to "Create Organisation" on the landing page.</p>
+                  </div>
+
                   <div className="space-y-1">
                      <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><MessageSquare size={14} className="text-blue-500"/> Registration Banner Message</label>
                      <textarea className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium" rows={3} placeholder="Important note: This is where you set up a new organisation..." value={settings.landingPageConfig?.registrationBanner || ''} onChange={e => setSettings({...settings, landingPageConfig: { ...settings.landingPageConfig, registrationBanner: e.target.value }})} />
