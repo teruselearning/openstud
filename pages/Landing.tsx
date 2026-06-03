@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair, Sprout, Globe2 } from 'lucide-react';
+import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair, Sprout, Globe2, Github } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg, saveProjects, getProjects, saveCurrentProjectId } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
@@ -368,6 +368,11 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{displaySubtitle}</p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 {isRegistrationEnabled && (<button onClick={() => { setViewMode('register'); setRegStep('details'); }} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
+                {landingConfig?.githubButton?.enabled && landingConfig.githubButton.url && (
+                  <a href={landingConfig.githubButton.url} target="_blank" rel="noopener noreferrer" className="w-full sm:w-auto px-8 py-4 bg-white text-slate-800 rounded-xl font-bold text-lg hover:bg-slate-100 transition-all shadow-lg border border-slate-200 flex items-center justify-center gap-2">
+                    <Github size={20} /> GitHub
+                  </a>
+                )}
                 {/* Explore demo button hidden */}
               </div>
             </div>

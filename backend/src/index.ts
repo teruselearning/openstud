@@ -174,7 +174,8 @@ const initDatabase = async () => {
         connection.release();
         
         await runMigrations(db);
-        await seedDatabase(db);
+        // Do NOT auto-seed here — seeding only happens via /api/install/setup
+        // so the installer wizard is shown on a fresh database.
         isConfigured = true;
         console.log('[DATABASE] Connection successful.');
     } catch (e: any) { 
@@ -201,8 +202,8 @@ app.get('/api/install/status', async (req: any, res: any) => {
     const db = getDb();
     const connection = await db.getConnection();
     connection.release();
-    const [rows]: any = await db.execute(`SHOW TABLES LIKE 'organizations'`);
-    res.json({ success: true, installed: rows.length > 0, connected: true });
+    const [rows]: any = await db.execute(`SELECT COUNT(*) AS cnt FROM organizations WHERE is_deleted = 0`);
+    res.json({ success: true, installed: rows[0].cnt > 0, connected: true });
   } catch (e: any) {
     res.json({ success: true, installed: false, connected: false, error: e.message });
   }

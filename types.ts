@@ -151,6 +151,7 @@ export interface LandingPageConfig {
   features?: LandingFeature[];
   customContentHtml?: string;
   registrationBanner?: string;
+  githubButton?: { enabled: boolean; url: string; };
 }
 
 export interface StaticPageConfig {
