@@ -62,7 +62,7 @@ const UserManager: React.FC = () => {
           formData.preferredLanguage
       );
       
-      setToast({ message: "Invitation sent successfully!", type: 'success' });
+      setToast({ message: t('inviteSent'), type: 'success' });
       setShowForm(false);
       setFormData({ 
           name: '', 
@@ -73,7 +73,7 @@ const UserManager: React.FC = () => {
       });
       setUsers(getUsers()); 
     } catch (err: any) {
-      setToast({ message: err.message || "Failed to send invitation.", type: 'error' });
+      setToast({ message: err.message || t('inviteFailed'), type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -149,10 +149,10 @@ const UserManager: React.FC = () => {
     try {
       await deleteUser(userToDelete.id);
       setUsers(getUsers());
-      setToast({ message: userToDelete.status === UserStatus.INVITED ? "Invitation cancelled." : "User removed.", type: 'success' });
+      setToast({ message: userToDelete.status === UserStatus.INVITED ? t('inviteCancelled') : t('memberRemoved'), type: 'success' });
       setUserToDelete(null);
     } catch (err: any) {
-      setToast({ message: "Action failed.", type: 'error' });
+      setToast({ message: t('actionFailed'), type: 'error' });
     }
   };
 
@@ -189,6 +189,20 @@ const UserManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {showRoleKey && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 animate-in fade-in">
+          <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Shield size={16}/> Role Permissions Guide</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {ROLE_KEY.map(({ role, color, bg, desc }) => (
+              <div key={role} className={`${bg} rounded-lg p-3 border border-slate-100`}>
+                <span className={`text-xs font-black uppercase tracking-widest ${color}`}>{role}</span>
+                <p className="text-xs text-slate-600 leading-relaxed mt-1">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Desktop Table View */}
       <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -341,11 +355,11 @@ const UserManager: React.FC = () => {
             <form onSubmit={handleInvite} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-slate-700 mb-1 block">Full Name</label>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">{t('fullName')}</label>
                   <input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder="John Doe" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                 </div>
                 <div>
-                    <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1.5"><Globe size={14}/> Preferred Language</label>
+                    <label className="text-sm font-medium text-slate-700 mb-1 block flex items-center gap-1.5"><Globe size={14}/> {t('preferredLanguage')}</label>
                     <select 
                         className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
                         value={formData.preferredLanguage} 
@@ -356,11 +370,11 @@ const UserManager: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 mb-1 block">Email Address</label>
+                <label className="text-sm font-medium text-slate-700 mb-1 block">{t('emailAddress')}</label>
                 <input type="email" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder="john@example.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required />
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 mb-1 block">Role</label>
+                <label className="text-sm font-medium text-slate-700 mb-1 block">{t('usersRoles')}</label>
                 <select 
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
                   value={formData.role} 
@@ -370,7 +384,7 @@ const UserManager: React.FC = () => {
                     const isDisabled = role === UserRole.SUPER_ADMIN && !isSuperAdmin;
                     return (
                       <option key={role} value={role} disabled={isDisabled}>
-                        {role} {isDisabled ? '(Super Admin Only)' : ''}
+                        {role} {isDisabled ? t('superAdminOnly') : ''}
                       </option>
                     );
                   })}
@@ -379,15 +393,15 @@ const UserManager: React.FC = () => {
 
               {(formData.role !== UserRole.ADMIN && (formData.role as string) !== UserRole.SUPER_ADMIN) && (
                 <div className="space-y-2 animate-in fade-in">
-                  <label className="text-sm font-medium text-slate-700 mb-1 block">Project Access</label>
+                  <label className="text-sm font-medium text-slate-700 mb-1 block">{t('projectAccess')}</label>
                   <div className="flex gap-4 mb-2">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="radio" name="access" checked={projectAccessType === 'global'} onChange={() => setProjectAccessType('global')} />
-                      Global (All Present & Future)
+                      {t('globalAccessAll')}
                     </label>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="radio" name="access" checked={projectAccessType === 'selected'} onChange={() => setProjectAccessType('selected')} />
-                      Restricted (Select Specific)
+                      {t('restrictedSpecific')}
                     </label>
                   </div>
                   {projectAccessType === 'selected' && (
@@ -407,16 +421,16 @@ const UserManager: React.FC = () => {
                 <div className="bg-indigo-50 p-4 rounded-lg flex items-start gap-3 border border-indigo-100">
                   <Lock size={18} className="text-indigo-600 mt-0.5"/>
                   <p className="text-xs text-indigo-700 leading-relaxed font-medium">
-                    This user will have access to all projects by default and can switch between them using the project navigator.
+                    {t('globalAccessInfo')}
                   </p>
                 </div>
               )}
 
               <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('cancel')}</button>
                 <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50">
                   {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                  Send Invitation
+                  {t('sendInvitation')}
                 </button>
               </div>
             </form>
@@ -431,17 +445,17 @@ const UserManager: React.FC = () => {
               {userToDelete.status === UserStatus.INVITED ? <Clock size={32} /> : <ShieldAlert size={32} />}
             </div>
             <h3 className="text-lg font-bold text-slate-900 mb-2">
-               {userToDelete.status === UserStatus.INVITED ? "Cancel Invitation?" : "Remove Team Member?"}
+               {userToDelete.status === UserStatus.INVITED ? t('cancelInvitation') : t('removeTeamMember')}
             </h3>
             <p className="text-slate-500 mb-6 text-sm">
-               {userToDelete.status === UserStatus.INVITED 
-                 ? `Are you sure you want to cancel the invitation for ${userToDelete.name}? They haven't joined the organization yet.` 
-                 : `Are you sure you want to remove ${userToDelete.name}? They will lose all access to organization data and projects.`}
+               {userToDelete.status === UserStatus.INVITED
+                 ? t('cancelInviteConfirm').replace('{{name}}', userToDelete.name)
+                 : t('removeMemberConfirm').replace('{{name}}', userToDelete.name)}
             </p>
             <div className="flex gap-3">
-              <button onClick={() => setUserToDelete(null)} className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold">Back</button>
+              <button onClick={() => setUserToDelete(null)} className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold">{t('back')}</button>
               <button onClick={handleDelete} className={`flex-1 px-4 py-2 rounded-xl font-bold text-white shadow-md transform active:scale-95 transition-all ${userToDelete.status === UserStatus.INVITED ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                 {userToDelete.status === UserStatus.INVITED ? "Revoke Invitation" : "Remove Access"}
+                 {userToDelete.status === UserStatus.INVITED ? t('revokeInvitation') : t('removeAccess')}
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair, Sprout, Globe2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
+import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg, saveProjects, getProjects, saveCurrentProjectId } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { fetchRemoteData } from '../services/syncService'; 
 import { User, OrganizationFocus, LandingFeature, Organization } from '../types';
@@ -17,6 +17,7 @@ interface LandingProps {
 const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
   const [regStep, setRegStep] = useState<'details' | 'verify'>('details');
+  const [fallbackCode, setFallbackCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -154,6 +155,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     );
   };
 
+  // Auto-detect location when registration details step opens (only if not already detected)
+  useEffect(() => {
+    if (viewMode === 'register' && regStep === 'details' && locationStatus === 'idle') {
+      detectLocation();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, regStep]);
+
   const handleDemoLogin = async () => {
     setIsLoading(true);
     setError(null);
@@ -221,10 +230,11 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       const response = await fetch('/api/register/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: regData.email.toLowerCase().trim(), orgName: regData.orgName })
+        body: JSON.stringify({ email: regData.email.toLowerCase().trim(), orgName: regData.orgName, language })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to send verification code");
+      if (data.fallbackCode) setFallbackCode(data.fallbackCode);
       setRegStep('verify');
     } catch(e: any) { setError(e.message); }
     finally { setIsLoading(false); }
@@ -245,6 +255,12 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       localStorage.setItem('os_token', data.token);
       saveSession(data.user);
       if (data.organization) saveOrg(data.organization, true);
+      if (data.project) {
+        const projects = getProjects();
+        const already = projects.some((p: any) => p.id === data.project.id);
+        if (!already) saveProjects([...projects, { ...data.project, orgId: data.project.org_id }], true);
+        saveCurrentProjectId(data.project.id);
+      }
       onLogin(data.user);
     } catch(e: any) { setError(e.message); setIsLoading(false); }
   };
@@ -338,7 +354,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div className="absolute top-full right-0 md:left-auto md:right-0 mt-2 bg-white border border-slate-200 shadow-xl rounded-xl overflow-hidden z-50 w-48 animate-in fade-in slide-in-from-top-2 duration-200"><div className="py-2">{availableLanguages.map(l => (<button key={l.code} onClick={() => { setLanguage(l.code); setIsLangOpen(false); }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${language === l.code ? 'font-bold text-emerald-700 bg-emerald-50/50' : 'text-slate-600'}`}><span>{l.name}</span>{language === l.code && <CheckCircle2 size={14} />}</button>))}</div></div>
              )}
           </div>
-          <button onClick={handleDemoLogin} className="text-slate-600 hover:text-emerald-700 font-medium text-sm disabled:opacity-50" disabled={isLoading}>{t('demoLogin')}</button>
+          {/* Demo login hidden */}
           {viewMode === 'landing' && <button onClick={() => setViewMode('login')} className="text-slate-600 hover:text-emerald-700 font-bold text-sm disabled:opacity-50" disabled={isLoading}>{t('signIn')}</button>}
           {(viewMode === 'landing' && isRegistrationEnabled) && <button onClick={() => { setViewMode('register'); setRegStep('details'); }} className="hidden md:block bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50" disabled={isLoading}>{t('getStarted')}</button>}
         </div>
@@ -352,7 +368,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">{displaySubtitle}</p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 {isRegistrationEnabled && (<button onClick={() => { setViewMode('register'); setRegStep('details'); }} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{t('createOrg')} <ArrowRight size={20} /></button>)}
-                <button onClick={handleDemoLogin} disabled={isLoading} className="w-full sm:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-xl font-bold text-lg hover:border-emerald-200 hover:text-emerald-700 transition-all disabled:opacity-50">{t('exploreDemo')}</button>
+                {/* Explore demo button hidden */}
               </div>
             </div>
             {landingConfig?.showFeatures !== false && (
@@ -443,7 +459,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
               <button onClick={() => setRegStep('details')} className="text-sm text-slate-400 hover:text-slate-600 mb-6 flex items-center gap-1">← {t('back')}</button>
               <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><Key size={32} /></div>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
-              <p className="text-slate-500 mb-8 text-sm">We've sent a 6-digit verification code to <strong>{regData.email}</strong></p>
+              <p className="text-slate-500 mb-4 text-sm">We've sent a 6-digit verification code to <strong>{regData.email}</strong></p>
+              {fallbackCode && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+                  <p className="text-amber-800 text-xs font-bold uppercase tracking-wide mb-1">⚠ Email not configured</p>
+                  <p className="text-amber-700 text-sm mb-2">SMTP is not set up yet. Your verification code is:</p>
+                  <div className="text-center font-mono text-3xl font-bold tracking-[0.4em] text-amber-900 py-2">{fallbackCode}</div>
+                </div>
+              )}
               {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2"><Shield size={16} /> {error}</div>}
               <form onSubmit={handleRegisterFinal} className="space-y-6">
                 <div><input className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" placeholder="000000" maxLength={6} value={regData.code} onChange={e => setRegData({...regData, code: e.target.value.replace(/\D/g, '')})} required autoFocus /></div>

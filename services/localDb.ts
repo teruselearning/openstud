@@ -117,19 +117,17 @@ export const localDb = {
   },
 
   async clearAll(): Promise<void> {
-    const storeNames = Object.values(STORES);
-    for (const storeName of storeNames) {
+    // Close any open connection first so the delete isn't blocked
+    if (dbPromise) {
       try {
-        const db = await getDB();
-        await new Promise<void>((resolve) => {
-          const transaction = db.transaction(storeName, 'readwrite');
-          transaction.objectStore(storeName).clear();
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () => resolve(); // best-effort
-        });
-      } catch (e) {
-        console.warn(`clearAll: could not clear store ${storeName}:`, e);
-      }
+        const db = await dbPromise;
+        db.close();
+      } catch (_) {}
+      dbPromise = null;
     }
+    // Delete the entire database — more reliable than clearing stores in
+    // managed Chrome environments where individual transactions may be blocked.
+    await deleteDB();
+    console.log('[localDb] IndexedDB database deleted for clean slate.');
   }
 };
