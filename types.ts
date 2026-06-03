@@ -62,6 +62,7 @@ export interface Organization {
   aiUsageLimit?: number;
   aiUsageCount?: number;
   aiUsageLastReset?: string;
+  hasOwnGeminiKey?: boolean; // true when a Gemini API key is stored server-side for this org
   deleted?: boolean;
 }
 
@@ -265,6 +266,7 @@ export interface Individual {
   sireId?: string;
   damId?: string;
   imageUrl?: string;
+  thumbnailUrl?: string;
   dnaSequence?: string;
   dnaFileName?: string;
   dnaFileType?: string;

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession } from '../services/storage';
+import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession, clearLocalData } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
-import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, Eye, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
 import UserManager from './UserManager';
@@ -34,6 +34,14 @@ const OrgSettings: React.FC = () => {
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Gemini API key state (key is write-only; we only store a boolean client-side)
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [isSavingGeminiKey, setIsSavingGeminiKey] = useState(false);
+  const [geminiKeySaved, setGeminiKeySaved] = useState(false);
+
+  const [isClearingCache, setIsClearingCache] = useState(false);
 
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<any>(null);
@@ -110,10 +118,43 @@ const OrgSettings: React.FC = () => {
     finally { setIsGeocoding(false); }
   };
 
+  const handleSaveGeminiKey = async (clear = false) => {
+    setIsSavingGeminiKey(true);
+    try {
+      const token = (localStorage.getItem('os_token') || '').replace(/"/g, '');
+      const response = await fetch('/api/org/gemini-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key: clear ? '' : geminiKeyInput }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        setOrg(prev => prev ? { ...prev, hasOwnGeminiKey: result.has_gemini_api_key } : prev);
+        setGeminiKeyInput('');
+        setGeminiKeySaved(true);
+        setTimeout(() => setGeminiKeySaved(false), 3000);
+      } else {
+        alert('Failed to save API key: ' + (result.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      alert('Failed to save API key: ' + e.message);
+    } finally {
+      setIsSavingGeminiKey(false);
+    }
+  };
+
+  const handleClearLocalCache = async () => {
+    if (!window.confirm('This will wipe all locally cached data (species, individuals, projects, etc.) from this browser and reload the page. Server data is unaffected. Continue?')) return;
+    setIsClearingCache(true);
+    await clearLocalData();
+    window.location.reload();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (org) {
       saveOrg(org);
+      window.dispatchEvent(new CustomEvent('org-settings-updated'));
       setIsSaved(true);
       
       const isNew = species.length === 0;
@@ -271,6 +312,85 @@ const OrgSettings: React.FC = () => {
               {!isDemoOrg && (<div className="flex justify-end pt-4"><button type="submit" className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors shadow-sm"><Save size={18} /><span>{isSaved ? (species.length === 0 ? 'Proceeding...' : t('saved')) : (species.length === 0 ? t('onboardingSaveAndNext') : t('saveChanges'))}</span></button></div>)}
             </form>
          </div>
+      )}
+
+      {/* Gemini API Key — shown on general tab for Admin / Super Admin */}
+      {activeTab === 'general' && !isDemoOrg && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-emerald-600" />
+            <h3 className="font-medium text-slate-900">AI Integration — Gemini API Key</h3>
+            {org?.hasOwnGeminiKey && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 ml-1">
+                <Check size={12} /> Active
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500">
+            By default this installation uses the server's shared Gemini API key and enforces a monthly usage limit.
+            Entering your organisation's own key removes all usage limits — your key is stored securely on the server and is never exposed to browsers.
+            Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-emerald-600 underline hover:text-emerald-700">aistudio.google.com/apikey</a>.
+          </p>
+          {org?.hasOwnGeminiKey && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-lg text-sm text-emerald-800 border border-emerald-200">
+              <Check size={16} className="shrink-0" />
+              <span>A custom Gemini API key is active for this organisation. AI features are <strong>unlimited</strong>.</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKeyInput}
+                onChange={e => setGeminiKeyInput(e.target.value)}
+                placeholder={org?.hasOwnGeminiKey ? 'Enter new key to replace existing…' : 'Paste your Gemini API key here…'}
+                className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-slate-900 font-mono text-sm"
+              />
+              <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveGeminiKey(false)}
+              disabled={!geminiKeyInput.trim() || isSavingGeminiKey}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
+            >
+              {isSavingGeminiKey ? <Loader2 size={16} className="animate-spin" /> : geminiKeySaved ? <Check size={16} /> : <Save size={16} />}
+              {geminiKeySaved ? 'Saved!' : 'Save Key'}
+            </button>
+            {org?.hasOwnGeminiKey && (
+              <button
+                type="button"
+                onClick={() => { if (window.confirm('Remove the custom Gemini API key? The shared server key will be used again (usage limits apply).')) handleSaveGeminiKey(true); }}
+                disabled={isSavingGeminiKey}
+                className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium text-sm transition-colors"
+              >
+                <X size={16} /> Remove Key
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={12} /> Your key is stored encrypted on the server. It is never sent to your browser after being saved.</p>
+        </div>
+      )}
+
+      {activeTab === 'general' && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-3 animate-in fade-in">
+          <h3 className="font-medium text-slate-900 flex items-center gap-2"><Database size={18}/> Local Cache</h3>
+          <p className="text-sm text-slate-500">
+            Clear all data cached in this browser (IndexedDB + localStorage). Use this if you see stale or duplicated data after a database reset.
+            Your server data is not affected — everything will re-sync on the next login.
+          </p>
+          <button
+            type="button"
+            onClick={handleClearLocalCache}
+            disabled={isClearingCache}
+            className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium text-sm transition-colors"
+          >
+            {isClearingCache ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {isClearingCache ? 'Clearing…' : 'Clear Local Cache'}
+          </button>
+        </div>
       )}
 
       {activeTab === 'general' && projects.length > 0 && (

@@ -6,7 +6,7 @@ export const BASE_TRANSLATIONS = {
     networkMap: "Network",
     plantMap: "Flora Map",
     species: "Species",
-    individuals: "Specimens",
+    individuals: "Individuals",
     breeding: "Breeding",
     usersRoles: "Users & Roles",
     organization: "Organization",
@@ -59,7 +59,7 @@ export const BASE_TRANSLATIONS = {
     overview: "Overview",
     welcomeBackDashboard: "Welcome back to your organization dashboard.",
     totalSpecies: "Total Species",
-    totalIndividuals: "Total Specimens",
+    totalIndividuals: "Total Individuals",
     endangeredSpecies: "Endangered Species",
     activeUsers: "Active Users",
     breedingPairs: "Suggested Breeding Pairs",
@@ -109,10 +109,10 @@ export const BASE_TRANSLATIONS = {
     save: "Save",
     add: "Add",
     searchSpecies: "Search Species...",
-    searchIndividuals: "Search Specimens...",
+    searchIndividuals: "Search Individuals...",
 
-    // Specimens / Individuals
-    indivSubtitleAnimal: "Track and manage the specific specimens in your care.",
+    // Individuals
+    indivSubtitleAnimal: "Track and manage the individuals in your care.",
     updateIndividual: "Update Individual",
     registerIndividual: "Register Individual",
     representativeImage: "Representative Image",
@@ -242,6 +242,43 @@ export const BASE_TRANSLATIONS = {
     dashboardReadyDesc: "Metrics, charts, and breeding insights will all appear here once you've added some species and individuals to your collection.",
     addSpecies: "Add a Species",
     addIndividual: "Add an Individual",
+
+    // Invite Member form
+    fullName: "Full Name",
+    preferredLanguage: "Preferred Language",
+    emailAddress: "Email Address",
+    superAdminOnly: "(Super Admin Only)",
+    projectAccess: "Project Access",
+    globalAccessAll: "Global (All Present & Future)",
+    restrictedSpecific: "Restricted (Select Specific)",
+    globalAccessInfo: "This user will have access to all projects by default and can switch between them using the project navigator.",
+    sendInvitation: "Send Invitation",
+    cancelInvitation: "Cancel Invitation?",
+    removeTeamMember: "Remove Team Member?",
+    cancelInviteConfirm: "Are you sure you want to cancel the invitation for {{name}}? They haven't joined the organisation yet.",
+    removeMemberConfirm: "Are you sure you want to remove {{name}}? They will lose all access to organisation data and projects.",
+    revokeInvitation: "Revoke Invitation",
+    removeAccess: "Remove Access",
+    inviteSent: "Invitation sent successfully!",
+    inviteFailed: "Failed to send invitation.",
+    inviteCancelled: "Invitation cancelled.",
+    memberRemoved: "User removed.",
+    actionFailed: "Action failed.",
+
+    // Accept Invitation page
+    acceptInvitation: "Accept Invitation",
+    invitedToJoin: "You've been invited to join",
+    setPassword: "Set Password",
+    minimumCharsHint: "Minimum 8 characters",
+    repeatPasswordHint: "Repeat password",
+    activating: "Activating...",
+    activateAccount: "Activate Account",
+    accountActivated: "Account activated! Redirecting...",
+    noTokenFound: "No invitation token found in the link.",
+    invalidInvite: "Invalid or expired invitation.",
+    passwordMismatch: "Passwords do not match.",
+    passwordTooShort: "Password must be at least 8 characters.",
+    activationFailed: "Failed to activate account.",
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;
@@ -298,7 +335,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       teamMembers: "Anggota Tim", teamSubtitle: "Kelola akses dan izin tim Anda.", bulkInvite: "Undangan Massal", inviteMember: "Undang Anggota", csvFormatTitle: "Format CSV", csvFormatDesc: "Unduh template kami untuk memastikan CSV Anda diformat dengan benar.", processingBulk: "Memproses undangan massal...", selectSpecies: "Pilih Spesies", saveEvent: "Simpan Acara", breedingSubtitle: "Lacak dan kelola pasangan pembiakan dan hasilnya.", recordBreedingEvent: "Catat Acara", newBreedingLoan: "Pinjaman Baru", breedingEvents: "Acara", breedingLoans: "Pinjaman", viewTitle: "Filter Tampilan", includePartnerOrgs: "Sertakan Acara Mitra",
       onboardingWelcome: "Selamat Datang di OpenStudbook", onboardingSettingsTask: "Tinjau pengaturan organisasi Anda di bawah dan klik 'Simpan Perubahan' untuk melanjutkan.", onboardingSaveAndNext: "Simpan & Lanjutkan ke Spesies", onboardingSpeciesTask: "Bagus! Tambahkan spesies pertama Anda untuk mulai membangun koleksi.", onboardingIndivTask: "Terakhir, daftarkan individu untuk melacak pertumbuhan dan riwayat mereka.",
       enablePage: "Aktifkan Fitur", dashBlockTitle: "Judul Pesan Dasbor", dashBlockContent: "Konten Pesan Dasbor", customDashBlock: "Pengumuman Dasbor Kustom", customDashBlockDesc: "Buat blok pengumuman yang muncul di bagian atas dasbor untuk semua pengguna.", visibilityPrivacy: "Visibilitas & Privasi", breedingLoanPolicy: "Kebijakan Pembiakan & Pinjaman", allowBreedingRequests: "Izinkan Permintaan Jaringan", allowBreedingRequestsDesc: "Izinkan organisasi mitra mengusulkan pinjaman pembiakan melalui peta jaringan.", whoReceivesRequests: "Kontak Permintaan", whoReceivesRequestsDesc: "Pengguna mana yang diberitahu saat permintaan pinjaman diterima?", orgVisibility: "Daftarkan dalam Direktori", orgVisibilityDesc: "Buat organisasi Anda terlihat di peta jaringan global.", obscureLocation: "Samarkan Lokasi Peta", obscureLocationDesc: "Bulatkan koordinat peta untuk mencegah pelacakan lokasi yang tepat.", speciesListVisibility: "Daftar Spesies Publik", speciesListVisibilityDesc: "Izinkan siapa saja di jaringan melihat spesies yang Anda kelola.",
-      noPartnersFound: "Tidak ada mitra ditemukan.", connectNewPartner: "Hubungkan Mitra Baru", yourInviteCode: "Kode Undangan Anda", redeemCode: "Tukarkan Kode", siteKey: "Kunci Situs", secretKey: "Kunci Rahasia"
+      noPartnersFound: "Tidak ada mitra ditemukan.", connectNewPartner: "Hubungkan Mitra Baru", yourInviteCode: "Kode Undangan Anda", redeemCode: "Tukarkan Kode", siteKey: "Kunci Situs", secretKey: "Kunci Rahasia",
+      fullName: "Nama Lengkap", preferredLanguage: "Bahasa Pilihan", emailAddress: "Alamat Email", superAdminOnly: "(Hanya Super Admin)", projectAccess: "Akses Proyek", globalAccessAll: "Global (Semua Sekarang & Masa Depan)", restrictedSpecific: "Terbatas (Pilih Spesifik)", globalAccessInfo: "Pengguna ini akan memiliki akses ke semua proyek secara default dan dapat beralih di antara mereka menggunakan navigator proyek.", sendInvitation: "Kirim Undangan", cancelInvitation: "Batalkan Undangan?", removeTeamMember: "Hapus Anggota Tim?", cancelInviteConfirm: "Apakah Anda yakin ingin membatalkan undangan untuk {{name}}? Mereka belum bergabung dengan organisasi.", removeMemberConfirm: "Apakah Anda yakin ingin menghapus {{name}}? Mereka akan kehilangan semua akses ke data dan proyek organisasi.", revokeInvitation: "Cabut Undangan", removeAccess: "Hapus Akses", inviteSent: "Undangan berhasil dikirim!", inviteFailed: "Gagal mengirim undangan.", inviteCancelled: "Undangan dibatalkan.", memberRemoved: "Pengguna dihapus.", actionFailed: "Tindakan gagal.",
+      acceptInvitation: "Terima Undangan", invitedToJoin: "Anda telah diundang untuk bergabung", setPassword: "Atur Kata Sandi", minimumCharsHint: "Minimal 8 karakter", repeatPasswordHint: "Ulangi kata sandi", activating: "Mengaktifkan...", activateAccount: "Aktifkan Akun", accountActivated: "Akun diaktifkan! Mengalihkan...", noTokenFound: "Tidak ada token undangan yang ditemukan dalam tautan.", invalidInvite: "Undangan tidak valid atau sudah kedaluwarsa.", passwordMismatch: "Kata sandi tidak cocok.", passwordTooShort: "Kata sandi harus minimal 8 karakter.", activationFailed: "Gagal mengaktifkan akun."
     }
   },
   {
@@ -321,7 +360,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       teamMembers: "Ahli Pasukan", teamSubtitle: "Urus akses dan kebenaran pasukan anda.", bulkInvite: "Jemputan Pukal", inviteMember: "Jemput Ahli", csvFormatTitle: "Format CSV", csvFormatDesc: "Muat turun templat kami untuk memastikan CSV anda diformat dengan betul.", processingBulk: "Memproses jemputan pukal...", selectSpecies: "Pilih Spesies", saveEvent: "Simpan Acara", breedingSubtitle: "Jejak dan urus pasangan pembiakan dan hasilnya.", recordBreedingEvent: "Rekod Acara", newBreedingLoan: "Pinjaman Baru", breedingEvents: "Acara", breedingLoans: "Pinjaman", viewTitle: "Tapis Paparan", includePartnerOrgs: "Sertakan Acara Rakan Kongsi",
       onboardingWelcome: "Selamat Datang ke OpenStudbook", onboardingSettingsTask: "Sila semak tetapan organisasi anda di bawah dan klik 'Simpan Perubahan' untuk meneruskan.", onboardingSaveAndNext: "Simpan & Teruskan ke Spesies", onboardingSpeciesTask: "Bagus! Tambah spesies pertama anda untuk mula membina koleksi.", onboardingIndivTask: "Akhir sekali, daftarkan individu untuk menjejaki pertumbuhan dan sejarah mereka.",
       enablePage: "Aktifkan Ciri", dashBlockTitle: "Tajuk Mesej Papan Pemuka", dashBlockContent: "Kandungan Mesej Papan Pemuka", customDashBlock: "Pengumuman Papan Pemuka Tersuai", customDashBlockDesc: "Cipta blok pengumuman yang muncul di bahagian atas papan pemuka untuk semua pengguna.", visibilityPrivacy: "Keterlihatan & Privasi", breedingLoanPolicy: "Dasar Pembiakan & Pinjaman", allowBreedingRequests: "Benarkan Permintaan Rangkaian", allowBreedingRequestsDesc: "Benarkan organisasi rakan kongsi mencadangkan pinjaman pembiakan melalui peta rangkaian.", whoReceivesRequests: "Kenalan Permintaan", whoReceivesRequestsDesc: "Pengguna mana yang akan diberitahu apabila permintaan pinjaman diterima?", orgVisibility: "Senarai dalam Direktori", orgVisibilityDesc: "Jadikan organisasi anda kelihatan pada peta rangkaian global.", obscureLocation: "Samarkan Lokasi Peta", obscureLocationDesc: "Bulatkan koordinat peta untuk mencegah penjejakan lokasi tepat.", speciesListVisibility: "Senarai Spesies Awam", speciesListVisibilityDesc: "Benarkan sesiapa dalam rangkaian melihat spesies yang anda urus.",
-      noPartnersFound: "Tiada rakan kongsi dijumpai.", connectNewPartner: "Hubungkan Rakan Kongsi Baru", yourInviteCode: "Kod Jemputan Anda", redeemCode: "Tebus Kod", siteKey: "Kunci Tapak", secretKey: "Kunci Rahsia"
+      noPartnersFound: "Tiada rakan kongsi dijumpai.", connectNewPartner: "Hubungkan Rakan Kongsi Baru", yourInviteCode: "Kod Jemputan Anda", redeemCode: "Tebus Kod", siteKey: "Kunci Tapak", secretKey: "Kunci Rahsia",
+      fullName: "Nama Penuh", preferredLanguage: "Bahasa Pilihan", emailAddress: "Alamat E-mel", superAdminOnly: "(Hanya Super Admin)", projectAccess: "Akses Projek", globalAccessAll: "Global (Semua Kini & Masa Depan)", restrictedSpecific: "Terhad (Pilih Spesifik)", globalAccessInfo: "Pengguna ini akan mempunyai akses kepada semua projek secara lalai dan boleh bertukar di antara mereka menggunakan navigator projek.", sendInvitation: "Hantar Jemputan", cancelInvitation: "Batalkan Jemputan?", removeTeamMember: "Buang Ahli Pasukan?", cancelInviteConfirm: "Adakah anda pasti ingin membatalkan jemputan untuk {{name}}? Mereka belum menyertai organisasi.", removeMemberConfirm: "Adakah anda pasti ingin membuang {{name}}? Mereka akan kehilangan semua akses kepada data dan projek organisasi.", revokeInvitation: "Tarik Balik Jemputan", removeAccess: "Buang Akses", inviteSent: "Jemputan berjaya dihantar!", inviteFailed: "Gagal menghantar jemputan.", inviteCancelled: "Jemputan dibatalkan.", memberRemoved: "Pengguna dibuang.", actionFailed: "Tindakan gagal.",
+      acceptInvitation: "Terima Jemputan", invitedToJoin: "Anda telah dijemput untuk menyertai", setPassword: "Tetapkan Kata Laluan", minimumCharsHint: "Minimum 8 aksara", repeatPasswordHint: "Ulang kata laluan", activating: "Mengaktifkan...", activateAccount: "Aktifkan Akaun", accountActivated: "Akaun diaktifkan! Mengalihkan...", noTokenFound: "Tiada token jemputan dijumpai dalam pautan.", invalidInvite: "Jemputan tidak sah atau sudah tamat tempoh.", passwordMismatch: "Kata laluan tidak sepadan.", passwordTooShort: "Kata laluan mestilah sekurang-kurangnya 8 aksara.", activationFailed: "Gagal mengaktifkan akaun."
     }
   },
   {
@@ -344,7 +385,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       teamMembers: "Membros da Equipa", teamSubtitle: "Gira o acesso e permissões da sua equipa.", bulkInvite: "Convite em Massa", inviteMember: "Convidar Membro", csvFormatTitle: "Formato CSV", csvFormatDesc: "Descarregue o nosso modelo para garantir que o seu CSV está corretamente formatado.", processingBulk: "A processar convites em massa...", selectSpecies: "Selecionar Espécie", saveEvent: "Guardar Evento", breedingSubtitle: "Acompanhe e gira pares de reprodução e resultados.", recordBreedingEvent: "Registar Evento", newBreedingLoan: "Novo Empréstimo", breedingEvents: "Eventos", breedingLoans: "Empréstimos", viewTitle: "Filtrar Vista", includePartnerOrgs: "Incluir Eventos de Parceiros",
       onboardingWelcome: "Bem-vindo ao OpenStudbook", onboardingSettingsTask: "Reveja as definições da sua organização abaixo e clique em 'Guardar Alterações' para continuar.", onboardingSaveAndNext: "Guardar & Continuar para Espécies", onboardingSpeciesTask: "Ótimo! Adicione a sua primeira espécie para começar a construir a sua coleção.", onboardingIndivTask: "Por fim, registe indivíduos para acompanhar o seu crescimento e histórico.",
       enablePage: "Ativar Funcionalidade", dashBlockTitle: "Título da Mensagem do Painel", dashBlockContent: "Conteúdo da Mensagem do Painel", customDashBlock: "Anúncio Personalizado do Painel", customDashBlockDesc: "Crie um bloco de anúncio personalizado que aparece no topo do painel para todos os utilizadores.", visibilityPrivacy: "Visibilidade & Privacidade", breedingLoanPolicy: "Política de Reprodução & Empréstimo", allowBreedingRequests: "Permitir Pedidos de Rede", allowBreedingRequestsDesc: "Permitir que organizações parceiras proponham empréstimos de reprodução através do mapa de rede.", whoReceivesRequests: "Contacto de Pedidos", whoReceivesRequestsDesc: "Qual utilizador deve ser notificado quando um pedido de empréstimo é recebido?", orgVisibility: "Listar no Diretório", orgVisibilityDesc: "Tornar a sua organização visível no mapa de rede global.", obscureLocation: "Ocultar Localização no Mapa", obscureLocationDesc: "Arredonde as coordenadas do mapa para evitar rastreamento preciso por não parceiros.", speciesListVisibility: "Lista de Espécies Pública", speciesListVisibilityDesc: "Permitir que qualquer pessoa na rede veja as espécies que gere.",
-      noPartnersFound: "Nenhum parceiro encontrado.", connectNewPartner: "Conectar Novo Parceiro", yourInviteCode: "O Seu Código de Convite", redeemCode: "Resgatar Código", siteKey: "Chave do Site", secretKey: "Chave Secreta"
+      noPartnersFound: "Nenhum parceiro encontrado.", connectNewPartner: "Conectar Novo Parceiro", yourInviteCode: "O Seu Código de Convite", redeemCode: "Resgatar Código", siteKey: "Chave do Site", secretKey: "Chave Secreta",
+      fullName: "Nome Completo", preferredLanguage: "Idioma Preferido", emailAddress: "Endereço de E-mail", superAdminOnly: "(Apenas Super Admin)", projectAccess: "Acesso ao Projeto", globalAccessAll: "Global (Todos Presentes e Futuros)", restrictedSpecific: "Restrito (Selecionar Específicos)", globalAccessInfo: "Este utilizador terá acesso a todos os projetos por padrão e pode alternar entre eles usando o navegador de projetos.", sendInvitation: "Enviar Convite", cancelInvitation: "Cancelar Convite?", removeTeamMember: "Remover Membro da Equipa?", cancelInviteConfirm: "Tem a certeza de que pretende cancelar o convite para {{name}}? Ainda não se juntou à organização.", removeMemberConfirm: "Tem a certeza de que pretende remover {{name}}? Perderá todo o acesso aos dados e projetos da organização.", revokeInvitation: "Revogar Convite", removeAccess: "Remover Acesso", inviteSent: "Convite enviado com sucesso!", inviteFailed: "Falha ao enviar convite.", inviteCancelled: "Convite cancelado.", memberRemoved: "Utilizador removido.", actionFailed: "Ação falhou.",
+      acceptInvitation: "Aceitar Convite", invitedToJoin: "Foi convidado a juntar-se", setPassword: "Definir Palavra-passe", minimumCharsHint: "Mínimo 8 caracteres", repeatPasswordHint: "Repetir palavra-passe", activating: "A ativar...", activateAccount: "Ativar Conta", accountActivated: "Conta ativada! A redirecionar...", noTokenFound: "Nenhum token de convite encontrado no link.", invalidInvite: "Convite inválido ou expirado.", passwordMismatch: "As palavras-passe não coincidem.", passwordTooShort: "A palavra-passe deve ter pelo menos 8 caracteres.", activationFailed: "Falha ao ativar conta."
     }
   },
   {
@@ -367,7 +410,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       teamMembers: "Miembros del Equipo", teamSubtitle: "Gestione el acceso y permisos de su equipo.", bulkInvite: "Invitación Masiva", inviteMember: "Invitar Miembro", csvFormatTitle: "Formato CSV", csvFormatDesc: "Descargue nuestra plantilla para asegurarse de que su CSV esté correctamente formateado.", processingBulk: "Procesando invitaciones masivas...", selectSpecies: "Seleccionar Especie", saveEvent: "Guardar Evento", breedingSubtitle: "Rastree y gestione parejas de cría y resultados.", recordBreedingEvent: "Registrar Evento", newBreedingLoan: "Nuevo Préstamo", breedingEvents: "Eventos", breedingLoans: "Préstamos", viewTitle: "Filtrar Vista", includePartnerOrgs: "Incluir Eventos de Socios",
       onboardingWelcome: "Bienvenido a OpenStudbook", onboardingSettingsTask: "Revise la configuración de su organización a continuación y haga clic en 'Guardar Cambios' para continuar.", onboardingSaveAndNext: "Guardar y Continuar a Especies", onboardingSpeciesTask: "¡Excelente! Ahora añada su primera especie para comenzar a construir su colección.", onboardingIndivTask: "Por último, registre individuos para rastrear su crecimiento e historial.",
       enablePage: "Activar Función", dashBlockTitle: "Título del Mensaje del Panel", dashBlockContent: "Contenido del Mensaje del Panel", customDashBlock: "Anuncio Personalizado del Panel", customDashBlockDesc: "Cree un bloque de anuncio personalizado que aparece en la parte superior del panel para todos los usuarios.", visibilityPrivacy: "Visibilidad y Privacidad", breedingLoanPolicy: "Política de Cría y Préstamo", allowBreedingRequests: "Permitir Solicitudes de Red", allowBreedingRequestsDesc: "Permitir que organizaciones socias propongan préstamos de cría a través del mapa de red.", whoReceivesRequests: "Contacto de Solicitudes", whoReceivesRequestsDesc: "¿Qué usuario debe ser notificado cuando se recibe una solicitud de préstamo?", orgVisibility: "Listar en el Directorio", orgVisibilityDesc: "Haga visible su organización en el mapa de red global.", obscureLocation: "Ocultar Ubicación en el Mapa", obscureLocationDesc: "Redondee las coordenadas del mapa para evitar el rastreo preciso por no socios.", speciesListVisibility: "Lista de Especies Pública", speciesListVisibilityDesc: "Permitir que cualquier persona en la red vea qué especies gestiona.",
-      noPartnersFound: "No se encontraron socios.", connectNewPartner: "Conectar Nuevo Socio", yourInviteCode: "Su Código de Invitación", redeemCode: "Canjear Código", siteKey: "Clave del Sitio", secretKey: "Clave Secreta"
+      noPartnersFound: "No se encontraron socios.", connectNewPartner: "Conectar Nuevo Socio", yourInviteCode: "Su Código de Invitación", redeemCode: "Canjear Código", siteKey: "Clave del Sitio", secretKey: "Clave Secreta",
+      fullName: "Nombre Completo", preferredLanguage: "Idioma Preferido", emailAddress: "Dirección de Correo", superAdminOnly: "(Solo Super Admin)", projectAccess: "Acceso al Proyecto", globalAccessAll: "Global (Todos Presentes y Futuros)", restrictedSpecific: "Restringido (Seleccionar Específicos)", globalAccessInfo: "Este usuario tendrá acceso a todos los proyectos por defecto y puede cambiar entre ellos usando el navegador de proyectos.", sendInvitation: "Enviar Invitación", cancelInvitation: "¿Cancelar Invitación?", removeTeamMember: "¿Eliminar Miembro del Equipo?", cancelInviteConfirm: "¿Está seguro de que desea cancelar la invitación para {{name}}? Aún no se ha unido a la organización.", removeMemberConfirm: "¿Está seguro de que desea eliminar a {{name}}? Perderá todo acceso a los datos y proyectos de la organización.", revokeInvitation: "Revocar Invitación", removeAccess: "Eliminar Acceso", inviteSent: "¡Invitación enviada con éxito!", inviteFailed: "Error al enviar la invitación.", inviteCancelled: "Invitación cancelada.", memberRemoved: "Usuario eliminado.", actionFailed: "La acción falló.",
+      acceptInvitation: "Aceptar Invitación", invitedToJoin: "Ha sido invitado a unirse", setPassword: "Establecer Contraseña", minimumCharsHint: "Mínimo 8 caracteres", repeatPasswordHint: "Repetir contraseña", activating: "Activando...", activateAccount: "Activar Cuenta", accountActivated: "¡Cuenta activada! Redirigiendo...", noTokenFound: "No se encontró token de invitación en el enlace.", invalidInvite: "Invitación inválida o expirada.", passwordMismatch: "Las contraseñas no coinciden.", passwordTooShort: "La contraseña debe tener al menos 8 caracteres.", activationFailed: "Error al activar la cuenta."
     }
   },
   {
@@ -390,7 +435,9 @@ export const SEED_LANGUAGES: LanguageConfig[] = [
       teamMembers: "Membres de l'équipe", teamSubtitle: "Gérez les accès et permissions de votre équipe.", bulkInvite: "Invitation en masse", inviteMember: "Inviter un membre", csvFormatTitle: "Format CSV", csvFormatDesc: "Téléchargez notre modèle pour vous assurer que votre CSV est correctement formaté.", processingBulk: "Traitement des invitations en masse...", selectSpecies: "Sélectionner une espèce", saveEvent: "Enregistrer l'événement", breedingSubtitle: "Suivez et gérez les couples de reproduction et les résultats.", recordBreedingEvent: "Enregistrer un événement", newBreedingLoan: "Nouveau prêt", breedingEvents: "Événements", breedingLoans: "Prêts", viewTitle: "Filtrer la vue", includePartnerOrgs: "Inclure les événements des partenaires",
       onboardingWelcome: "Bienvenue sur OpenStudbook", onboardingSettingsTask: "Veuillez vérifier les paramètres de votre organisation ci-dessous et cliquer sur 'Enregistrer les modifications' pour continuer.", onboardingSaveAndNext: "Enregistrer et continuer vers les espèces", onboardingSpeciesTask: "Super ! Ajoutez maintenant votre première espèce pour commencer à construire votre collection.", onboardingIndivTask: "Enfin, enregistrez des individus pour suivre leur croissance et leur historique.",
       enablePage: "Activer la fonctionnalité", dashBlockTitle: "Titre du message du tableau de bord", dashBlockContent: "Contenu du message du tableau de bord", customDashBlock: "Annonce personnalisée du tableau de bord", customDashBlockDesc: "Créez un bloc d'annonce personnalisé qui apparaît en haut du tableau de bord pour tous les utilisateurs.", visibilityPrivacy: "Visibilité & Confidentialité", breedingLoanPolicy: "Politique de reproduction & prêt", allowBreedingRequests: "Autoriser les demandes réseau", allowBreedingRequestsDesc: "Permettre aux organisations partenaires de proposer des prêts de reproduction via la carte réseau.", whoReceivesRequests: "Contact des demandes", whoReceivesRequestsDesc: "Quel utilisateur doit être notifié lorsqu'une demande de prêt est reçue ?", orgVisibility: "Lister dans l'annuaire", orgVisibilityDesc: "Rendre votre organisation visible sur la carte réseau mondiale.", obscureLocation: "Masquer la localisation sur la carte", obscureLocationDesc: "Arrondissez vos coordonnées de carte pour éviter le suivi précis par les non-partenaires.", speciesListVisibility: "Liste d'espèces publique", speciesListVisibilityDesc: "Permettre à quiconque sur le réseau de voir les espèces que vous gérez.",
-      noPartnersFound: "Aucun partenaire trouvé.", connectNewPartner: "Connecter un nouveau partenaire", yourInviteCode: "Votre code d'invitation", redeemCode: "Échanger le code", siteKey: "Clé du site", secretKey: "Clé secrète"
+      noPartnersFound: "Aucun partenaire trouvé.", connectNewPartner: "Connecter un nouveau partenaire", yourInviteCode: "Votre code d'invitation", redeemCode: "Échanger le code", siteKey: "Clé du site", secretKey: "Clé secrète",
+      fullName: "Nom complet", preferredLanguage: "Langue préférée", emailAddress: "Adresse e-mail", superAdminOnly: "(Super Admin uniquement)", projectAccess: "Accès au projet", globalAccessAll: "Global (Tous présents et futurs)", restrictedSpecific: "Restreint (Sélectionner spécifiques)", globalAccessInfo: "Cet utilisateur aura accès à tous les projets par défaut et peut basculer entre eux en utilisant le navigateur de projets.", sendInvitation: "Envoyer l'invitation", cancelInvitation: "Annuler l'invitation ?", removeTeamMember: "Supprimer le membre de l'équipe ?", cancelInviteConfirm: "Êtes-vous sûr de vouloir annuler l'invitation pour {{name}} ? Il n'a pas encore rejoint l'organisation.", removeMemberConfirm: "Êtes-vous sûr de vouloir supprimer {{name}} ? Il perdra tout accès aux données et projets de l'organisation.", revokeInvitation: "Révoquer l'invitation", removeAccess: "Supprimer l'accès", inviteSent: "Invitation envoyée avec succès !", inviteFailed: "Échec de l'envoi de l'invitation.", inviteCancelled: "Invitation annulée.", memberRemoved: "Utilisateur supprimé.", actionFailed: "L'action a échoué.",
+      acceptInvitation: "Accepter l'invitation", invitedToJoin: "Vous avez été invité à rejoindre", setPassword: "Définir le mot de passe", minimumCharsHint: "Minimum 8 caractères", repeatPasswordHint: "Répéter le mot de passe", activating: "Activation en cours...", activateAccount: "Activer le compte", accountActivated: "Compte activé ! Redirection en cours...", noTokenFound: "Aucun token d'invitation trouvé dans le lien.", invalidInvite: "Invitation invalide ou expirée.", passwordMismatch: "Les mots de passe ne correspondent pas.", passwordTooShort: "Le mot de passe doit comporter au moins 8 caractères.", activationFailed: "Échec de l'activation du compte."
     }
   }
 ];

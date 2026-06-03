@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, Loader2, Globe, RefreshCw, Key, CheckCircle2, MapPin, Building2, UserCheck, AlertTriangle, ChevronDown, Save, Info, Crosshair, Sprout, Globe2 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg } from '../services/storage';
+import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg, saveProjects, getProjects, saveCurrentProjectId } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
 import { fetchRemoteData } from '../services/syncService'; 
 import { User, OrganizationFocus, LandingFeature, Organization } from '../types';
@@ -155,6 +155,14 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     );
   };
 
+  // Auto-detect location when registration details step opens (only if not already detected)
+  useEffect(() => {
+    if (viewMode === 'register' && regStep === 'details' && locationStatus === 'idle') {
+      detectLocation();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, regStep]);
+
   const handleDemoLogin = async () => {
     setIsLoading(true);
     setError(null);
@@ -247,6 +255,12 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
       localStorage.setItem('os_token', data.token);
       saveSession(data.user);
       if (data.organization) saveOrg(data.organization, true);
+      if (data.project) {
+        const projects = getProjects();
+        const already = projects.some((p: any) => p.id === data.project.id);
+        if (!already) saveProjects([...projects, { ...data.project, orgId: data.project.org_id }], true);
+        saveCurrentProjectId(data.project.id);
+      }
       onLogin(data.user);
     } catch(e: any) { setError(e.message); setIsLoading(false); }
   };

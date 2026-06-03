@@ -1,14 +1,13 @@
 import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  CheckCircle2, 
-  Settings, 
-  Users, 
-  Dna, 
-  PawPrint, 
-  ArrowRight, 
+import {
+  Settings,
+  Users,
+  Dna,
+  PawPrint,
+  Leaf,
+  ArrowRight,
   ArrowLeft,
-  Sparkles,
   PartyPopper,
   X
 } from 'lucide-react';
@@ -16,17 +15,21 @@ import { LanguageContext } from '../App';
 
 interface SetupWizardProps {
   onClose: () => void;
+  orgFocus?: string;
 }
 
-const SetupWizard: React.FC<SetupWizardProps> = ({ onClose }) => {
+const SetupWizard: React.FC<SetupWizardProps> = ({ onClose, orgFocus }) => {
   const { t } = useContext(LanguageContext);
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
+  const isFlora = orgFocus === 'Flora';
 
   const steps = [
     {
-      title: "Welcome to OpenStudbook!",
-      description: "You've successfully created your organization. Let's get things ready in 4 quick steps.",
+      title: "Welcome to OpenStudbook! 🎉",
+      description: isFlora
+        ? "You've successfully created your botanical organization. Let's get your collection ready in 4 quick steps."
+        : "You've successfully created your organization. Let's get things ready in 4 quick steps.",
       icon: <PartyPopper className="text-emerald-500" size={48} />,
       actionLabel: "Let's Begin",
       action: () => setCurrentStep(1)
@@ -40,23 +43,29 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onClose }) => {
     },
     {
       title: "2. Invite Your Team",
-      description: "Conservation is a team effort. Invite your colleagues as keepers, vets, or researchers.",
+      description: isFlora
+        ? "Botany is a team effort. Invite your curators, horticulturalists, and researchers."
+        : "Conservation is a team effort. Invite your colleagues as keepers, vets, or researchers.",
       icon: <Users className="text-purple-500" size={48} />,
       actionLabel: "Invite People",
       action: () => { navigate('/settings', { state: { tab: 'users' } }); onClose(); }
     },
     {
-      title: "3. Define Your Species",
-      description: "Add the first species to your studbook. Our AI can help you auto-fill biological data.",
+      title: isFlora ? "3. Define Your Plant Species" : "3. Define Your Species",
+      description: isFlora
+        ? "Add the first species to your collection. Our AI can help you auto-fill botanical classification data."
+        : "Add the first species to your studbook. Our AI can help you auto-fill biological data.",
       icon: <Dna className="text-amber-500" size={48} />,
-      actionLabel: "Add a Species",
+      actionLabel: isFlora ? "Add a Plant Species" : "Add a Species",
       action: () => { navigate('/species'); onClose(); }
     },
     {
-      title: "4. Register Individuals",
-      description: "Once your species are defined, start adding individual records to track growth and health.",
-      icon: <PawPrint className="text-emerald-600" size={48} />,
-      actionLabel: "Add Individuals",
+      title: isFlora ? "4. Register Specimens" : "4. Register Individuals",
+      description: isFlora
+        ? "Once your species are defined, start adding individual specimen records to track growth, health, and provenance."
+        : "Once your species are defined, start adding individual records to track growth and health.",
+      icon: isFlora ? <Leaf className="text-emerald-600" size={48} /> : <PawPrint className="text-emerald-600" size={48} />,
+      actionLabel: isFlora ? "Add Specimens" : "Add Individuals",
       action: () => { navigate('/individuals'); onClose(); }
     }
   ];

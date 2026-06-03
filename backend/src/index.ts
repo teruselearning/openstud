@@ -10,6 +10,7 @@ import path from 'path';
 import process from 'process';
 import nodemailer from 'nodemailer';
 import { GoogleGenAI, Type } from "@google/genai";
+import seedLanguages from './seed-languages.json';
 
 declare const __dirname: string;
 
@@ -39,7 +40,7 @@ const getDb = () => {
 
 const resetPool = (newConfig: any) => {
   if (pool) {
-    pool.end();
+    pool.end().catch(() => {}); // silence errors on broken pools (e.g. after DB drop)
   }
   dbConfig = { ...dbConfig, ...newConfig };
   pool = mysql.createPool(dbConfig);
@@ -116,8 +117,20 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country VARCHAR(50), native_status_local VARCHAR(50))`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country TEXT, native_status_local TEXT)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, thumbnail_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
+  // Migration: add thumbnail_url to existing installs
+  try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS thumbnail_url LONGTEXT`); } catch (_) {}
+  // Migration: widen native_status columns from VARCHAR(50) to TEXT for existing installs
+  try { await db.execute(`ALTER TABLE species MODIFY COLUMN native_status_country TEXT`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE species MODIFY COLUMN native_status_local TEXT`); } catch (_) {}
+  // Migration: orgs that still have the old hard-coded default limit of 100 get reset to 0 (unlimited).
+  // 0 means no cap (superadmin / owner org behaviour). Also clear any stale monthly counter so the
+  // org isn't stuck in a "limit reached" state caused by the low default.
+  try { await db.execute(`UPDATE organizations SET ai_usage_limit = 0 WHERE ai_usage_limit = 100`); } catch (_) {}
+  try { await db.execute(`UPDATE organizations SET ai_usage_count = 0 WHERE ai_usage_limit = 0`); } catch (_) {}
+  // Migration: add per-org Gemini API key storage (key never leaves the server).
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key TEXT NULL`); } catch (_) {}
   await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON, feed_schedules JSON)`);
   try { await db.execute(`ALTER TABLE enclosures ADD COLUMN feed_schedules JSON`); } catch (e: any) { if (!e.message?.includes('Duplicate column')) throw e; }
   await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
@@ -128,23 +141,23 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS verification_codes (email VARCHAR(255) PRIMARY KEY, code VARCHAR(10) NOT NULL, expires_at BIGINT NOT NULL)`);
 };
 
-const seedDatabase = async (db: mysql.Pool, orgName?: string, adminPassword?: string) => {
+const seedDatabase = async (db: mysql.Pool, orgName?: string, adminPassword?: string, adminEmail?: string) => {
   const [orgs]: any = await db.execute(`SELECT id FROM organizations LIMIT 1`);
   if (orgs.length === 0) {
     console.log('[DATABASE] Seeding initial data...');
     const name = orgName || 'My Organisation';
+    const email = adminEmail || 'admin@openstudbook.local';
     const hashed = await bcrypt.hash(adminPassword || 'password', 10);
     await db.execute(`INSERT INTO organizations (id, name, location, focus, is_org_public, is_species_public, obscure_location, enable_enclosures) VALUES ('org-1', ?, '', 'Fauna', 1, 1, 0, 0)`, [name]);
-    await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-admin', 'org-1', 'Administrator', 'admin@openstudbook.local', 'Super Admin', 'Active', ?)`, [hashed]);
+    await db.execute(`INSERT INTO users (id, org_id, name, email, role, status, password) VALUES ('u-admin', 'org-1', 'Administrator', ?, 'Super Admin', 'Active', ?)`, [email, hashed]);
     await db.execute(`INSERT INTO projects (id, org_id, name, description) VALUES ('p-1', 'org-1', 'Default Project', 'Main collection')`);
-    await db.execute(`INSERT INTO app_config (id, settings) VALUES ('global-settings', ?)`, [JSON.stringify({ enableRegistration: true, themePrimaryColor: '#059669' })]);
-    await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-GB', 'English (UK)', 1, ?)`, [JSON.stringify({})]);
-    await db.execute(`INSERT INTO languages (code, name, is_default, translations) VALUES ('en-US', 'English (US)', 0, ?)`, [JSON.stringify({})]);
-    await db.execute('INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, 0, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), translations=VALUES(translations)', ["id", "Bahasa Indonesia", "{\"dashboard\":\"Dasbor\",\"networkMap\":\"Jaringan\",\"plantMap\":\"Peta Flora\",\"species\":\"Spesies\",\"individuals\":\"Individu\",\"breeding\":\"Pembiakan\",\"usersRoles\":\"Pengguna & Peran\",\"organization\":\"Organisasi\",\"superAdmin\":\"Admin Super\",\"signOut\":\"Keluar\",\"currentProject\":\"Proyek Saat Ini\",\"allProjects\":\"Semua Proyek\",\"createNewProject\":\"Buat Proyek Baru\",\"landingTitle\":\"Manajemen Pembiakan Tangkaran Open Source\",\"landingSubtitle\":\"OpenStudbook adalah platform open-source untuk kebun binatang, akuarium, dan kebun raya untuk mengelola populasi spesies dan melacak genetika.\",\"createOrg\":\"Buat Organisasi\",\"exploreDemo\":\"Jelajahi Demo\",\"demoLogin\":\"Login Demo\",\"getStarted\":\"Mulai\",\"securePrivate\":\"Aman & Pribadi\",\"securePrivateDesc\":\"Data Anda adalah milik Anda. Pilih apa yang ingin Anda bagikan.\",\"floraFauna\":\"Fauna & Flora\",\"floraFaunaDesc\":\"Manajemen terpadu untuk hewan dan tumbuhan.\",\"globalNetwork\":\"Jaringan Global\",\"globalNetworkDesc\":\"Terhubung dengan mitra di seluruh dunia.\",\"back\":\"Kembali\",\"registerOrg\":\"Daftarkan Organisasi\",\"orgName\":\"Nama Organisasi\",\"orgFocus\":\"Fokus\",\"orgFocusExplanation\":\"Memilih fokus akan mengaktifkan fitur yang paling relevan untuk organisasi Anda.\",\"faunaManagement\":\"Manajemen Fauna\",\"floraManagement\":\"Manajemen Flora\",\"cityLocation\":\"Kota / Lokasi\",\"adminDetails\":\"Detail Akun Admin\",\"yourFullName\":\"Nama Lengkap Anda\",\"workEmail\":\"Email Kerja\",\"password\":\"Kata Sandi\",\"confirmPassword\":\"Konfirmasi Kata Sandi\",\"verifyEmailAndContinue\":\"Verifikasi Email & Lanjutkan\",\"signIn\":\"Masuk\",\"welcomeBack\":\"Selamat Datang Kembali\",\"signInSubtitle\":\"Masuk ke organisasi Anda.\",\"forgotPassword\":\"Lupa Kata Sandi?\",\"needAccount\":\"Butuh akun? Daftar di sini\",\"backToLanding\":\"Kembali ke Beranda\",\"about\":\"Tentang\",\"privacyPolicy\":\"Kebijakan Privasi\",\"termsConditions\":\"Syarat & Ketentuan\",\"overview\":\"Ikhtisar\",\"welcomeBackDashboard\":\"Selamat datang kembali di dasbor organisasi Anda.\",\"totalSpecies\":\"Total Spesies\",\"totalIndividuals\":\"Total Individu\",\"endangeredSpecies\":\"Spesies Terancam\",\"activeUsers\":\"Pengguna Aktif\",\"breedingPairs\":\"Pasangan Pembiakan yang Disarankan\",\"match\":\"Kecocokan\",\"noBreeding\":\"Tidak ada rekomendasi pembiakan saat ini.\",\"popDist\":\"Distribusi Populasi\",\"consStatus\":\"Rasio Status Konservasi\",\"origin\":\"Asal Populasi\",\"ageDist\":\"Distribusi Usia & Jenis Kelamin\",\"wildCaught\":\"Tangkapan Liar\",\"captiveBred\":\"Dibesarkan di Penangkaran\",\"unknownOrigin\":\"Asal Tidak Diketahui\",\"males\":\"Jantan\",\"females\":\"Betina\",\"unknownSex\":\"Tidak Diketahui\",\"years\":\"tahun\",\"orgSettings\":\"Pengaturan Organisasi\",\"orgSettingsSubtitle\":\"Kelola detail kebun binatang atau tempat perlindungan Anda.\",\"locationName\":\"Nama Lokasi (Kota/Provinsi)\",\"geoLocation\":\"Geo-Lokasi (Peta)\",\"description\":\"Deskripsi\",\"projectManagement\":\"Manajemen Proyek\",\"projectManagementDesc\":\"Buat, edit, atau hapus proyek. Transfer spesies antar proyek.\",\"dataManagement\":\"Manajemen Data\",\"dataManagementDesc\":\"Ekspor data Anda untuk disimpan atau transfer ke sistem lain.\",\"saveChanges\":\"Simpan Perubahan\",\"saved\":\"Tersimpan!\",\"speciesDatabase\":\"Basis Data Spesies\",\"speciesSubtitle\":\"Katalog dan kelola profil biologis koleksi Anda.\",\"commonName\":\"Nama Umum\",\"commonNamePlaceholder\":\"mis. Panda Merah\",\"scientificName\":\"Nama Ilmiah\",\"scientificNamePlaceholder\":\"mis. Ailurus fulgens\",\"type\":\"Kerajaan\",\"animal\":\"Fauna\",\"plant\":\"Flora\",\"conservationStatus\":\"Status Konservasi\",\"sexualMaturity\":\"Kematangan Seksual (Tahun)\",\"lifeExpectancy\":\"Harapan Hidup (Tahun)\",\"autofill\":\"Isi Otomatis\",\"aiGenerate\":\"Ilustrasi AI\",\"cancel\":\"Batal\",\"save\":\"Simpan\",\"add\":\"Tambah\",\"searchSpecies\":\"Cari Spesies...\",\"searchIndividuals\":\"Cari Individu...\",\"indivSubtitleAnimal\":\"Lacak dan kelola individu dalam perawatan Anda.\",\"updateIndividual\":\"Perbarui Individu\",\"registerIndividual\":\"Daftarkan Individu\",\"representativeImage\":\"Gambar Representatif\",\"upload\":\"Unggah\",\"noImageProvided\":\"Tidak ada gambar\",\"saveSpecies\":\"Simpan Spesies\",\"updateSpecies\":\"Perbarui Spesies\",\"lifespan\":\"Masa Hidup\",\"maturity\":\"Kematangan\",\"noSpeciesFound\":\"Spesies tidak ditemukan\",\"adultWeight\":\"Berat Dewasa\",\"classification\":\"Klasifikasi\",\"monoecious\":\"Berumah Satu\",\"dioecious\":\"Berumah Dua\",\"maturityFlowering\":\"Kematangan / Pembungaan\",\"studbookId\":\"ID Studbook\",\"name\":\"Nama\",\"saSubtitle\":\"Manajemen dan pengawasan sistem global.\",\"security\":\"Keamanan\",\"email\":\"Email\",\"landing\":\"Beranda\",\"localisation\":\"Lokalisasi\",\"network\":\"Jaringan\",\"cacheManage\":\"Manajemen Cache Lokal\",\"createOrgBtn\":\"Buat Organisasi\",\"loginAs\":\"Masuk Sebagai\",\"hostTag\":\"Host\",\"smtpTestSuccess\":\"Uji SMTP berhasil dikirim!\",\"smtpSettings\":\"Pengaturan SMTP\",\"smtpHost\":\"Host SMTP\",\"port\":\"Port\",\"username\":\"Nama Pengguna\",\"secureConnection\":\"Koneksi Aman (SSL/TLS)\",\"saveSettings\":\"Simpan Pengaturan\",\"securitySettings\":\"Pengaturan Keamanan\",\"enableMfa\":\"Aktifkan Autentikasi Dua Faktor\",\"enableOrgMfa\":\"Wajibkan MFA Organisasi\",\"enableOrgMfaDesc\":\"Wajibkan semua anggota organisasi ini menggunakan MFA.\",\"theming\":\"Tema\",\"primaryColor\":\"Warna Utama\",\"appLogo\":\"Logo Aplikasi\",\"uploadLogo\":\"Unggah Logo\",\"customCss\":\"CSS Kustom\",\"enableRegistration\":\"Aktifkan Pendaftaran\",\"featureCards\":\"Kartu Fitur\",\"addLanguage\":\"Tambah Bahasa\",\"supportedLanguages\":\"Bahasa yang Didukung\",\"heroTitle\":\"Judul Hero\",\"heroSubtitle\":\"Subjudul Hero\",\"staticPages\":\"Halaman Statis\",\"clearCacheBtn\":\"Hapus Data Lokal\",\"allOrganizations\":\"Semua Organisasi\",\"searchName\":\"Cari berdasarkan nama...\",\"emailVerifySubject\":\"Verifikasi email Anda\",\"emailVerifyBody\":\"<p>Kode verifikasi Anda adalah: <b>{{code}}</b></p>\",\"emailInviteSubject\":\"Undangan bergabung dengan {{orgName}}\",\"emailInviteBody\":\"<p>Halo {{userName}},</p><p>Anda telah diundang bergabung dengan tim manajemen di <b>{{orgName}}</b>.</p><p>Klik tautan di bawah untuk mengkonfirmasi akun dan mengatur kata sandi:</p><p style='margin:30px 0'><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background:#059669;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Konfirmasi Akun Saya</a></p><p style='font-size:12px;color:#64748b'>Jika tombol tidak berfungsi, salin URL ini:<br>{{inviteUrl}}</p>\",\"emailNotifySubject\":\"Notifikasi Sistem\",\"emailNotifyBody\":\"<p>Halo,</p><p>{{message}}</p>\",\"registration\":\"Pendaftaran Pengguna\",\"mfa\":\"Autentikasi Dua Faktor\",\"invite\":\"Undangan Tim\",\"notification\":\"Peringatan Sistem\",\"teamMembers\":\"Anggota Tim\",\"teamSubtitle\":\"Kelola akses dan izin tim Anda.\",\"bulkInvite\":\"Undangan Massal\",\"inviteMember\":\"Undang Anggota\",\"csvFormatTitle\":\"Format CSV\",\"csvFormatDesc\":\"Unduh template kami untuk memastikan CSV Anda diformat dengan benar.\",\"processingBulk\":\"Memproses undangan massal...\",\"selectSpecies\":\"Pilih Spesies\",\"saveEvent\":\"Simpan Acara\",\"breedingSubtitle\":\"Lacak dan kelola pasangan pembiakan dan hasilnya.\",\"recordBreedingEvent\":\"Catat Acara\",\"newBreedingLoan\":\"Pinjaman Baru\",\"breedingEvents\":\"Acara\",\"breedingLoans\":\"Pinjaman\",\"viewTitle\":\"Filter Tampilan\",\"includePartnerOrgs\":\"Sertakan Acara Mitra\",\"onboardingWelcome\":\"Selamat Datang di OpenStudbook\",\"onboardingSettingsTask\":\"Tinjau pengaturan organisasi Anda di bawah dan klik 'Simpan Perubahan' untuk melanjutkan.\",\"onboardingSaveAndNext\":\"Simpan & Lanjutkan ke Spesies\",\"onboardingSpeciesTask\":\"Bagus! Tambahkan spesies pertama Anda untuk mulai membangun koleksi.\",\"onboardingIndivTask\":\"Terakhir, daftarkan individu untuk melacak pertumbuhan dan riwayat mereka.\",\"enablePage\":\"Aktifkan Fitur\",\"dashBlockTitle\":\"Judul Pesan Dasbor\",\"dashBlockContent\":\"Konten Pesan Dasbor\",\"customDashBlock\":\"Pengumuman Dasbor Kustom\",\"customDashBlockDesc\":\"Buat blok pengumuman yang muncul di bagian atas dasbor untuk semua pengguna.\",\"visibilityPrivacy\":\"Visibilitas & Privasi\",\"breedingLoanPolicy\":\"Kebijakan Pembiakan & Pinjaman\",\"allowBreedingRequests\":\"Izinkan Permintaan Jaringan\",\"allowBreedingRequestsDesc\":\"Izinkan organisasi mitra mengusulkan pinjaman pembiakan melalui peta jaringan.\",\"whoReceivesRequests\":\"Kontak Permintaan\",\"whoReceivesRequestsDesc\":\"Pengguna mana yang diberitahu saat permintaan pinjaman diterima?\",\"orgVisibility\":\"Daftarkan dalam Direktori\",\"orgVisibilityDesc\":\"Buat organisasi Anda terlihat di peta jaringan global.\",\"obscureLocation\":\"Samarkan Lokasi Peta\",\"obscureLocationDesc\":\"Bulatkan koordinat peta untuk mencegah pelacakan lokasi yang tepat.\",\"speciesListVisibility\":\"Daftar Spesies Publik\",\"speciesListVisibilityDesc\":\"Izinkan siapa saja di jaringan melihat spesies yang Anda kelola.\",\"noPartnersFound\":\"Tidak ada mitra ditemukan.\",\"connectNewPartner\":\"Hubungkan Mitra Baru\",\"yourInviteCode\":\"Kode Undangan Anda\",\"redeemCode\":\"Tukarkan Kode\",\"siteKey\":\"Kunci Situs\",\"secretKey\":\"Kunci Rahasia\",\"dashboardReady\":\"Dasbor Anda siap\",\"dashboardReadyDesc\":\"Metrik, grafik, dan wawasan pembiakan akan muncul di sini setelah Anda menambahkan spesies dan individu ke koleksi Anda.\",\"addSpecies\":\"Tambah Spesies\",\"addIndividual\":\"Tambah Individu\"}"]);
-    await db.execute('INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, 0, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), translations=VALUES(translations)', ["ms", "Bahasa Melayu", "{\"dashboard\":\"Papan Pemuka\",\"networkMap\":\"Rangkaian\",\"plantMap\":\"Peta Flora\",\"species\":\"Spesies\",\"individuals\":\"Individu\",\"breeding\":\"Pembiakan\",\"usersRoles\":\"Pengguna & Peranan\",\"organization\":\"Organisasi\",\"superAdmin\":\"Admin Super\",\"signOut\":\"Log Keluar\",\"currentProject\":\"Projek Semasa\",\"allProjects\":\"Semua Projek\",\"createNewProject\":\"Cipta Projek Baru\",\"landingTitle\":\"Pengurusan Pembiakan Tangkapan Sumber Terbuka\",\"landingSubtitle\":\"OpenStudbook ialah platform sumber terbuka untuk zoo, akuarium, dan taman botani bagi menguruskan populasi spesies dan mengesan genetik.\",\"createOrg\":\"Cipta Organisasi\",\"exploreDemo\":\"Terokai Demo\",\"demoLogin\":\"Log Masuk Demo\",\"getStarted\":\"Mulakan\",\"securePrivate\":\"Selamat & Peribadi\",\"securePrivateDesc\":\"Data anda adalah milik anda. Pilih apa yang ingin anda kongsi.\",\"floraFauna\":\"Fauna & Flora\",\"floraFaunaDesc\":\"Pengurusan bersepadu untuk haiwan dan tumbuhan.\",\"globalNetwork\":\"Rangkaian Global\",\"globalNetworkDesc\":\"Berhubung dengan rakan kongsi di seluruh dunia.\",\"back\":\"Kembali\",\"registerOrg\":\"Daftarkan Organisasi\",\"orgName\":\"Nama Organisasi\",\"orgFocus\":\"Fokus\",\"orgFocusExplanation\":\"Memilih fokus akan mengaktifkan ciri yang paling relevan untuk organisasi anda.\",\"faunaManagement\":\"Pengurusan Fauna\",\"floraManagement\":\"Pengurusan Flora\",\"cityLocation\":\"Bandar / Lokasi\",\"adminDetails\":\"Butiran Akaun Admin\",\"yourFullName\":\"Nama Penuh Anda\",\"workEmail\":\"E-mel Kerja\",\"password\":\"Kata Laluan\",\"confirmPassword\":\"Sahkan Kata Laluan\",\"verifyEmailAndContinue\":\"Sahkan E-mel & Teruskan\",\"signIn\":\"Log Masuk\",\"welcomeBack\":\"Selamat Datang Kembali\",\"signInSubtitle\":\"Log masuk ke organisasi anda.\",\"forgotPassword\":\"Lupa Kata Laluan?\",\"needAccount\":\"Perlukan akaun? Daftar di sini\",\"backToLanding\":\"Kembali ke Halaman Utama\",\"about\":\"Tentang\",\"privacyPolicy\":\"Dasar Privasi\",\"termsConditions\":\"Terma & Syarat\",\"overview\":\"Ringkasan\",\"welcomeBackDashboard\":\"Selamat datang kembali ke papan pemuka organisasi anda.\",\"totalSpecies\":\"Jumlah Spesies\",\"totalIndividuals\":\"Jumlah Individu\",\"endangeredSpecies\":\"Spesies Terancam\",\"activeUsers\":\"Pengguna Aktif\",\"breedingPairs\":\"Pasangan Pembiakan Dicadangkan\",\"match\":\"Padanan\",\"noBreeding\":\"Tiada cadangan pembiakan buat masa ini.\",\"popDist\":\"Taburan Populasi\",\"consStatus\":\"Nisbah Status Pemuliharaan\",\"origin\":\"Asal Populasi\",\"ageDist\":\"Taburan Umur & Jantina\",\"wildCaught\":\"Ditangkap Liar\",\"captiveBred\":\"Dibesarkan dalam Tangkapan\",\"unknownOrigin\":\"Asal Tidak Diketahui\",\"males\":\"Jantan\",\"females\":\"Betina\",\"unknownSex\":\"Tidak Diketahui\",\"years\":\"tahun\",\"orgSettings\":\"Tetapan Organisasi\",\"orgSettingsSubtitle\":\"Urus butiran zoo atau tempat perlindungan anda.\",\"locationName\":\"Nama Lokasi (Bandar/Negeri)\",\"geoLocation\":\"Geo-Lokasi (Peta)\",\"description\":\"Penerangan\",\"projectManagement\":\"Pengurusan Projek\",\"projectManagementDesc\":\"Cipta, edit, atau padam projek. Pindahkan spesies antara projek.\",\"dataManagement\":\"Pengurusan Data\",\"dataManagementDesc\":\"Eksport data anda untuk simpanan atau pindahkan ke sistem lain.\",\"saveChanges\":\"Simpan Perubahan\",\"saved\":\"Tersimpan!\",\"speciesDatabase\":\"Pangkalan Data Spesies\",\"speciesSubtitle\":\"Katalog dan urus profil biologi koleksi anda.\",\"commonName\":\"Nama Biasa\",\"commonNamePlaceholder\":\"cth. Panda Merah\",\"scientificName\":\"Nama Saintifik\",\"scientificNamePlaceholder\":\"cth. Ailurus fulgens\",\"type\":\"Alam\",\"animal\":\"Fauna\",\"plant\":\"Flora\",\"conservationStatus\":\"Status Pemuliharaan\",\"sexualMaturity\":\"Kematangan Seksual (Tahun)\",\"lifeExpectancy\":\"Jangka Hayat (Tahun)\",\"autofill\":\"Isi Automatik\",\"aiGenerate\":\"Ilustrasi AI\",\"cancel\":\"Batal\",\"save\":\"Simpan\",\"add\":\"Tambah\",\"searchSpecies\":\"Cari Spesies...\",\"searchIndividuals\":\"Cari Individu...\",\"indivSubtitleAnimal\":\"Jejak dan urus individu dalam jagaan anda.\",\"updateIndividual\":\"Kemaskini Individu\",\"registerIndividual\":\"Daftarkan Individu\",\"representativeImage\":\"Gambar Wakil\",\"upload\":\"Muat Naik\",\"noImageProvided\":\"Tiada gambar disediakan\",\"saveSpecies\":\"Simpan Spesies\",\"updateSpecies\":\"Kemaskini Spesies\",\"lifespan\":\"Jangka Hayat\",\"maturity\":\"Kematangan\",\"noSpeciesFound\":\"Tiada spesies dijumpai\",\"adultWeight\":\"Berat Dewasa\",\"classification\":\"Klasifikasi\",\"monoecious\":\"Monoesius\",\"dioecious\":\"Dioesius\",\"maturityFlowering\":\"Kematangan / Pembungaan\",\"studbookId\":\"ID Studbook\",\"name\":\"Nama\",\"saSubtitle\":\"Pengurusan dan pengawasan sistem global.\",\"security\":\"Keselamatan\",\"email\":\"E-mel\",\"landing\":\"Halaman Utama\",\"localisation\":\"Penyetempatan\",\"network\":\"Rangkaian\",\"cacheManage\":\"Pengurusan Cache Tempatan\",\"createOrgBtn\":\"Cipta Organisasi\",\"loginAs\":\"Log Masuk Sebagai\",\"hostTag\":\"Host\",\"smtpTestSuccess\":\"Ujian SMTP berjaya dihantar!\",\"smtpSettings\":\"Tetapan SMTP\",\"smtpHost\":\"Host SMTP\",\"port\":\"Port\",\"username\":\"Nama Pengguna\",\"secureConnection\":\"Sambungan Selamat (SSL/TLS)\",\"saveSettings\":\"Simpan Tetapan\",\"securitySettings\":\"Tetapan Keselamatan\",\"enableMfa\":\"Aktifkan Pengesahan Dua Faktor\",\"enableOrgMfa\":\"Wajibkan MFA Organisasi\",\"enableOrgMfaDesc\":\"Wajibkan semua ahli organisasi ini menggunakan MFA.\",\"theming\":\"Tema\",\"primaryColor\":\"Warna Utama\",\"appLogo\":\"Logo Aplikasi\",\"uploadLogo\":\"Muat Naik Logo\",\"customCss\":\"CSS Tersuai\",\"enableRegistration\":\"Aktifkan Pendaftaran\",\"featureCards\":\"Kad Ciri\",\"addLanguage\":\"Tambah Bahasa\",\"supportedLanguages\":\"Bahasa Disokong\",\"heroTitle\":\"Tajuk Hero\",\"heroSubtitle\":\"Subtajuk Hero\",\"staticPages\":\"Halaman Statik\",\"clearCacheBtn\":\"Buang Data Tempatan\",\"allOrganizations\":\"Semua Organisasi\",\"searchName\":\"Cari mengikut nama...\",\"emailVerifySubject\":\"Sahkan e-mel anda\",\"emailVerifyBody\":\"<p>Kod pengesahan anda ialah: <b>{{code}}</b></p>\",\"emailInviteSubject\":\"Jemputan untuk menyertai {{orgName}}\",\"emailInviteBody\":\"<p>Helo {{userName}},</p><p>Anda telah dijemput untuk menyertai pasukan pengurusan di <b>{{orgName}}</b>.</p><p>Sila klik pautan di bawah untuk mengesahkan akaun dan menetapkan kata laluan:</p><p style='margin:30px 0'><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background:#059669;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Sahkan Akaun Saya</a></p><p style='font-size:12px;color:#64748b'>Jika butang tidak berfungsi, salin URL ini:<br>{{inviteUrl}}</p>\",\"emailNotifySubject\":\"Pemberitahuan Sistem\",\"emailNotifyBody\":\"<p>Helo,</p><p>{{message}}</p>\",\"registration\":\"Pendaftaran Pengguna\",\"mfa\":\"Pengesahan Dua Faktor\",\"invite\":\"Jemputan Pasukan\",\"notification\":\"Amaran Sistem\",\"teamMembers\":\"Ahli Pasukan\",\"teamSubtitle\":\"Urus akses dan kebenaran pasukan anda.\",\"bulkInvite\":\"Jemputan Pukal\",\"inviteMember\":\"Jemput Ahli\",\"csvFormatTitle\":\"Format CSV\",\"csvFormatDesc\":\"Muat turun templat kami untuk memastikan CSV anda diformat dengan betul.\",\"processingBulk\":\"Memproses jemputan pukal...\",\"selectSpecies\":\"Pilih Spesies\",\"saveEvent\":\"Simpan Acara\",\"breedingSubtitle\":\"Jejak dan urus pasangan pembiakan dan hasilnya.\",\"recordBreedingEvent\":\"Rekod Acara\",\"newBreedingLoan\":\"Pinjaman Baru\",\"breedingEvents\":\"Acara\",\"breedingLoans\":\"Pinjaman\",\"viewTitle\":\"Tapis Paparan\",\"includePartnerOrgs\":\"Sertakan Acara Rakan Kongsi\",\"onboardingWelcome\":\"Selamat Datang ke OpenStudbook\",\"onboardingSettingsTask\":\"Sila semak tetapan organisasi anda di bawah dan klik 'Simpan Perubahan' untuk meneruskan.\",\"onboardingSaveAndNext\":\"Simpan & Teruskan ke Spesies\",\"onboardingSpeciesTask\":\"Bagus! Tambah spesies pertama anda untuk mula membina koleksi.\",\"onboardingIndivTask\":\"Akhir sekali, daftarkan individu untuk menjejaki pertumbuhan dan sejarah mereka.\",\"enablePage\":\"Aktifkan Ciri\",\"dashBlockTitle\":\"Tajuk Mesej Papan Pemuka\",\"dashBlockContent\":\"Kandungan Mesej Papan Pemuka\",\"customDashBlock\":\"Pengumuman Papan Pemuka Tersuai\",\"customDashBlockDesc\":\"Cipta blok pengumuman yang muncul di bahagian atas papan pemuka untuk semua pengguna.\",\"visibilityPrivacy\":\"Keterlihatan & Privasi\",\"breedingLoanPolicy\":\"Dasar Pembiakan & Pinjaman\",\"allowBreedingRequests\":\"Benarkan Permintaan Rangkaian\",\"allowBreedingRequestsDesc\":\"Benarkan organisasi rakan kongsi mencadangkan pinjaman pembiakan melalui peta rangkaian.\",\"whoReceivesRequests\":\"Kenalan Permintaan\",\"whoReceivesRequestsDesc\":\"Pengguna mana yang akan diberitahu apabila permintaan pinjaman diterima?\",\"orgVisibility\":\"Senarai dalam Direktori\",\"orgVisibilityDesc\":\"Jadikan organisasi anda kelihatan pada peta rangkaian global.\",\"obscureLocation\":\"Samarkan Lokasi Peta\",\"obscureLocationDesc\":\"Bulatkan koordinat peta untuk mencegah penjejakan lokasi tepat.\",\"speciesListVisibility\":\"Senarai Spesies Awam\",\"speciesListVisibilityDesc\":\"Benarkan sesiapa dalam rangkaian melihat spesies yang anda urus.\",\"noPartnersFound\":\"Tiada rakan kongsi dijumpai.\",\"connectNewPartner\":\"Hubungkan Rakan Kongsi Baru\",\"yourInviteCode\":\"Kod Jemputan Anda\",\"redeemCode\":\"Tebus Kod\",\"siteKey\":\"Kunci Tapak\",\"secretKey\":\"Kunci Rahsia\",\"dashboardReady\":\"Papan pemuka anda sedia\",\"dashboardReadyDesc\":\"Metrik, carta, dan maklumat pembiakan akan muncul di sini setelah anda menambah spesies dan individu ke koleksi anda.\",\"addSpecies\":\"Tambah Spesies\",\"addIndividual\":\"Tambah Individu\"}"]);
-    await db.execute('INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, 0, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), translations=VALUES(translations)', ["pt", "Português", "{\"dashboard\":\"Painel\",\"networkMap\":\"Rede\",\"plantMap\":\"Mapa da Flora\",\"species\":\"Espécies\",\"individuals\":\"Indivíduos\",\"breeding\":\"Reprodução\",\"usersRoles\":\"Utilizadores & Funções\",\"organization\":\"Organização\",\"superAdmin\":\"Super Admin\",\"signOut\":\"Sair\",\"currentProject\":\"Projeto Atual\",\"allProjects\":\"Todos os Projetos\",\"createNewProject\":\"Criar Novo Projeto\",\"landingTitle\":\"Gestão de Criação em Cativeiro Open Source\",\"landingSubtitle\":\"OpenStudbook é uma plataforma open-source para jardins zoológicos, aquários e jardins botânicos gerirem populações de espécies e rastrearem a genética.\",\"createOrg\":\"Criar Organização\",\"exploreDemo\":\"Explorar Demo\",\"demoLogin\":\"Entrar no Demo\",\"getStarted\":\"Começar\",\"securePrivate\":\"Seguro & Privado\",\"securePrivateDesc\":\"Os seus dados são seus. Escolha exatamente o que partilhar.\",\"floraFauna\":\"Fauna & Flora\",\"floraFaunaDesc\":\"Gestão unificada para animais e plantas.\",\"globalNetwork\":\"Rede Global\",\"globalNetworkDesc\":\"Conecte-se com parceiros em todo o mundo.\",\"back\":\"Voltar\",\"registerOrg\":\"Registar Organização\",\"orgName\":\"Nome da Organização\",\"orgFocus\":\"Foco\",\"orgFocusExplanation\":\"Selecionar o foco irá pré-ativar as funcionalidades mais relevantes para a sua organização.\",\"faunaManagement\":\"Gestão de Fauna\",\"floraManagement\":\"Gestão de Flora\",\"cityLocation\":\"Cidade / Localização\",\"adminDetails\":\"Detalhes da Conta Admin\",\"yourFullName\":\"O Seu Nome Completo\",\"workEmail\":\"E-mail de Trabalho\",\"password\":\"Palavra-passe\",\"confirmPassword\":\"Confirmar Palavra-passe\",\"verifyEmailAndContinue\":\"Verificar E-mail & Continuar\",\"signIn\":\"Entrar\",\"welcomeBack\":\"Bem-vindo de Volta\",\"signInSubtitle\":\"Entre na sua organização.\",\"forgotPassword\":\"Esqueceu a palavra-passe?\",\"needAccount\":\"Precisa de uma conta? Registe-se aqui\",\"backToLanding\":\"Voltar à Página Inicial\",\"about\":\"Sobre\",\"privacyPolicy\":\"Política de Privacidade\",\"termsConditions\":\"Termos & Condições\",\"overview\":\"Visão Geral\",\"welcomeBackDashboard\":\"Bem-vindo de volta ao painel da sua organização.\",\"totalSpecies\":\"Total de Espécies\",\"totalIndividuals\":\"Total de Indivíduos\",\"endangeredSpecies\":\"Espécies Ameaçadas\",\"activeUsers\":\"Utilizadores Ativos\",\"breedingPairs\":\"Pares de Reprodução Sugeridos\",\"match\":\"Compatibilidade\",\"noBreeding\":\"Sem recomendações de reprodução disponíveis neste momento.\",\"popDist\":\"Distribuição da População\",\"consStatus\":\"Rácio de Estado de Conservação\",\"origin\":\"Origem da População\",\"ageDist\":\"Distribuição de Idade & Sexo\",\"wildCaught\":\"Capturado na Natureza\",\"captiveBred\":\"Criado em Cativeiro\",\"unknownOrigin\":\"Origem Desconhecida\",\"males\":\"Machos\",\"females\":\"Fêmeas\",\"unknownSex\":\"Desconhecido\",\"years\":\"anos\",\"orgSettings\":\"Definições da Organização\",\"orgSettingsSubtitle\":\"Gira os detalhes do seu jardim zoológico ou santuário.\",\"locationName\":\"Nome do Local (Cidade/Estado)\",\"geoLocation\":\"Geo-Localização (Mapa)\",\"description\":\"Descrição\",\"projectManagement\":\"Gestão de Projetos\",\"projectManagementDesc\":\"Criar, editar ou eliminar projetos. Transferir espécies entre projetos.\",\"dataManagement\":\"Gestão de Dados\",\"dataManagementDesc\":\"Exporte os seus dados para arquivo ou transfira para outro sistema.\",\"saveChanges\":\"Guardar Alterações\",\"saved\":\"Guardado!\",\"speciesDatabase\":\"Base de Dados de Espécies\",\"speciesSubtitle\":\"Catalogue e gira os perfis biológicos da sua coleção.\",\"commonName\":\"Nome Comum\",\"commonNamePlaceholder\":\"ex. Panda Vermelho\",\"scientificName\":\"Nome Científico\",\"scientificNamePlaceholder\":\"ex. Ailurus fulgens\",\"type\":\"Reino\",\"animal\":\"Fauna\",\"plant\":\"Flora\",\"conservationStatus\":\"Estado de Conservação\",\"sexualMaturity\":\"Maturidade Sexual (Anos)\",\"lifeExpectancy\":\"Esperança de Vida (Anos)\",\"autofill\":\"Preenchimento Automático\",\"aiGenerate\":\"Ilustração IA\",\"cancel\":\"Cancelar\",\"save\":\"Guardar\",\"add\":\"Adicionar\",\"searchSpecies\":\"Pesquisar Espécies...\",\"searchIndividuals\":\"Pesquisar Indivíduos...\",\"indivSubtitleAnimal\":\"Acompanhe e gira os indivíduos sob os seus cuidados.\",\"updateIndividual\":\"Atualizar Indivíduo\",\"registerIndividual\":\"Registar Indivíduo\",\"representativeImage\":\"Imagem Representativa\",\"upload\":\"Carregar\",\"noImageProvided\":\"Sem imagem fornecida\",\"saveSpecies\":\"Guardar Espécie\",\"updateSpecies\":\"Atualizar Espécie\",\"lifespan\":\"Esperança de Vida\",\"maturity\":\"Maturidade\",\"noSpeciesFound\":\"Nenhuma espécie encontrada\",\"adultWeight\":\"Peso Adulto\",\"classification\":\"Classificação\",\"monoecious\":\"Monóico\",\"dioecious\":\"Dióico\",\"maturityFlowering\":\"Maturidade / Floração\",\"studbookId\":\"ID do Studbook\",\"name\":\"Nome\",\"saSubtitle\":\"Gestão e supervisão global do sistema.\",\"security\":\"Segurança\",\"email\":\"E-mail\",\"landing\":\"Página Inicial\",\"localisation\":\"Localização\",\"network\":\"Rede\",\"cacheManage\":\"Gestão de Cache Local\",\"createOrgBtn\":\"Criar Organização\",\"loginAs\":\"Entrar Como\",\"hostTag\":\"Anfitrião\",\"smtpTestSuccess\":\"Teste SMTP enviado com sucesso!\",\"smtpSettings\":\"Definições SMTP\",\"smtpHost\":\"Host SMTP\",\"port\":\"Porta\",\"username\":\"Nome de Utilizador\",\"secureConnection\":\"Ligação Segura (SSL/TLS)\",\"saveSettings\":\"Guardar Definições\",\"securitySettings\":\"Definições de Segurança\",\"enableMfa\":\"Ativar Autenticação de Dois Fatores\",\"enableOrgMfa\":\"Forçar MFA da Organização\",\"enableOrgMfaDesc\":\"Exigir que todos os membros desta organização utilizem MFA.\",\"theming\":\"Tema\",\"primaryColor\":\"Cor Principal\",\"appLogo\":\"Logótipo da Aplicação\",\"uploadLogo\":\"Carregar Logótipo\",\"customCss\":\"CSS Personalizado\",\"enableRegistration\":\"Ativar Registo\",\"featureCards\":\"Cartões de Funcionalidades\",\"addLanguage\":\"Adicionar Idioma\",\"supportedLanguages\":\"Idiomas Suportados\",\"heroTitle\":\"Título Hero\",\"heroSubtitle\":\"Subtítulo Hero\",\"staticPages\":\"Páginas Estáticas\",\"clearCacheBtn\":\"Limpar Dados Locais\",\"allOrganizations\":\"Todas as Organizações\",\"searchName\":\"Pesquisar por nome...\",\"emailVerifySubject\":\"Verifique o seu e-mail\",\"emailVerifyBody\":\"<p>O seu código de verificação é: <b>{{code}}</b></p>\",\"emailInviteSubject\":\"Convite para se juntar a {{orgName}}\",\"emailInviteBody\":\"<p>Olá {{userName}},</p><p>Foi convidado a juntar-se à equipa de gestão de <b>{{orgName}}</b>.</p><p>Clique no link abaixo para confirmar a sua conta e definir a sua palavra-passe:</p><p style='margin:30px 0'><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background:#059669;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Confirmar a Minha Conta</a></p><p style='font-size:12px;color:#64748b'>Se o botão não funcionar, copie este URL:<br>{{inviteUrl}}</p>\",\"emailNotifySubject\":\"Notificação do Sistema\",\"emailNotifyBody\":\"<p>Olá,</p><p>{{message}}</p>\",\"registration\":\"Registo de Utilizador\",\"mfa\":\"Autenticação de Dois Fatores\",\"invite\":\"Convite de Equipa\",\"notification\":\"Alertas do Sistema\",\"teamMembers\":\"Membros da Equipa\",\"teamSubtitle\":\"Gira o acesso e permissões da sua equipa.\",\"bulkInvite\":\"Convite em Massa\",\"inviteMember\":\"Convidar Membro\",\"csvFormatTitle\":\"Formato CSV\",\"csvFormatDesc\":\"Descarregue o nosso modelo para garantir que o seu CSV está corretamente formatado.\",\"processingBulk\":\"A processar convites em massa...\",\"selectSpecies\":\"Selecionar Espécie\",\"saveEvent\":\"Guardar Evento\",\"breedingSubtitle\":\"Acompanhe e gira pares de reprodução e resultados.\",\"recordBreedingEvent\":\"Registar Evento\",\"newBreedingLoan\":\"Novo Empréstimo\",\"breedingEvents\":\"Eventos\",\"breedingLoans\":\"Empréstimos\",\"viewTitle\":\"Filtrar Vista\",\"includePartnerOrgs\":\"Incluir Eventos de Parceiros\",\"onboardingWelcome\":\"Bem-vindo ao OpenStudbook\",\"onboardingSettingsTask\":\"Reveja as definições da sua organização abaixo e clique em 'Guardar Alterações' para continuar.\",\"onboardingSaveAndNext\":\"Guardar & Continuar para Espécies\",\"onboardingSpeciesTask\":\"Ótimo! Adicione a sua primeira espécie para começar a construir a sua coleção.\",\"onboardingIndivTask\":\"Por fim, registe indivíduos para acompanhar o seu crescimento e histórico.\",\"enablePage\":\"Ativar Funcionalidade\",\"dashBlockTitle\":\"Título da Mensagem do Painel\",\"dashBlockContent\":\"Conteúdo da Mensagem do Painel\",\"customDashBlock\":\"Anúncio Personalizado do Painel\",\"customDashBlockDesc\":\"Crie um bloco de anúncio personalizado que aparece no topo do painel para todos os utilizadores.\",\"visibilityPrivacy\":\"Visibilidade & Privacidade\",\"breedingLoanPolicy\":\"Política de Reprodução & Empréstimo\",\"allowBreedingRequests\":\"Permitir Pedidos de Rede\",\"allowBreedingRequestsDesc\":\"Permitir que organizações parceiras proponham empréstimos de reprodução através do mapa de rede.\",\"whoReceivesRequests\":\"Contacto de Pedidos\",\"whoReceivesRequestsDesc\":\"Qual utilizador deve ser notificado quando um pedido de empréstimo é recebido?\",\"orgVisibility\":\"Listar no Diretório\",\"orgVisibilityDesc\":\"Tornar a sua organização visível no mapa de rede global.\",\"obscureLocation\":\"Ocultar Localização no Mapa\",\"obscureLocationDesc\":\"Arredonde as coordenadas do mapa para evitar rastreamento preciso por não parceiros.\",\"speciesListVisibility\":\"Lista de Espécies Pública\",\"speciesListVisibilityDesc\":\"Permitir que qualquer pessoa na rede veja as espécies que gere.\",\"noPartnersFound\":\"Nenhum parceiro encontrado.\",\"connectNewPartner\":\"Conectar Novo Parceiro\",\"yourInviteCode\":\"O Seu Código de Convite\",\"redeemCode\":\"Resgatar Código\",\"siteKey\":\"Chave do Site\",\"secretKey\":\"Chave Secreta\",\"dashboardReady\":\"O seu painel está pronto\",\"dashboardReadyDesc\":\"Métricas, gráficos e análises de reprodução aparecerão aqui quando adicionar espécies e indivíduos à sua coleção.\",\"addSpecies\":\"Adicionar Espécie\",\"addIndividual\":\"Adicionar Indivíduo\"}"]);
-    await db.execute('INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, 0, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), translations=VALUES(translations)', ["es", "Español", "{\"dashboard\":\"Panel\",\"networkMap\":\"Red\",\"plantMap\":\"Mapa de Flora\",\"species\":\"Especies\",\"individuals\":\"Individuos\",\"breeding\":\"Cría\",\"usersRoles\":\"Usuarios & Roles\",\"organization\":\"Organización\",\"superAdmin\":\"Super Admin\",\"signOut\":\"Cerrar Sesión\",\"currentProject\":\"Proyecto Actual\",\"allProjects\":\"Todos los Proyectos\",\"createNewProject\":\"Crear Nuevo Proyecto\",\"landingTitle\":\"Gestión de Cría en Cautividad de Código Abierto\",\"landingSubtitle\":\"OpenStudbook es una plataforma de código abierto para zoológicos, acuarios y jardines botánicos para gestionar poblaciones de especies y rastrear la genética.\",\"createOrg\":\"Crear Organización\",\"exploreDemo\":\"Explorar Demo\",\"demoLogin\":\"Acceder al Demo\",\"getStarted\":\"Comenzar\",\"securePrivate\":\"Seguro y Privado\",\"securePrivateDesc\":\"Sus datos son suyos. Elija exactamente qué compartir.\",\"floraFauna\":\"Fauna y Flora\",\"floraFaunaDesc\":\"Gestión unificada para animales y plantas.\",\"globalNetwork\":\"Red Global\",\"globalNetworkDesc\":\"Conéctese con socios en todo el mundo.\",\"back\":\"Volver\",\"registerOrg\":\"Registrar Organización\",\"orgName\":\"Nombre de la Organización\",\"orgFocus\":\"Enfoque\",\"orgFocusExplanation\":\"Seleccionar el enfoque activará previamente las funciones más relevantes para su organización.\",\"faunaManagement\":\"Gestión de Fauna\",\"floraManagement\":\"Gestión de Flora\",\"cityLocation\":\"Ciudad / Ubicación\",\"adminDetails\":\"Detalles de la Cuenta Admin\",\"yourFullName\":\"Su Nombre Completo\",\"workEmail\":\"Correo de Trabajo\",\"password\":\"Contraseña\",\"confirmPassword\":\"Confirmar Contraseña\",\"verifyEmailAndContinue\":\"Verificar Correo y Continuar\",\"signIn\":\"Iniciar Sesión\",\"welcomeBack\":\"Bienvenido de Nuevo\",\"signInSubtitle\":\"Inicie sesión en su organización.\",\"forgotPassword\":\"¿Olvidó su contraseña?\",\"needAccount\":\"¿Necesita una cuenta? Regístrese aquí\",\"backToLanding\":\"Volver al Inicio\",\"about\":\"Acerca de\",\"privacyPolicy\":\"Política de Privacidad\",\"termsConditions\":\"Términos y Condiciones\",\"overview\":\"Resumen\",\"welcomeBackDashboard\":\"Bienvenido de nuevo al panel de su organización.\",\"totalSpecies\":\"Total de Especies\",\"totalIndividuals\":\"Total de Individuos\",\"endangeredSpecies\":\"Especies en Peligro\",\"activeUsers\":\"Usuarios Activos\",\"breedingPairs\":\"Parejas de Cría Sugeridas\",\"match\":\"Compatibilidad\",\"noBreeding\":\"No hay recomendaciones de cría disponibles en este momento.\",\"popDist\":\"Distribución de la Población\",\"consStatus\":\"Proporción de Estado de Conservación\",\"origin\":\"Origen de la Población\",\"ageDist\":\"Distribución de Edad y Sexo\",\"wildCaught\":\"Capturado en Naturaleza\",\"captiveBred\":\"Criado en Cautividad\",\"unknownOrigin\":\"Origen Desconocido\",\"males\":\"Machos\",\"females\":\"Hembras\",\"unknownSex\":\"Desconocido\",\"years\":\"años\",\"orgSettings\":\"Configuración de la Organización\",\"orgSettingsSubtitle\":\"Administre los detalles de su zoológico o santuario.\",\"locationName\":\"Nombre del Lugar (Ciudad/Estado)\",\"geoLocation\":\"Geo-Localización (Mapa)\",\"description\":\"Descripción\",\"projectManagement\":\"Gestión de Proyectos\",\"projectManagementDesc\":\"Crear, editar o eliminar proyectos. Transferir especies entre proyectos.\",\"dataManagement\":\"Gestión de Datos\",\"dataManagementDesc\":\"Exporte sus datos para resguardo o transfiéralos a otro sistema.\",\"saveChanges\":\"Guardar Cambios\",\"saved\":\"¡Guardado!\",\"speciesDatabase\":\"Base de Datos de Especies\",\"speciesSubtitle\":\"Catalogue y gestione los perfiles biológicos de su colección.\",\"commonName\":\"Nombre Común\",\"commonNamePlaceholder\":\"ej. Panda Rojo\",\"scientificName\":\"Nombre Científico\",\"scientificNamePlaceholder\":\"ej. Ailurus fulgens\",\"type\":\"Reino\",\"animal\":\"Fauna\",\"plant\":\"Flora\",\"conservationStatus\":\"Estado de Conservación\",\"sexualMaturity\":\"Madurez Sexual (Años)\",\"lifeExpectancy\":\"Esperanza de Vida (Años)\",\"autofill\":\"Autocompletar\",\"aiGenerate\":\"Ilustración IA\",\"cancel\":\"Cancelar\",\"save\":\"Guardar\",\"add\":\"Añadir\",\"searchSpecies\":\"Buscar Especies...\",\"searchIndividuals\":\"Buscar Individuos...\",\"indivSubtitleAnimal\":\"Rastree y gestione los individuos bajo su cuidado.\",\"updateIndividual\":\"Actualizar Individuo\",\"registerIndividual\":\"Registrar Individuo\",\"representativeImage\":\"Imagen Representativa\",\"upload\":\"Subir\",\"noImageProvided\":\"Sin imagen proporcionada\",\"saveSpecies\":\"Guardar Especie\",\"updateSpecies\":\"Actualizar Especie\",\"lifespan\":\"Esperanza de Vida\",\"maturity\":\"Madurez\",\"noSpeciesFound\":\"No se encontraron especies\",\"adultWeight\":\"Peso Adulto\",\"classification\":\"Clasificación\",\"monoecious\":\"Monoico\",\"dioecious\":\"Dioico\",\"maturityFlowering\":\"Madurez / Floración\",\"studbookId\":\"ID del Studbook\",\"name\":\"Nombre\",\"saSubtitle\":\"Gestión y supervisión global del sistema.\",\"security\":\"Seguridad\",\"email\":\"Correo Electrónico\",\"landing\":\"Página de Inicio\",\"localisation\":\"Localización\",\"network\":\"Red\",\"cacheManage\":\"Gestión de Caché Local\",\"createOrgBtn\":\"Crear Organización\",\"loginAs\":\"Iniciar Sesión Como\",\"hostTag\":\"Anfitrión\",\"smtpTestSuccess\":\"¡Prueba SMTP enviada con éxito!\",\"smtpSettings\":\"Configuración SMTP\",\"smtpHost\":\"Host SMTP\",\"port\":\"Puerto\",\"username\":\"Nombre de Usuario\",\"secureConnection\":\"Conexión Segura (SSL/TLS)\",\"saveSettings\":\"Guardar Configuración\",\"securitySettings\":\"Configuración de Seguridad\",\"enableMfa\":\"Activar Autenticación de Dos Factores\",\"enableOrgMfa\":\"Forzar MFA de Organización\",\"enableOrgMfaDesc\":\"Requerir que todos los miembros de esta organización usen MFA.\",\"theming\":\"Temas\",\"primaryColor\":\"Color Principal\",\"appLogo\":\"Logo de la Aplicación\",\"uploadLogo\":\"Subir Logo\",\"customCss\":\"CSS Personalizado\",\"enableRegistration\":\"Activar Registro\",\"featureCards\":\"Tarjetas de Funciones\",\"addLanguage\":\"Agregar Idioma\",\"supportedLanguages\":\"Idiomas Admitidos\",\"heroTitle\":\"Título Principal\",\"heroSubtitle\":\"Subtítulo Principal\",\"staticPages\":\"Páginas Estáticas\",\"clearCacheBtn\":\"Limpiar Datos Locales\",\"allOrganizations\":\"Todas las Organizaciones\",\"searchName\":\"Buscar por nombre...\",\"emailVerifySubject\":\"Verifique su correo electrónico\",\"emailVerifyBody\":\"<p>Su código de verificación es: <b>{{code}}</b></p>\",\"emailInviteSubject\":\"Invitación para unirse a {{orgName}}\",\"emailInviteBody\":\"<p>Hola {{userName}},</p><p>Ha sido invitado a unirse al equipo de gestión de <b>{{orgName}}</b>.</p><p>Haga clic en el enlace a continuación para confirmar su cuenta y establecer su contraseña:</p><p style='margin:30px 0'><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background:#059669;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Confirmar Mi Cuenta</a></p><p style='font-size:12px;color:#64748b'>Si el botón no funciona, copie esta URL:<br>{{inviteUrl}}</p>\",\"emailNotifySubject\":\"Notificación del Sistema\",\"emailNotifyBody\":\"<p>Hola,</p><p>{{message}}</p>\",\"registration\":\"Registro de Usuario\",\"mfa\":\"Autenticación de Dos Factores\",\"invite\":\"Invitación de Equipo\",\"notification\":\"Alertas del Sistema\",\"teamMembers\":\"Miembros del Equipo\",\"teamSubtitle\":\"Gestione el acceso y permisos de su equipo.\",\"bulkInvite\":\"Invitación Masiva\",\"inviteMember\":\"Invitar Miembro\",\"csvFormatTitle\":\"Formato CSV\",\"csvFormatDesc\":\"Descargue nuestra plantilla para asegurarse de que su CSV esté correctamente formateado.\",\"processingBulk\":\"Procesando invitaciones masivas...\",\"selectSpecies\":\"Seleccionar Especie\",\"saveEvent\":\"Guardar Evento\",\"breedingSubtitle\":\"Rastree y gestione parejas de cría y resultados.\",\"recordBreedingEvent\":\"Registrar Evento\",\"newBreedingLoan\":\"Nuevo Préstamo\",\"breedingEvents\":\"Eventos\",\"breedingLoans\":\"Préstamos\",\"viewTitle\":\"Filtrar Vista\",\"includePartnerOrgs\":\"Incluir Eventos de Socios\",\"onboardingWelcome\":\"Bienvenido a OpenStudbook\",\"onboardingSettingsTask\":\"Revise la configuración de su organización a continuación y haga clic en 'Guardar Cambios' para continuar.\",\"onboardingSaveAndNext\":\"Guardar y Continuar a Especies\",\"onboardingSpeciesTask\":\"¡Excelente! Ahora añada su primera especie para comenzar a construir su colección.\",\"onboardingIndivTask\":\"Por último, registre individuos para rastrear su crecimiento e historial.\",\"enablePage\":\"Activar Función\",\"dashBlockTitle\":\"Título del Mensaje del Panel\",\"dashBlockContent\":\"Contenido del Mensaje del Panel\",\"customDashBlock\":\"Anuncio Personalizado del Panel\",\"customDashBlockDesc\":\"Cree un bloque de anuncio personalizado que aparece en la parte superior del panel para todos los usuarios.\",\"visibilityPrivacy\":\"Visibilidad y Privacidad\",\"breedingLoanPolicy\":\"Política de Cría y Préstamo\",\"allowBreedingRequests\":\"Permitir Solicitudes de Red\",\"allowBreedingRequestsDesc\":\"Permitir que organizaciones socias propongan préstamos de cría a través del mapa de red.\",\"whoReceivesRequests\":\"Contacto de Solicitudes\",\"whoReceivesRequestsDesc\":\"¿Qué usuario debe ser notificado cuando se recibe una solicitud de préstamo?\",\"orgVisibility\":\"Listar en el Directorio\",\"orgVisibilityDesc\":\"Haga visible su organización en el mapa de red global.\",\"obscureLocation\":\"Ocultar Ubicación en el Mapa\",\"obscureLocationDesc\":\"Redondee las coordenadas del mapa para evitar el rastreo preciso por no socios.\",\"speciesListVisibility\":\"Lista de Especies Pública\",\"speciesListVisibilityDesc\":\"Permitir que cualquier persona en la red vea qué especies gestiona.\",\"noPartnersFound\":\"No se encontraron socios.\",\"connectNewPartner\":\"Conectar Nuevo Socio\",\"yourInviteCode\":\"Su Código de Invitación\",\"redeemCode\":\"Canjear Código\",\"siteKey\":\"Clave del Sitio\",\"secretKey\":\"Clave Secreta\",\"dashboardReady\":\"Tu panel está listo\",\"dashboardReadyDesc\":\"Las métricas, gráficos e información sobre cría aparecerán aquí una vez que hayas añadido especies e individuos a tu colección.\",\"addSpecies\":\"Añadir Especie\",\"addIndividual\":\"Añadir Individuo\"}"]);
-    await db.execute('INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, 0, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), translations=VALUES(translations)', ["fr", "Français", "{\"dashboard\":\"Tableau de bord\",\"networkMap\":\"Réseau\",\"plantMap\":\"Carte de la Flore\",\"species\":\"Espèces\",\"individuals\":\"Individus\",\"breeding\":\"Reproduction\",\"usersRoles\":\"Utilisateurs & Rôles\",\"organization\":\"Organisation\",\"superAdmin\":\"Super Admin\",\"signOut\":\"Se déconnecter\",\"currentProject\":\"Projet actuel\",\"allProjects\":\"Tous les projets\",\"createNewProject\":\"Créer un nouveau projet\",\"landingTitle\":\"Gestion de l'élevage en captivité Open Source\",\"landingSubtitle\":\"OpenStudbook est une plateforme open-source pour les zoos, aquariums et jardins botaniques afin de gérer les populations d'espèces et suivre la génétique.\",\"createOrg\":\"Créer une organisation\",\"exploreDemo\":\"Explorer la démo\",\"demoLogin\":\"Connexion démo\",\"getStarted\":\"Commencer\",\"securePrivate\":\"Sécurisé & Privé\",\"securePrivateDesc\":\"Vos données vous appartiennent. Choisissez exactement ce que vous partagez.\",\"floraFauna\":\"Faune & Flore\",\"floraFaunaDesc\":\"Gestion unifiée pour animaux et plantes.\",\"globalNetwork\":\"Réseau mondial\",\"globalNetworkDesc\":\"Connectez-vous avec des partenaires du monde entier.\",\"back\":\"Retour\",\"registerOrg\":\"Enregistrer l'organisation\",\"orgName\":\"Nom de l'organisation\",\"orgFocus\":\"Focus\",\"orgFocusExplanation\":\"Sélectionner le focus activera les fonctionnalités les plus pertinentes pour votre organisation.\",\"faunaManagement\":\"Gestion de la faune\",\"floraManagement\":\"Gestion de la flore\",\"cityLocation\":\"Ville / Localisation\",\"adminDetails\":\"Détails du compte Admin\",\"yourFullName\":\"Votre nom complet\",\"workEmail\":\"E-mail professionnel\",\"password\":\"Mot de passe\",\"confirmPassword\":\"Confirmer le mot de passe\",\"verifyEmailAndContinue\":\"Vérifier l'e-mail & Continuer\",\"signIn\":\"Se connecter\",\"welcomeBack\":\"Bienvenue\",\"signInSubtitle\":\"Connectez-vous à votre organisation.\",\"forgotPassword\":\"Mot de passe oublié ?\",\"needAccount\":\"Besoin d'un compte ? Inscrivez-vous ici\",\"backToLanding\":\"Retour à l'accueil\",\"about\":\"À propos\",\"privacyPolicy\":\"Politique de confidentialité\",\"termsConditions\":\"Conditions générales\",\"overview\":\"Vue d'ensemble\",\"welcomeBackDashboard\":\"Bienvenue dans le tableau de bord de votre organisation.\",\"totalSpecies\":\"Total des espèces\",\"totalIndividuals\":\"Total des individus\",\"endangeredSpecies\":\"Espèces menacées\",\"activeUsers\":\"Utilisateurs actifs\",\"breedingPairs\":\"Couples de reproduction suggérés\",\"match\":\"Compatibilité\",\"noBreeding\":\"Aucune recommandation de reproduction disponible pour le moment.\",\"popDist\":\"Distribution de la population\",\"consStatus\":\"Ratio du statut de conservation\",\"origin\":\"Origine de la population\",\"ageDist\":\"Distribution par âge et sexe\",\"wildCaught\":\"Capturé dans la nature\",\"captiveBred\":\"Élevé en captivité\",\"unknownOrigin\":\"Origine inconnue\",\"males\":\"Mâles\",\"females\":\"Femelles\",\"unknownSex\":\"Inconnu\",\"years\":\"ans\",\"orgSettings\":\"Paramètres de l'organisation\",\"orgSettingsSubtitle\":\"Gérez les détails de votre zoo ou sanctuaire.\",\"locationName\":\"Nom du lieu (Ville/Région)\",\"geoLocation\":\"Géo-localisation (Carte)\",\"description\":\"Description\",\"projectManagement\":\"Gestion des projets\",\"projectManagementDesc\":\"Créer, modifier ou supprimer des projets. Transférer des espèces entre projets.\",\"dataManagement\":\"Gestion des données\",\"dataManagementDesc\":\"Exportez vos données pour sauvegarde ou transférez-les vers un autre système.\",\"saveChanges\":\"Enregistrer les modifications\",\"saved\":\"Enregistré !\",\"speciesDatabase\":\"Base de données des espèces\",\"speciesSubtitle\":\"Cataloguez et gérez les profils biologiques de votre collection.\",\"commonName\":\"Nom commun\",\"commonNamePlaceholder\":\"ex. Panda roux\",\"scientificName\":\"Nom scientifique\",\"scientificNamePlaceholder\":\"ex. Ailurus fulgens\",\"type\":\"Règne\",\"animal\":\"Faune\",\"plant\":\"Flore\",\"conservationStatus\":\"Statut de conservation\",\"sexualMaturity\":\"Maturité sexuelle (Années)\",\"lifeExpectancy\":\"Espérance de vie (Années)\",\"autofill\":\"Remplissage automatique\",\"aiGenerate\":\"Illustration IA\",\"cancel\":\"Annuler\",\"save\":\"Enregistrer\",\"add\":\"Ajouter\",\"searchSpecies\":\"Rechercher des espèces...\",\"searchIndividuals\":\"Rechercher des individus...\",\"indivSubtitleAnimal\":\"Suivez et gérez les individus sous votre garde.\",\"updateIndividual\":\"Mettre à jour l'individu\",\"registerIndividual\":\"Enregistrer l'individu\",\"representativeImage\":\"Image représentative\",\"upload\":\"Télécharger\",\"noImageProvided\":\"Aucune image fournie\",\"saveSpecies\":\"Enregistrer l'espèce\",\"updateSpecies\":\"Mettre à jour l'espèce\",\"lifespan\":\"Durée de vie\",\"maturity\":\"Maturité\",\"noSpeciesFound\":\"Aucune espèce trouvée\",\"adultWeight\":\"Poids adulte\",\"classification\":\"Classification\",\"monoecious\":\"Monoïque\",\"dioecious\":\"Dioïque\",\"maturityFlowering\":\"Maturité / Floraison\",\"studbookId\":\"ID du Studbook\",\"name\":\"Nom\",\"saSubtitle\":\"Gestion et supervision globale du système.\",\"security\":\"Sécurité\",\"email\":\"E-mail\",\"landing\":\"Page d'accueil\",\"localisation\":\"Localisation\",\"network\":\"Réseau\",\"cacheManage\":\"Gestion du cache local\",\"createOrgBtn\":\"Créer une organisation\",\"loginAs\":\"Se connecter en tant que\",\"hostTag\":\"Hôte\",\"smtpTestSuccess\":\"Test SMTP envoyé avec succès !\",\"smtpSettings\":\"Paramètres SMTP\",\"smtpHost\":\"Hôte SMTP\",\"port\":\"Port\",\"username\":\"Nom d'utilisateur\",\"secureConnection\":\"Connexion sécurisée (SSL/TLS)\",\"saveSettings\":\"Enregistrer les paramètres\",\"securitySettings\":\"Paramètres de sécurité\",\"enableMfa\":\"Activer l'authentification à deux facteurs\",\"enableOrgMfa\":\"Forcer le MFA de l'organisation\",\"enableOrgMfaDesc\":\"Exiger que tous les membres de cette organisation utilisent le MFA.\",\"theming\":\"Thème\",\"primaryColor\":\"Couleur principale\",\"appLogo\":\"Logo de l'application\",\"uploadLogo\":\"Télécharger le logo\",\"customCss\":\"CSS personnalisé\",\"enableRegistration\":\"Activer l'inscription\",\"featureCards\":\"Cartes de fonctionnalités\",\"addLanguage\":\"Ajouter une langue\",\"supportedLanguages\":\"Langues prises en charge\",\"heroTitle\":\"Titre principal\",\"heroSubtitle\":\"Sous-titre principal\",\"staticPages\":\"Pages statiques\",\"clearCacheBtn\":\"Vider les données locales\",\"allOrganizations\":\"Toutes les organisations\",\"searchName\":\"Rechercher par nom...\",\"emailVerifySubject\":\"Vérifiez votre e-mail\",\"emailVerifyBody\":\"<p>Votre code de vérification est : <b>{{code}}</b></p>\",\"emailInviteSubject\":\"Invitation à rejoindre {{orgName}}\",\"emailInviteBody\":\"<p>Bonjour {{userName}},</p><p>Vous avez été invité à rejoindre l'équipe de gestion de <b>{{orgName}}</b>.</p><p>Veuillez cliquer sur le lien ci-dessous pour confirmer votre compte et définir votre mot de passe :</p><p style='margin:30px 0'><a href='{{inviteUrl}}' style='display:inline-block;padding:12px 24px;background:#059669;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Confirmer mon compte</a></p><p style='font-size:12px;color:#64748b'>Si le bouton ne fonctionne pas, copiez cette URL :<br>{{inviteUrl}}</p>\",\"emailNotifySubject\":\"Notification du système\",\"emailNotifyBody\":\"<p>Bonjour,</p><p>{{message}}</p>\",\"registration\":\"Inscription de l'utilisateur\",\"mfa\":\"Authentification à deux facteurs\",\"invite\":\"Invitation d'équipe\",\"notification\":\"Alertes système\",\"teamMembers\":\"Membres de l'équipe\",\"teamSubtitle\":\"Gérez les accès et permissions de votre équipe.\",\"bulkInvite\":\"Invitation en masse\",\"inviteMember\":\"Inviter un membre\",\"csvFormatTitle\":\"Format CSV\",\"csvFormatDesc\":\"Téléchargez notre modèle pour vous assurer que votre CSV est correctement formaté.\",\"processingBulk\":\"Traitement des invitations en masse...\",\"selectSpecies\":\"Sélectionner une espèce\",\"saveEvent\":\"Enregistrer l'événement\",\"breedingSubtitle\":\"Suivez et gérez les couples de reproduction et les résultats.\",\"recordBreedingEvent\":\"Enregistrer un événement\",\"newBreedingLoan\":\"Nouveau prêt\",\"breedingEvents\":\"Événements\",\"breedingLoans\":\"Prêts\",\"viewTitle\":\"Filtrer la vue\",\"includePartnerOrgs\":\"Inclure les événements des partenaires\",\"onboardingWelcome\":\"Bienvenue sur OpenStudbook\",\"onboardingSettingsTask\":\"Veuillez vérifier les paramètres de votre organisation ci-dessous et cliquer sur 'Enregistrer les modifications' pour continuer.\",\"onboardingSaveAndNext\":\"Enregistrer et continuer vers les espèces\",\"onboardingSpeciesTask\":\"Super ! Ajoutez maintenant votre première espèce pour commencer à construire votre collection.\",\"onboardingIndivTask\":\"Enfin, enregistrez des individus pour suivre leur croissance et leur historique.\",\"enablePage\":\"Activer la fonctionnalité\",\"dashBlockTitle\":\"Titre du message du tableau de bord\",\"dashBlockContent\":\"Contenu du message du tableau de bord\",\"customDashBlock\":\"Annonce personnalisée du tableau de bord\",\"customDashBlockDesc\":\"Créez un bloc d'annonce personnalisé qui apparaît en haut du tableau de bord pour tous les utilisateurs.\",\"visibilityPrivacy\":\"Visibilité & Confidentialité\",\"breedingLoanPolicy\":\"Politique de reproduction & prêt\",\"allowBreedingRequests\":\"Autoriser les demandes réseau\",\"allowBreedingRequestsDesc\":\"Permettre aux organisations partenaires de proposer des prêts de reproduction via la carte réseau.\",\"whoReceivesRequests\":\"Contact des demandes\",\"whoReceivesRequestsDesc\":\"Quel utilisateur doit être notifié lorsqu'une demande de prêt est reçue ?\",\"orgVisibility\":\"Lister dans l'annuaire\",\"orgVisibilityDesc\":\"Rendre votre organisation visible sur la carte réseau mondiale.\",\"obscureLocation\":\"Masquer la localisation sur la carte\",\"obscureLocationDesc\":\"Arrondissez vos coordonnées de carte pour éviter le suivi précis par les non-partenaires.\",\"speciesListVisibility\":\"Liste d'espèces publique\",\"speciesListVisibilityDesc\":\"Permettre à quiconque sur le réseau de voir les espèces que vous gérez.\",\"noPartnersFound\":\"Aucun partenaire trouvé.\",\"connectNewPartner\":\"Connecter un nouveau partenaire\",\"yourInviteCode\":\"Votre code d'invitation\",\"redeemCode\":\"Échanger le code\",\"siteKey\":\"Clé du site\",\"secretKey\":\"Clé secrète\",\"dashboardReady\":\"Votre tableau de bord est prêt\",\"dashboardReadyDesc\":\"Les métriques, graphiques et analyses d'élevage apparaîtront ici une fois que vous aurez ajouté des espèces et des individus à votre collection.\",\"addSpecies\":\"Ajouter une espèce\",\"addIndividual\":\"Ajouter un individu\"}"]);
+    await db.execute(`INSERT INTO app_config (id, settings) VALUES ('global-settings', ?)`, [JSON.stringify({ enableRegistration: true, themePrimaryColor: '#059669', smtpHost: 'localhost', smtpPort: '1025', smtpUser: '', smtpPass: '', smtpFrom: 'noreply@openstudbook.local', smtpSecure: false })]);
+    for (const lang of seedLanguages) {
+      await db.execute(
+        'INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), translations=VALUES(translations)',
+        [lang.code, lang.name, lang.isDefault ? 1 : 0, JSON.stringify(lang.translations || {})]
+      );
+    }
   }
 };
 
@@ -190,8 +203,20 @@ app.get('/api/install/status', async (req: any, res: any) => {
   }
 });
 
+app.post('/api/install/test-connection', async (req: any, res: any) => {
+  const { host, user, password, port } = req.body;
+  try {
+    const testConn = await mysql.createConnection({ host, user, password, port: Number(port) || 3306 });
+    await testConn.ping();
+    await testConn.end();
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+});
+
 app.post('/api/install/setup', async (req: any, res: any) => {
-  const { host, user, password, database, port, orgName, adminPassword } = req.body;
+  const { host, user, password, database, port, orgName, adminEmail, adminPassword } = req.body;
   try {
     const testConn = await mysql.createConnection({ host, user, password, port: Number(port) || 3306 });
     await testConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\`;`);
@@ -199,7 +224,7 @@ app.post('/api/install/setup', async (req: any, res: any) => {
     resetPool({ host, user, password, database, port: Number(port) || 3306 });
     const db = getDb();
     await runMigrations(db);
-    await seedDatabase(db, orgName, adminPassword);
+    await seedDatabase(db, orgName, adminPassword, adminEmail);
     isConfigured = true;
     res.json({ success: true, message: "Installation successful!" });
   } catch (e: any) {
@@ -209,10 +234,45 @@ app.post('/api/install/setup', async (req: any, res: any) => {
 
 // --- AI Proxy Endpoints ---
 
+/** Returns the best available Gemini API key for a given org (org key > env key). */
+const getEffectiveApiKey = async (orgId: string): Promise<string> => {
+  try {
+    const db = getDb();
+    const [rows]: any = await db.execute(`SELECT gemini_api_key FROM organizations WHERE id = ?`, [orgId]);
+    const orgKey = rows[0]?.gemini_api_key;
+    if (orgKey) return orgKey;
+  } catch (_) {}
+  return process.env.API_KEY || '';
+};
+
+/** Strip the raw gemini_api_key from an org row before sending to clients; expose only a boolean. */
+const sanitizeOrgForClient = (org: any) => {
+  if (!org) return org;
+  const { gemini_api_key, ...rest } = org;
+  return { ...rest, has_gemini_api_key: !!gemini_api_key };
+};
+
+/** Save or clear an org's Gemini API key. Only Admin / Super Admin roles may call this. */
+app.post('/api/org/gemini-key', authenticate, async (req: any, res: any) => {
+  const { orgId, role } = req.user;
+  if (!['Admin', 'Super Admin'].includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  const { key } = req.body; // empty string / null = clear
+  try {
+    const db = getDb();
+    const cleanKey = (typeof key === 'string' && key.trim()) ? key.trim() : null;
+    await db.execute(`UPDATE organizations SET gemini_api_key = ? WHERE id = ?`, [cleanKey, orgId]);
+    res.json({ success: true, has_gemini_api_key: !!cleanKey });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
   const { commonName, type, locationContext } = req.body;
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
@@ -235,7 +295,7 @@ app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
 app.post('/api/ai/generate-image', authenticate, async (req: any, res: any) => {
   const { prompt } = req.body;
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
     const response = await ai.models.generateContent({
       model: IMAGE_MODEL,
       contents: { parts: [{ text: prompt }] }
@@ -260,7 +320,7 @@ app.post('/api/ai/translate', authenticate, async (req: any, res: any) => {
   const { sourceData, targetLanguage } = req.body;
   try {
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
     const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
@@ -283,17 +343,45 @@ app.post('/api/ai/translate', authenticate, async (req: any, res: any) => {
 
 app.post('/api/ai/reverse-geocode', async (req: any, res: any) => {
   const { lat, lng } = req.body;
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
-      contents: `Identify location at: Lat ${lat}, Lng ${lng}. Return ONLY "City, Country".`,
-      config: { thinkingConfig: { thinkingBudget: 0 } }
-    });
-    res.json({ location: response.text?.trim() || "Unknown Location" });
-  } catch (e: any) {
-    res.json({ location: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
+  if (lat === undefined || lng === undefined) {
+    return res.json({ location: "Unknown Location" });
   }
+  // Try Nominatim first (free, no API key required)
+  try {
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`;
+    const nominatimRes = await fetch(nominatimUrl, {
+      headers: { 'User-Agent': 'OpenStudbook/1.0 (captive-breeding-platform)' }
+    });
+    if (nominatimRes.ok) {
+      const nominatimData: any = await nominatimRes.json();
+      const addr = nominatimData.address || {};
+      const city = addr.city || addr.town || addr.village || addr.county || addr.state_district || addr.state || '';
+      const country = addr.country || '';
+      if (city || country) {
+        const location = [city, country].filter(Boolean).join(', ');
+        return res.json({ location });
+      }
+    }
+  } catch (nominatimErr) {
+    // fall through to Gemini
+  }
+  // Try Gemini as fallback if API key is set
+  if (process.env.API_KEY) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-flash-lite-latest',
+        contents: `Identify location at: Lat ${lat}, Lng ${lng}. Return ONLY "City, Country".`,
+        config: { thinkingConfig: { thinkingBudget: 0 } }
+      });
+      const location = response.text?.trim();
+      if (location) return res.json({ location });
+    } catch (e: any) {
+      // fall through
+    }
+  }
+  // Final fallback: return coordinates
+  res.json({ location: `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}` });
 });
 
 const wrapEmailHtml = (content: string) => `
@@ -430,7 +518,7 @@ app.get('/api/config', async (req: any, res: any) => {
 app.post('/api/demo-login', async (req: any, res: any) => {
     try {
         const db = getDb();
-        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = 'admin@openstudbook.local'`);
+        const [rows]: any = await db.execute(`SELECT * FROM users WHERE id = 'u-admin'`);
         const user = rows[0];
         if (!user) return res.status(404).json({ error: "Demo user not found. Database might be initializing." });
         
@@ -440,7 +528,7 @@ app.post('/api/demo-login', async (req: any, res: any) => {
         res.json({ 
             success: true, token, 
             user: { ...user, orgId: user.org_id, avatarUrl: user.avatar_url, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : (user.allowed_project_ids || []) }, 
-            organization: orgRows[0] 
+            organization: sanitizeOrgForClient(orgRows[0])
         });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -483,6 +571,7 @@ app.post('/api/register', async (req: any, res: any) => {
 
         const orgId = `org-${Date.now()}`;
         const userId = `u-${Date.now()}`;
+        const projectId = `p-${Date.now()}`;
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const conn = await db.getConnection();
@@ -496,6 +585,10 @@ app.post('/api/register', async (req: any, res: any) => {
                 `INSERT INTO users (id, org_id, name, email, role, status, password) VALUES (?, ?, ?, ?, 'Admin', 'Active', ?)`,
                 [userId, orgId, userName, cleanEmail, hashedPassword]
             );
+            await conn.execute(
+                `INSERT INTO projects (id, org_id, name, description) VALUES (?, ?, 'Default Project', 'Main collection')`,
+                [projectId, orgId]
+            );
             await conn.execute(`DELETE FROM verification_codes WHERE email = ?`, [cleanEmail]);
             await conn.commit();
         } catch (err) {
@@ -508,11 +601,13 @@ app.post('/api/register', async (req: any, res: any) => {
         const token = jwt.sign({ id: userId, orgId, role: 'Admin' }, JWT_SECRET, { expiresIn: '7d' });
         const [userRows]: any = await db.execute(`SELECT * FROM users WHERE id = ?`, [userId]);
         const [orgRows]: any = await db.execute(`SELECT * FROM organizations WHERE id = ?`, [orgId]);
+        const [projectRows]: any = await db.execute(`SELECT * FROM projects WHERE id = ?`, [projectId]);
 
-        res.json({ 
-            success: true, token, 
+        res.json({
+            success: true, token,
             user: { ...userRows[0], orgId: userRows[0].org_id, avatarUrl: userRows[0].avatar_url, allowedProjectIds: [] },
-            organization: orgRows[0]
+            organization: sanitizeOrgForClient(orgRows[0]),
+            project: projectRows[0] || null
         });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -533,7 +628,7 @@ app.post('/api/login', async (req: any, res: any) => {
         res.json({ 
             success: true, token, 
             user: { ...user, orgId: user.org_id, avatarUrl: user.avatar_url, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : (user.allowed_project_ids || []) }, 
-            organization: orgRows[0] 
+            organization: sanitizeOrgForClient(orgRows[0])
         });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
@@ -555,9 +650,9 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT * FROM species`);
+            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, native_status_country, native_status_local FROM species`);
             speciesRows = s;
-            const [i]: any = await db.execute(`SELECT * FROM individuals`);
+            const [i]: any = await db.execute(`SELECT id, project_id, species_id, enclosure_id, studbook_id, name, sex, birth_date, weight_kg, sire_id, dam_id, thumbnail_url, dna_sequence, notes, source, source_details, latitude, longitude, is_deceased, death_date, loan_status, transferred_to_org_id, transfer_date, transfer_note, weight_history, growth_history, health_history FROM individuals`);
             individualsRows = i;
             const [enc]: any = await db.execute(`SELECT * FROM enclosures`);
             enclosuresRows = enc;
@@ -570,9 +665,9 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT s.* FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.native_status_country, s.native_status_local FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             speciesRows = s;
-            const [i]: any = await db.execute(`SELECT i.* FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            const [i]: any = await db.execute(`SELECT i.id, i.project_id, i.species_id, i.enclosure_id, i.studbook_id, i.name, i.sex, i.birth_date, i.weight_kg, i.sire_id, i.dam_id, i.thumbnail_url, i.dna_sequence, i.notes, i.source, i.source_details, i.latitude, i.longitude, i.is_deceased, i.death_date, i.loan_status, i.transferred_to_org_id, i.transfer_date, i.transfer_note, i.weight_history, i.growth_history, i.health_history FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             individualsRows = i;
             const [enc]: any = await db.execute(`SELECT * FROM enclosures WHERE org_id = ?`, [orgId]);
             enclosuresRows = enc;
@@ -586,11 +681,11 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
         let settings = configRows[0]?.settings || {};
         if (typeof settings === 'string') settings = JSON.parse(settings);
 
-        res.json({ 
-            success: true, 
-            data: { 
-                org: orgRows[0] || null, 
-                partners: partnersRows || [], 
+        res.json({
+            success: true,
+            data: {
+                org: sanitizeOrgForClient(orgRows[0]) || null,
+                partners: (partnersRows || []).map(sanitizeOrgForClient),
                 projects: projectsRows || [], 
                 users: usersRows || [], 
                 species: speciesRows || [], 
@@ -600,6 +695,25 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
                 settings 
             } 
         });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// Lazy image endpoints — not included in sync payload to keep sync fast
+app.get('/api/individuals/:id/image', authenticate, async (req: any, res: any) => {
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(`SELECT image_url FROM individuals WHERE id = ?`, [req.params.id]);
+        if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+        res.json({ imageUrl: rows[0].image_url || null });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/species/:id/image', authenticate, async (req: any, res: any) => {
+    try {
+        const db = getDb();
+        const [rows]: any = await db.execute(`SELECT image_url FROM species WHERE id = ?`, [req.params.id]);
+        if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+        res.json({ imageUrl: rows[0].image_url || null });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
@@ -691,7 +805,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const body = req.body;
     const data = Array.isArray(body) ? body : [body];
-    
+
     if (data.length === 0) return res.json({ success: true });
 
     try {
@@ -699,17 +813,41 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
         for (const item of data) {
             const keys = Object.keys(item);
             const values = Object.values(item).map(v => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v);
-            
+
             const placeholders = keys.map(() => '?').join(', ');
             const updates = keys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(', ');
-            
+
             const sql = `INSERT INTO \`${table}\` (\`${keys.join('`, `')}\`) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updates}`;
             await db.execute(sql, values);
         }
         res.json({ success: true });
-    } catch (e: any) { 
+    } catch (e: any) {
         console.error(`[REST POST] Error on table ${table}:`, e.message);
-        res.status(500).json({ error: e.message }); 
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PATCH: partial update (UPDATE ... SET ... WHERE id = ?)
+// Used for image-only updates where only { id, image_url, ... } is provided.
+// Unlike POST which uses INSERT ... ON DUPLICATE KEY UPDATE and requires all NOT NULL
+// columns, PATCH only updates the specified columns in an already-existing row.
+app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+    const { table } = req.params;
+    const body = req.body;
+    const { id, ...fields } = body;
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+    const keys = Object.keys(fields);
+    if (keys.length === 0) return res.status(400).json({ error: 'No fields to update' });
+    try {
+        const db = getDb();
+        const sets = keys.map(k => `\`${k}\` = ?`).join(', ');
+        const values: any[] = keys.map(k => (typeof fields[k] === 'object' && fields[k] !== null) ? JSON.stringify(fields[k]) : fields[k]);
+        values.push(id);
+        await db.execute(`UPDATE \`${table}\` SET ${sets} WHERE id = ?`, values);
+        res.json({ success: true });
+    } catch (e: any) {
+        console.error(`[REST PATCH] Error on table ${table}:`, e.message);
+        res.status(500).json({ error: e.message });
     }
 });
 

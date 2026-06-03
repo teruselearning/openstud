@@ -13,7 +13,7 @@ import {
   Globe,
   Check
 } from 'lucide-react';
-import { runInstallSetup } from '../services/syncService';
+import { runInstallSetup, testInstallConnection } from '../services/syncService';
 
 interface InstallerProps {
   onInstalled: () => void;
@@ -30,17 +30,20 @@ const Installer: React.FC<InstallerProps> = ({ onInstalled }) => {
   });
   const [orgData, setOrgData] = useState({
     orgName: '',
+    adminEmail: '',
     adminPassword: '',
     adminPasswordConfirm: ''
   });
   const [orgError, setOrgError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
 
   const handleOrgSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setOrgError(null);
     if (!orgData.orgName.trim()) { setOrgError('Organisation name is required.'); return; }
+    if (!orgData.adminEmail.trim() || !orgData.adminEmail.includes('@')) { setOrgError('A valid admin email address is required.'); return; }
     if (orgData.adminPassword.length < 8) { setOrgError('Password must be at least 8 characters.'); return; }
     if (orgData.adminPassword !== orgData.adminPasswordConfirm) { setOrgError('Passwords do not match.'); return; }
     setStep('installing');
@@ -52,7 +55,7 @@ const Installer: React.FC<InstallerProps> = ({ onInstalled }) => {
     setError(null);
 
     try {
-      const res = await runInstallSetup({ ...formData, orgName: orgData.orgName, adminPassword: orgData.adminPassword });
+      const res = await runInstallSetup({ ...formData, orgName: orgData.orgName, adminEmail: orgData.adminEmail, adminPassword: orgData.adminPassword });
       if (res.success) {
         setStep('success');
         setTimeout(() => { onInstalled(); }, 2000);
@@ -69,7 +72,20 @@ const Installer: React.FC<InstallerProps> = ({ onInstalled }) => {
 
   const handleInstall = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStep('org');
+    setError(null);
+    setIsTesting(true);
+    try {
+      const res = await testInstallConnection(formData);
+      if (res.success) {
+        setStep('org');
+      } else {
+        setError(res.error || 'Could not connect to the database. Check your credentials.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Connection test failed.');
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   return (
@@ -221,11 +237,11 @@ const Installer: React.FC<InstallerProps> = ({ onInstalled }) => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isInstalling}
+                  disabled={isTesting}
                   className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-100 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {isInstalling ? <Loader2 size={20} className="animate-spin" /> : <Database size={20} />}
-                  Connect & Install
+                  {isTesting ? <Loader2 size={20} className="animate-spin" /> : <Database size={20} />}
+                  {isTesting ? 'Testing Connection...' : 'Test & Continue'}
                 </button>
               </div>
             </form>
@@ -257,8 +273,18 @@ const Installer: React.FC<InstallerProps> = ({ onInstalled }) => {
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 space-y-1">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Admin Password</p>
-                  <p className="text-xs text-slate-500 mb-3">The admin account will use <span className="font-mono bg-slate-100 px-1 rounded">admin@openstudbook.local</span> as its email.</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Admin Account</p>
+                  <div className="space-y-1 mb-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Email</label>
+                    <input
+                      type="email"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 font-medium"
+                      value={orgData.adminEmail}
+                      onChange={e => setOrgData({...orgData, adminEmail: e.target.value})}
+                      placeholder="e.g. admin@yourorganisation.org"
+                      required
+                    />
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Password</label>

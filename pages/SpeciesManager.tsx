@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useLocation } from 'react-router-dom';
-import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals } from '../services/storage';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals, getAiUsageInfo, deleteSpecies } from '../services/storage';
 import { Individual } from '../types';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
-import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight } from 'lucide-react';
+import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare } from 'lucide-react';
 import { LanguageContext } from '../App';
 
 interface SpeciesManagerProps {
   currentProjectId: string;
+  syncVersion?: number;
 }
 
-const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => {
+const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncVersion = 0 }) => {
   const { t } = useContext(LanguageContext);
   const location = useLocation();
+  const navigate = useNavigate();
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
   const [allIndividuals, setAllIndividuals] = useState<Individual[]>([]);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
@@ -34,6 +36,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [aiLimitInfo, setAiLimitInfo] = useState(() => getAiUsageInfo());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Species>>({
     commonName: '',
@@ -53,10 +58,12 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
   });
 
   useEffect(() => {
-    setAllSpecies(getSpecies());
+    const species = getSpecies();
+    const projs = getProjects();
+    console.log(`[SpeciesManager] useEffect: syncVersion=${syncVersion}, currentProjectId="${currentProjectId}", cache=${species.length} species, ${projs.length} projects`);
+    setAllSpecies(species);
     setAllIndividuals(getIndividuals());
     setOrg(getOrg());
-    const projs = getProjects();
     setAllProjects(projs);
 
     if (location.state?.onboarding) {
@@ -67,7 +74,22 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
-  }, [currentProjectId, editingId, location.state]);
+  }, [currentProjectId, editingId, location.state, syncVersion]);
+
+  // Reload data whenever a background sync completes — handles the case where the
+  // component was already mounted before sync finished (e.g. session restored while
+  // IndexedDB was empty), so the dep-based useEffect above wouldn't re-fire.
+  useEffect(() => {
+    const onDataRefreshed = () => {
+      setAllSpecies(getSpecies());
+      setAllIndividuals(getIndividuals());
+      setOrg(getOrg());
+      setAllProjects(getProjects());
+      setAiLimitInfo(getAiUsageInfo());
+    };
+    window.addEventListener('os-data-refreshed', onDataRefreshed);
+    return () => window.removeEventListener('os-data-refreshed', onDataRefreshed);
+  }, []);
 
   const handleAutoFill = async () => {
     if (!formData.commonName && !formData.scientificName) return;
@@ -100,9 +122,15 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       }
       
       if (finalImageUrl) setFormData(prev => ({ ...prev, imageUrl: finalImageUrl || prev.imageUrl }));
-    } catch (e: any) { 
+    } catch (e: any) {
         console.error("AI Error:", e);
-        alert(e.message);
+        const isLimitError = String(e.message).startsWith('INTERNAL_LIMIT');
+        if (isLimitError) {
+          setAiLimitInfo(getAiUsageInfo());
+          alert("Monthly AI usage limit reached. Go to Organisation Settings → AI Integration to add your own Gemini API key and remove the cap.");
+        } else {
+          alert("AI enrichment failed: " + e.message);
+        }
     } finally { setLoadingAI(false); setLoadingImage(false); setImageStatus(''); }
   };
 
@@ -114,7 +142,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
      try {
         const url = await generateSpeciesImage(lookupName, formData.scientificName || lookupName, formData.type as SpeciesType);
         if (url) setFormData(prev => ({ ...prev, imageUrl: url }));
-     } catch (e: any) { alert("Image generation failed: " + e.message); } finally { setImageStatus(''); setLoadingImage(false); }
+     } catch (e: any) {
+        const isLimitError = String((e as any).message).startsWith('INTERNAL_LIMIT');
+        setAiLimitInfo(getAiUsageInfo());
+        alert(isLimitError ? "Monthly AI usage limit reached. An administrator can increase or remove the limit in Organisation Settings." : "Image generation failed: " + (e as any).message);
+     } finally { setImageStatus(''); setLoadingImage(false); }
   };
 
   const handleEdit = (species: Species) => { setEditingId(species.id); setFormData({ ...species }); setShowForm(true); };
@@ -130,7 +162,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const isAll = currentProjectId === 'ALL_PROJECTS';
     const targetProjectId = allProjects.length === 1 ? allProjects[0].id : (isAll ? formData.projectId : currentProjectId);
@@ -159,8 +191,34 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
     };
     const updated = editingId ? allSpecies.map(sp => sp.id === editingId ? finalSpecies : sp) : [...allSpecies, finalSpecies];
     setAllSpecies(updated);
-    saveSpecies(updated);
+    await saveSpecies(updated);
     handleCloseForm();
+  };
+
+  const handleDeleteSpecies = async (id: string) => {
+    if (!confirm('Permanently delete this species? This cannot be undone.')) return;
+    await deleteSpecies(id);
+    setAllSpecies(getSpecies());
+    setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+  };
+
+  const handleBulkDeleteSpecies = async () => {
+    if (!confirm(`Permanently delete ${selectedIds.size} species? This cannot be undone.`)) return;
+    setIsDeletingBulk(true);
+    for (const id of selectedIds) {
+      await deleteSpecies(id);
+    }
+    setAllSpecies(getSpecies());
+    setSelectedIds(new Set());
+    setIsDeletingBulk(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
@@ -177,6 +235,22 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
 
   return (
     <div className="space-y-6">
+      {/* AI Usage limit banner */}
+      {aiLimitInfo.isAtLimit && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+          <span className="text-amber-500 mt-0.5">⚠️</span>
+          <div>
+            <p className="font-semibold">Monthly AI usage limit reached ({aiLimitInfo.count} / {aiLimitInfo.limit} calls used)</p>
+            <p className="text-amber-700">AI Auto-Fill and AI image generation are unavailable until next month's reset. To remove the cap entirely, go to <strong>Organisation Settings → AI Integration</strong> and add your own Gemini API key — this makes AI unlimited for your organisation.</p>
+          </div>
+        </div>
+      )}
+      {!aiLimitInfo.isAtLimit && !aiLimitInfo.isUnlimited && aiLimitInfo.percentUsed >= 80 && (
+        <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800">
+          <span className="mt-0.5">ℹ️</span>
+          <p>AI usage is at <strong>{aiLimitInfo.percentUsed}%</strong> of this month's limit ({aiLimitInfo.count} / {aiLimitInfo.limit} calls). Consider increasing the limit in Organisation Settings if you need more.</p>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('speciesDatabase')}</h2>
@@ -187,6 +261,16 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <input type="text" placeholder={t('searchSpecies')} className="w-full md:w-64 pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm outline-none focus:ring-2 focus:ring-emerald-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDeleteSpecies}
+              disabled={isDeletingBulk}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all disabled:opacity-60"
+            >
+              {isDeletingBulk ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              <span>Delete {selectedIds.size}</span>
+            </button>
+          )}
           <button onClick={() => setShowForm(true)} className="flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-all"><Plus size={18} /><span>{t('add')}</span></button>
         </div>
       </div>
@@ -279,26 +363,60 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId }) => 
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sortedSpecies.map(species => (
-          <div key={species.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full">
-            <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all">
-              <button onClick={() => handleEdit(species)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all"><Pencil size={16} /></button>
-            </div>
-            <div className="h-52 bg-slate-200 relative overflow-hidden">
-               <img src={species.imageUrl || allIndividuals.find(i => i.speciesId === species.id && i.imageUrl)?.imageUrl || generatePattern(species.commonName)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
-               <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || 'Unknown'}</div>
-               <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
-            </div>
-            <div className="p-5 flex-1 flex flex-col">
-              <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
-              <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>
-              <div className="grid grid-cols-2 gap-3 mt-auto">
-                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} years</span></div>
-                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} years</span></div>
+        {sortedSpecies.map(species => {
+          const indCount = allIndividuals.filter(i => i.speciesId === species.id).length;
+          const isSelected = selectedIds.has(species.id);
+          const canDelete = indCount === 0;
+          return (
+            <div key={species.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full ${isSelected ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200'}`}>
+              {/* Checkbox (top-left) */}
+              <button
+                onClick={() => canDelete && toggleSelect(species.id)}
+                title={canDelete ? (isSelected ? 'Deselect' : 'Select for deletion') : 'Cannot delete: has individuals'}
+                className={`absolute top-3 left-3 z-10 p-1 rounded-full transition-all shadow ${canDelete ? 'cursor-pointer opacity-0 group-hover:opacity-100' : 'cursor-not-allowed opacity-0 group-hover:opacity-40'} ${isSelected ? '!opacity-100' : ''}`}
+              >
+                {isSelected
+                  ? <CheckSquare size={20} className="text-red-500 drop-shadow" />
+                  : <Square size={20} className={`${canDelete ? 'text-white drop-shadow' : 'text-slate-300'}`} />
+                }
+              </button>
+              {/* Edit + Delete buttons (top-right) */}
+              <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all flex gap-1.5">
+                <button onClick={() => handleEdit(species)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all" title="Edit species"><Pencil size={16} /></button>
+                {canDelete && (
+                  <button onClick={() => handleDeleteSpecies(species.id)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-red-600 shadow-lg hover:scale-110 transition-all" title="Delete species"><Trash2 size={16} /></button>
+                )}
+              </div>
+              <div className="h-52 bg-slate-200 relative overflow-hidden">
+                 <img src={species.imageUrl || allIndividuals.find(i => i.speciesId === species.id && i.imageUrl)?.imageUrl || generatePattern(species.commonName)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
+                 <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || 'Unknown'}</div>
+                 <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
+              </div>
+              <div className="p-5 flex-1 flex flex-col">
+                <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
+                <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} years</span></div>
+                   <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} years</span></div>
+                </div>
+                {indCount > 0 ? (
+                  <button
+                    onClick={() => navigate('/individuals', { state: { filterSpeciesId: species.id } })}
+                    className="mt-4 w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-sm px-4 py-2.5 rounded-xl border border-emerald-100 transition-colors"
+                  >
+                    <Users size={15} />
+                    {`View ${indCount} individual${indCount === 1 ? '' : 's'}`}
+                  </button>
+                ) : (
+                  <div className="mt-4 w-full flex items-center justify-center gap-2 bg-slate-50 text-slate-400 font-medium text-sm px-4 py-2.5 rounded-xl border border-slate-100">
+                    <Users size={15} />
+                    No individuals yet
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {sortedSpecies.length === 0 && <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-slate-300"><PawPrint size={48} className="text-slate-300 mb-4 opacity-50"/><p className="text-slate-500 font-medium">{t('noSpeciesFound')}</p></div>}
     </div>

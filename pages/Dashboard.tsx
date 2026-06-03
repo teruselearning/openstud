@@ -32,9 +32,10 @@ interface BreedingRecommendation {
 
 interface DashboardProps {
   currentProjectId: string;
+  syncVersion?: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
+const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0 }) => {
   const navigate = useNavigate();
   const [speciesCount, setSpeciesCount] = useState(0);
   const [indivCount, setIndivCount] = useState(0);
@@ -52,6 +53,14 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
   const [speciesSort, setSpeciesSort] = useState<'name' | 'count'>('count');
 
   const { t } = useContext(LanguageContext);
+  const [syncRefreshKey, setSyncRefreshKey] = useState(0);
+
+  // Re-run the main data effect whenever a background sync delivers fresh data.
+  useEffect(() => {
+    const onDataRefreshed = () => setSyncRefreshKey(k => k + 1);
+    window.addEventListener('os-data-refreshed', onDataRefreshed);
+    return () => window.removeEventListener('os-data-refreshed', onDataRefreshed);
+  }, []);
 
   useEffect(() => {
     const allSpecies = getSpecies();
@@ -121,7 +130,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId }) => {
       });
     });
     setRecommendations(recs.slice(0, 4));
-  }, [currentProjectId]);
+  // syncRefreshKey (event-based) and syncVersion (prop-based) both trigger re-runs after sync
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, syncRefreshKey, syncVersion]);
 
   const handleViewPair = (maleId: string, femaleId: string) =>
     navigate('/individuals', { state: { highlightIds: [maleId, femaleId] } });
