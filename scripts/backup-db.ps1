@@ -12,13 +12,24 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# ── Config — read from backend/.env ──────────────────────────────────────────
+# Values are loaded from backend/.env so no credentials are stored in this file.
+$EnvFile = "$PSScriptRoot\..\backend\.env"
+$envVars = @{}
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
+            $envVars[$matches[1].Trim()] = $matches[2].Trim()
+        }
+    }
+}
+
 $MariaDbBin  = "C:\Program Files\MariaDB 12.2\bin"
-$DbHost      = "localhost"
-$DbPort      = "3306"
-$DbUser      = "root"
-$DbPassword  = "newpassword"
-$DbName      = "openstudbook"
+$DbHost      = if ($envVars["DATABASE_HOST"])     { $envVars["DATABASE_HOST"] }     else { "localhost" }
+$DbPort      = if ($envVars["DATABASE_PORT"])     { $envVars["DATABASE_PORT"] }     else { "3306" }
+$DbUser      = if ($envVars["DATABASE_USER"])     { $envVars["DATABASE_USER"] }     else { "root" }
+$DbPassword  = if ($envVars["DATABASE_PASSWORD"]) { $envVars["DATABASE_PASSWORD"] } else { "" }
+$DbName      = if ($envVars["DATABASE_NAME"])     { $envVars["DATABASE_NAME"] }     else { "openstudbook" }
 $BackupDir   = "$PSScriptRoot\..\backups"
 $LogFile     = "$PSScriptRoot\..\backups\backup.log"
 # ─────────────────────────────────────────────────────────────────────────────
