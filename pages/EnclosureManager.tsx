@@ -20,8 +20,8 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
   const location = useLocation();
   const org = getOrg();
   const isPlantOrg = org.focus === 'Flora';
-  const label = isPlantOrg ? 'Area' : 'Enclosure';
-  const labelsPlural = isPlantOrg ? 'Areas' : 'Enclosures';
+  const label = isPlantOrg ? t('area') : t('enclosure');
+  const labelsPlural = isPlantOrg ? t('areas') : t('enclosures');
 
   const [enclosures, setEnclosures] = useState<Enclosure[]>([]);
   const [allSpecies, setAllSpecies] = useState<Species[]>([]);
@@ -262,10 +262,10 @@ const EnclosureManager: React.FC<EnclosureManagerProps> = ({ currentProjectId })
             <h2 className="text-2xl font-bold text-slate-900">{labelsPlural}</h2>
             <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-purple-200">
               {isAll ? <Layers size={14}/> : <FolderOpen size={14} />}
-              {isAll ? 'Organization-Wide View' : (projects.find(p => p.id === currentProjectId)?.name || 'Project')}
+              {isAll ? t('orgWideView') : (projects.find(p => p.id === currentProjectId)?.name || t('projectScope'))}
             </span>
           </div>
-          <p className="text-slate-500">Physical management of collections by site location.</p>
+          <p className="text-slate-500">{t('enclosuresDescription')}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <button

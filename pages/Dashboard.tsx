@@ -113,7 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
     const allPlants = projectSpecies.length > 0 && projectSpecies.every(s => s.type === 'Plant');
     const livingCount = projectIndividuals.filter(i => !i.isDeceased).length;
     const hasAnimalSpecies = projectSpecies.some(s => s.type === 'Animal');
-    setShowBreedingSection(!allPlants && livingCount > 1 && (currentOrg.focus === 'Fauna' || hasAnimalSpecies));
+    setShowBreedingSection(!allPlants && livingCount > 1 && (currentOrg.focus !== 'Flora' || hasAnimalSpecies));
 
     const recs: BreedingRecommendation[] = [];
     projectSpecies.forEach(sp => {

@@ -207,10 +207,10 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
               <h2 className="text-2xl font-bold text-slate-900">{t('plantMap')}</h2>
               <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-200">
                 {currentProjectId === 'ALL_PROJECTS' ? <Layers size={14}/> : <FolderOpen size={14} />}
-                {currentProjectId === 'ALL_PROJECTS' ? 'All Managed Areas' : 'Project Scope'}
+                {currentProjectId === 'ALL_PROJECTS' ? t('allManagedAreas') : t('projectScope')}
               </span>
            </div>
-           <p className="text-slate-500">Spatial distribution and precise physical tracking of your botanical collection.</p>
+           <p className="text-slate-500">{t('plantMapDescription')}</p>
         </div>
       </div>
 
@@ -221,7 +221,7 @@ const PlantMap: React.FC<{ currentProjectId: string }> = ({ currentProjectId }) 
             <button 
                onClick={() => setShowLabels(!showLabels)} 
                className={`p-3 rounded-full shadow-lg border transition-all ${showLabels ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-               title={showLabels ? "Hide Labels" : "Show Labels"}
+               title={showLabels ? t('hideLabels') : t('showLabels')}
             >
                <TypeIcon size={24} />
             </button>

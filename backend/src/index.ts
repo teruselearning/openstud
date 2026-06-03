@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import path from 'path';
+import fs from 'fs';
 import process from 'process';
 import nodemailer from 'nodemailer';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -54,6 +55,10 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
+
+const UPLOADS_DIR = path.join(__dirname, '../../uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // --- AI Service Definitions ---
 const TEXT_MODEL = 'gemini-3-flash-preview';
@@ -650,7 +655,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, native_status_country, native_status_local FROM species`);
+            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, image_url, native_status_country, native_status_local FROM species`);
             speciesRows = s;
             const [i]: any = await db.execute(`SELECT id, project_id, species_id, enclosure_id, studbook_id, name, sex, birth_date, weight_kg, sire_id, dam_id, thumbnail_url, dna_sequence, notes, source, source_details, latitude, longitude, is_deceased, death_date, loan_status, transferred_to_org_id, transfer_date, transfer_note, weight_history, growth_history, health_history FROM individuals`);
             individualsRows = i;
@@ -665,7 +670,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.native_status_country, s.native_status_local FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.image_url, s.native_status_country, s.native_status_local FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             speciesRows = s;
             const [i]: any = await db.execute(`SELECT i.id, i.project_id, i.species_id, i.enclosure_id, i.studbook_id, i.name, i.sex, i.birth_date, i.weight_kg, i.sire_id, i.dam_id, i.thumbnail_url, i.dna_sequence, i.notes, i.source, i.source_details, i.latitude, i.longitude, i.is_deceased, i.death_date, i.loan_status, i.transferred_to_org_id, i.transfer_date, i.transfer_note, i.weight_history, i.growth_history, i.health_history FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             individualsRows = i;
@@ -898,8 +903,21 @@ app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/upload', authenticate, async (req: any, res: any) => {
+    try {
+        const { data } = req.body;
+        if (!data || typeof data !== 'string') return res.status(400).json({ error: 'Missing data' });
+        const match = data.match(/^data:([^;]+);base64,(.+)$/s);
+        if (!match) return res.status(400).json({ error: 'Invalid base64 data URL' });
+        const ext = (match[1].split('/')[1] || 'bin').replace(/[^a-zA-Z0-9]/g, '');
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], 'base64'));
+        res.json({ success: true, url: `/uploads/${filename}` });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 app.use(express.static(path.join(__dirname, '../../dist')));
-app.get('*', (req: any, res: any) => {
+app.get(/(.*)/, (req: any, res: any) => {
    if (req.path.startsWith('/api/')) return res.status(404).json({ error: "404" });
    res.sendFile(path.join(__dirname, '../../dist/index.html'));
 });

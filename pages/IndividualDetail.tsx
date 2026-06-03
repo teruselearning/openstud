@@ -273,6 +273,9 @@ const IndividualDetail: React.FC = () => {
   };
 
   const getDisplayImage = () => {
+    const latestObs = individual?.healthHistory?.find(h => h.imageUrl)?.imageUrl
+      || individual?.weightHistory?.find(w => w.imageUrl)?.imageUrl;
+    if (latestObs) return latestObs;
     if (individual?.imageUrl && !individual.imageUrl.startsWith('data:image/svg+xml')) return individual.imageUrl;
     if (species?.imageUrl && !species.imageUrl.startsWith('data:image/svg+xml')) return species.imageUrl;
     return generatePattern(individual?.name || 'Individual');
@@ -282,6 +285,17 @@ const IndividualDetail: React.FC = () => {
 
   const isPlant = species?.type === 'Plant';
   const weightData = (individual.weightHistory || []).map(w => ({ date: w.date, value: w.weightKg })).reverse();
+
+  const allObsImages = [
+    ...(individual.healthHistory || []).filter(h => h.imageUrl).map(h => h.imageUrl!),
+    ...(individual.weightHistory || []).filter(w => w.imageUrl).map(w => w.imageUrl!),
+  ];
+  const originalProfileImg = (individual.imageUrl && !individual.imageUrl.startsWith('data:image/svg+xml'))
+    ? individual.imageUrl
+    : (species?.imageUrl && !species.imageUrl.startsWith('data:image/svg+xml'))
+      ? species.imageUrl
+      : null;
+  const galleryImages = [...allObsImages, ...(originalProfileImg ? [originalProfileImg] : [])];
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500">
@@ -467,27 +481,56 @@ const IndividualDetail: React.FC = () => {
              {(weightData.length > 1 || (!species || weightData.length > 1)) && (
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-6">
-                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" /> Growth Trend</h3>
-                   <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> Log {isPlant ? 'Height' : 'Weight'}</button>
+                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" />{isPlant ? 'Growth Trend' : 'Weight Trend'}</h3>
+                   <div className="flex items-center gap-2">
+                     {isPlant && weightData.length > 0 && (
+                       <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-100 flex items-center gap-1"><Plus size={12}/> Log height</button>
+                     )}
+                     <button onClick={() => { isPlant ? (setShowHealthModal(true), setPendingLogImage('')) : (setShowWeightModal(true), setPendingLogImage('')); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> {isPlant ? 'Add Observation' : 'Log Weight'}</button>
+                   </div>
                 </div>
-                <div className="h-64">
-                   {weightData.length > 1 ? (
-                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={weightData}>
-                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                           <XAxis dataKey="date" hide />
-                           <YAxis hide domain={['auto', 'auto']} />
-                           <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                           <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} activeDot={{ r: 6 }} />
-                        </LineChart>
-                     </ResponsiveContainer>
-                   ) : (
-                     <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-2 italic">
-                        <Scale size={48} className="opacity-20" />
-                        <p>Insufficient historical data for chart</p>
-                     </div>
-                   )}
-                </div>
+                {isPlant && weightData.length === 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Species Info</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Scientific Name</p>
+                        <p className="font-medium text-slate-700 italic">{species?.scientificName || '—'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Classification</p>
+                        <p className="font-medium text-slate-700">{species?.plantClassification || '—'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Conservation Status</p>
+                        <p className="font-medium text-slate-700">{species?.conservationStatus || '—'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Native Status</p>
+                        <p className="font-medium text-slate-700">{species?.nativeStatusLocal || species?.nativeStatusCountry || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64">
+                    {weightData.length > 1 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                         <LineChart data={weightData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="date" hide />
+                            <YAxis hide domain={['auto', 'auto']} />
+                            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                            <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} activeDot={{ r: 6 }} />
+                         </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-2 italic">
+                         <Scale size={48} className="opacity-20" />
+                         <p>Insufficient historical data for chart</p>
+                      </div>
+                    )}
+                  </div>
+                )}
              </div>
              )}
 
@@ -711,7 +754,7 @@ const IndividualDetail: React.FC = () => {
                  </div>
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Height (cm)' : 'Weight (kg)'}</label>
-                    <input type="number" step="0.01" name="weight" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" required autoFocus />
+                    <input type="number" step="0.01" name="weight" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" autoFocus />
                  </div>
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">Note</label>
@@ -798,6 +841,7 @@ const IndividualDetail: React.FC = () => {
                             <option value="Fertilising">Fertilising</option>
                             <option value="Watering">Watering</option>
                             <option value="Repotting">Repotting</option>
+                            <option value="Dormancy">Dormancy</option>
                             <option value="Other">Other</option>
                           </> : <>
                             <option value="Checkup">Checkup</option>
@@ -815,7 +859,7 @@ const IndividualDetail: React.FC = () => {
                  </div>
                  <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
-                    <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." required />
+                    <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." />
                  </div>
                  
                  <div className="space-y-2">
