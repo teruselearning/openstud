@@ -4,8 +4,9 @@ import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpeci
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
 import { compressImageFileDual, compressDataUrlDual } from '../services/imageUtils';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
-import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2, Maximize2, Minimize2, Tag } from 'lucide-react';
+import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2, Maximize2, Minimize2, Tag, HelpCircle, Sprout } from 'lucide-react';
 import { LanguageContext } from '../App';
+import ConfirmModal from '../components/ConfirmModal';
 
 declare const L: any;
 
@@ -40,6 +41,17 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId,
   const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const [addLocation, setAddLocation] = useState(false);
+
+  // Unknown Species picker
+  const [showUnknownPicker, setShowUnknownPicker] = useState(false);
+  const [isCreatingUnknown, setIsCreatingUnknown] = useState(false);
+
+  // Presence-only mode (species generally present, no specific individual tracked)
+  const [presenceOnly, setPresenceOnly] = useState(false);
+
+  // Delete confirmation modal
+  const [bulkDeletePending, setBulkDeletePending] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Quick Add Species State
   const [showQuickSpeciesModal, setShowQuickSpeciesModal] = useState(false);
@@ -136,7 +148,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     scientificname: 'scientificName',
     sex: 'sex',
     birthdate: 'birthDate', dob: 'birthDate', dateofbirth: 'birthDate', dateplanted: 'birthDate', date_planted: 'birthDate', planted: 'birthDate',
-    weightkg: 'weightKg', 'weightkg': 'weightKg', weight: 'weightKg',
+    weightkg: 'weightKg', weight: 'weightKg',
     notes: 'notes',
     source: 'source', sourcedetails: 'sourceDetails',
     latitude: 'latitude', lat: 'latitude',
@@ -247,9 +259,10 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
 
     try {
       // ── Step 1: Auto-create missing species via AI ─────────────────────────
-      const newSpeciesNames = [...new Set(
-        importRows.filter(r => r._isNewSpecies && !r._speciesMatch).map(r => r._speciesLabel)
-      )];
+      const _rawLabels: string[] = importRows
+        .filter(r => r._isNewSpecies && !r._speciesMatch)
+        .map(r => String(r._speciesLabel));
+      const newSpeciesNames: string[] = [...new Set(_rawLabels)];
 
       for (const speciesName of newSpeciesNames) {
         setImportStatus(`Creating species: ${speciesName}…`);
@@ -402,7 +415,16 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     const projs = getProjects();
     console.log(`[IndividualManager] useEffect: syncVersion=${syncVersion}, currentProjectId="${currentProjectId}", cache=${individuals.length} individuals, ${projs.length} projects`);
     setAllIndividuals(individuals);
-    setAllSpecies(getSpecies());
+    // Repair any unknown-species records that were saved with a broken upload URL
+    // (pre-fix they ended up as /uploads/xxx.svgxml instead of the static path)
+    const loadedSpecies = getSpecies().map(s => {
+      if (s.isUnknown) {
+        const correctUrl = s.type === 'Animal' ? '/unknown-fauna.svg' : '/unknown-flora.svg';
+        if (s.imageUrl !== correctUrl) return { ...s, imageUrl: correctUrl };
+      }
+      return s;
+    });
+    setAllSpecies(loadedSpecies);
     setAllProjects(projs);
     setAllEnclosures(getEnclosures());
     const currentOrg = getOrg();
@@ -444,6 +466,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
         const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
         setSpeciesSearchQuery(sp?.commonName || '');
         setAddLocation(!!(indToEdit.latitude || indToEdit.longitude));
+        setPresenceOnly(!!indToEdit.isPresenceOnly);
         setShowForm(true);
         window.history.replaceState({}, document.title);
       }
@@ -626,6 +649,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     });
     setSpeciesSearchQuery('');
     setAddLocation(false);
+    setShowUnknownPicker(false);
+    setPresenceOnly(false);
     setShowForm(true);
   };
 
@@ -706,6 +731,53 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     }
   };
 
+  /** Find or create the shared "Unknown Fauna/Flora Species" for this project */
+  const getOrCreateUnknownSpecies = async (type: SpeciesType): Promise<Species> => {
+    const targetProjectId = isAll ? formData.projectId : currentProjectId;
+    if (!targetProjectId) throw new Error('Select a project first.');
+
+    // Re-use an existing unknown species of this type in this project
+    const existing = allSpecies.find(s => s.isUnknown && s.type === type && s.projectId === targetProjectId);
+    if (existing) return existing;
+
+    // Static placeholder images shipped with the app (avoids the base64 upload pipeline)
+    const imageUrl = type === 'Animal' ? '/unknown-fauna.svg' : '/unknown-flora.svg';
+
+    const newSpecies: Species = {
+      id: `unknown-${type.toLowerCase()}-${targetProjectId}`,
+      projectId: targetProjectId,
+      commonName: type === 'Animal' ? 'Unknown Fauna Species' : 'Unknown Flora Species',
+      scientificName: 'Species incognita',
+      type,
+      conservationStatus: 'Unknown',
+      sexualMaturityAgeYears: 0,
+      lifeExpectancyYears: 0,
+      averageAdultWeightKg: 0,
+      imageUrl,
+      isUnknown: true,
+    };
+
+    const updated = [...allSpecies, newSpecies];
+    await saveSpecies(updated);
+    setAllSpecies(updated);
+    return newSpecies;
+  };
+
+  const handleSelectUnknown = async (type: SpeciesType) => {
+    setIsCreatingUnknown(true);
+    try {
+      const sp = await getOrCreateUnknownSpecies(type);
+      setFormData(prev => ({ ...prev, speciesId: sp.id }));
+      setSpeciesSearchQuery(sp.commonName);
+      setIsSpeciesDropdownOpen(false);
+      setShowUnknownPicker(false);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setIsCreatingUnknown(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.speciesId || !formData.studbookId) return;
@@ -714,8 +786,12 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     if (isPlant && !finalName) {
       finalName = formData.studbookId || `plant-${Date.now()}`;
     }
+    if (presenceOnly && !finalName) {
+      // Auto-name presence records based on species so they're identifiable
+      finalName = `${selectedSpecies?.commonName || 'Species'} – Presence Record`;
+    }
 
-    if (!finalName && !isPlant) {
+    if (!finalName && !isPlant && !presenceOnly) {
       alert("Name is required for Fauna records.");
       return;
     }
@@ -732,7 +808,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
             projectId: targetProjectId,
             weightKg: Number(formData.weightKg || 0),
             latitude: addLocation ? formData.latitude : undefined,
-            longitude: addLocation ? formData.longitude : undefined
+            longitude: addLocation ? formData.longitude : undefined,
+            isPresenceOnly: presenceOnly || undefined,
         };
         const updated = editingId ? allIndividuals.map(i => i.id === editingId ? entry : i) : [...allIndividuals, entry];
         setAllIndividuals(updated);
@@ -765,15 +842,22 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
   const handleSelectAll = () =>
     setSelectedIds(selectedIds.size === filtered.length ? new Set() : new Set(filtered.map(i => i.id)));
 
-  const handleBulkDelete = async () => {
-    if (!confirm(`Permanently delete ${selectedIds.size} individual(s)? This cannot be undone.`)) return;
-    // Delete each record individually so the server receives a proper DELETE request.
-    // saveIndividuals(filtered) only upserts the remaining records — it never removes.
-    for (const id of selectedIds) {
-      await deleteIndividual(id);
+  const handleBulkDelete = () => setBulkDeletePending(true);
+
+  const handleConfirmBulkDelete = async () => {
+    setIsDeleting(true);
+    try {
+      // Delete each record individually so the server receives a proper DELETE request.
+      // saveIndividuals(filtered) only upserts the remaining records — it never removes.
+      for (const id of selectedIds) {
+        await deleteIndividual(id);
+      }
+      setAllIndividuals(getIndividuals());
+      setSelectedIds(new Set());
+    } finally {
+      setIsDeleting(false);
+      setBulkDeletePending(false);
     }
-    setAllIndividuals(getIndividuals());
-    setSelectedIds(new Set());
   };
 
   const handleBulkMarkDeceased = async () => {
@@ -922,7 +1006,10 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                   <Link to={`/individuals/${ind.id}`} className="block w-full h-full">
                     <img src={displayImg} className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${ind.isDeceased ? 'grayscale opacity-60' : ''}`} alt={displayName} />
                   </Link>
-                  {!isPlantInd && <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>}
+                  {ind.isPresenceOnly
+                    ? <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase bg-teal-600">Presence</div>
+                    : (!isPlantInd && <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>)
+                  }
                   {ind.isDeceased && <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide">Deceased</div>}
                 </div>
                 <div className="p-4 flex-1">
@@ -943,7 +1030,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                   )}
                   <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-50">
                     <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
-                    <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setShowForm(true); }} className="ml-auto text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
+                    <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setPresenceOnly(!!ind.isPresenceOnly); setShowForm(true); }} className="ml-auto text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
                   </div>
                 </div>
               </div>
@@ -988,6 +1075,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                             ) : (
                               <span className={`font-bold ${ind.isDeceased ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{ind.name}</span>
                             )}
+                            {ind.isPresenceOnly && <span className="ml-2 text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded uppercase">Presence</span>}
                             {ind.isDeceased && <span className="ml-2 text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">Deceased</span>}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">{isPlantInd ? '' : sp?.commonName}</td>
@@ -995,7 +1083,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                           <td className="px-6 py-4 text-right">
                              <div className="flex justify-end gap-2">
                                 <Link to={`/individuals/${ind.id}`} className="p-1.5 text-slate-400 hover:text-emerald-600"><Plus size={16}/></Link>
-                                <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600"><Pencil size={16}/></button>
+                                <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setPresenceOnly(!!ind.isPresenceOnly); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600"><Pencil size={16}/></button>
                              </div>
                           </td>
                        </tr>
@@ -1078,7 +1166,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                         <Link to={`/individuals/${selectedMapInd.id}`} className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors">
                           View Full Profile →
                         </Link>
-                        <button onClick={() => { setEditingId(selectedMapInd.id); setFormData({...selectedMapInd}); setSpeciesSearchQuery(panelSp?.commonName || ''); setAddLocation(true); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-bold px-4 py-2 rounded-lg transition-colors">
+                        <button onClick={() => { setEditingId(selectedMapInd.id); setFormData({...selectedMapInd}); setSpeciesSearchQuery(panelSp?.commonName || ''); setAddLocation(!!(selectedMapInd.latitude != null || selectedMapInd.longitude != null)); setPresenceOnly(!!selectedMapInd.isPresenceOnly); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-bold px-4 py-2 rounded-lg transition-colors">
                           <Pencil size={14}/> Edit
                         </button>
                       </div>
@@ -1328,7 +1416,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
              <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
                <div className="flex items-center gap-3">
                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">{editingId ? <Pencil size={20}/> : <Plus size={20}/>}</div>
-                 <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : t('registerIndividual')}</h3>
+                 <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : 'Register Individual or Presence'}</h3>
                </div>
                <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><XIcon size={24}/></button>
              </div>
@@ -1358,6 +1446,36 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                                </div>
                                <button type="button" onClick={() => setShowQuickSpeciesModal(true)} title="Quick Add Species" className="mt-1 p-2 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors"><Plus size={20}/></button>
                             </div>
+
+                            {/* Not yet identified */}
+                            {!formData.speciesId && (
+                              <div className="mt-2">
+                                {!showUnknownPicker ? (
+                                  <button type="button" onClick={() => setShowUnknownPicker(true)}
+                                    className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1.5 transition-colors">
+                                    <HelpCircle size={12}/> Species not yet identified?
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in slide-in-from-top-1 duration-150">
+                                    <span className="text-[11px] text-slate-500 font-semibold whitespace-nowrap">Register as:</span>
+                                    <button type="button" disabled={isCreatingUnknown}
+                                      onClick={() => handleSelectUnknown('Animal')}
+                                      className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
+                                      {isCreatingUnknown ? <Loader2 size={11} className="animate-spin"/> : <PawPrint size={11}/>} Fauna
+                                    </button>
+                                    <button type="button" disabled={isCreatingUnknown}
+                                      onClick={() => handleSelectUnknown('Plant')}
+                                      className="flex items-center gap-1.5 px-3 py-1 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
+                                      {isCreatingUnknown ? <Loader2 size={11} className="animate-spin"/> : <Sprout size={11}/>} Flora
+                                    </button>
+                                    <button type="button" onClick={() => setShowUnknownPicker(false)}
+                                      className="ml-auto text-slate-300 hover:text-slate-500 transition-colors">
+                                      <XIcon size={13}/>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                          </div>
                          <div><label className="text-xs font-bold text-slate-500 uppercase">{t('studbookId')} <span className="text-red-500">*</span></label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-mono" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required /></div>
                          <div>
@@ -1406,18 +1524,42 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
 
                    <div className="lg:col-span-4 space-y-6">
                       <div className="space-y-4">
-                         <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={14} className="text-red-500"/> Physical Mapping</h4>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                               <span className="text-[10px] font-bold text-slate-400 uppercase">Pin to map</span>
-                               <div className="relative inline-flex items-center">
-                                  <input type="checkbox" className="sr-only peer" checked={addLocation} onChange={(e) => setAddLocation(e.target.checked)} />
-                                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={14} className="text-red-500"/> Physical Mapping</h4>
+
+                         {/* Mapping mode selector */}
+                         <div className="space-y-1.5">
+                           {([
+                             { id: 'none',     label: 'No location data',               desc: null,                                      active: !addLocation && !presenceOnly },
+                             { id: 'presence', label: 'Generally present',              desc: 'No specific individual tracked',           active: presenceOnly },
+                             { id: 'pin',      label: 'Pin to specific location',       desc: null,                                      active: addLocation },
+                           ] as { id: string; label: string; desc: string | null; active: boolean }[]).map(opt => (
+                             <label key={opt.id} className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                               opt.active
+                                 ? opt.id === 'presence' ? 'bg-teal-50 border-teal-300'
+                                 : opt.id === 'pin'      ? 'bg-emerald-50 border-emerald-300'
+                                 :                         'bg-slate-100 border-slate-300'
+                                 : 'bg-white border-slate-200 hover:bg-slate-50'
+                             }`}>
+                               <input
+                                 type="radio"
+                                 name="mappingMode"
+                                 className="mt-0.5 accent-emerald-600 shrink-0"
+                                 checked={opt.active}
+                                 onChange={() => {
+                                   if (opt.id === 'none')     { setAddLocation(false); setPresenceOnly(false); }
+                                   else if (opt.id === 'presence') { setAddLocation(false); setPresenceOnly(true); }
+                                   else                        { setAddLocation(true);  setPresenceOnly(false); }
+                                 }}
+                               />
+                               <div className="flex-1 min-w-0">
+                                 <span className="text-sm font-semibold text-slate-700 block">{opt.label}</span>
+                                 {opt.desc && <span className="text-[11px] text-slate-400">{opt.desc}</span>}
                                </div>
-                            </label>
+                             </label>
+                           ))}
                          </div>
-                         
-                         {addLocation ? (
+
+                         {addLocation && (
                             <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-4">
                                <div className="h-64 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 shadow-inner relative">
                                   <div ref={formMapRef} className="h-full w-full z-0" />
@@ -1435,8 +1577,17 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                                </div>
                                <p className="text-[10px] text-slate-400 italic">Click the map to precisely pin where this specimen is located on site.</p>
                             </div>
-                         ) : (
-                            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-8 text-center">
+                         )}
+
+                         {presenceOnly && (
+                           <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 text-center">
+                             <p className="text-teal-700 font-semibold text-sm">Species Presence Record</p>
+                             <p className="text-xs text-teal-500 mt-1">Marks the species as generally present — no specific individual is tracked.</p>
+                           </div>
+                         )}
+
+                         {!addLocation && !presenceOnly && (
+                            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-6 text-center">
                                <MapIcon2 className="mx-auto mb-2 text-slate-300 opacity-50" size={32} />
                                <p className="text-xs text-slate-400 font-medium">Location data is disabled for this record.</p>
                             </div>
@@ -1448,7 +1599,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                 <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 shrink-0">
                    <button type="button" onClick={() => setShowForm(false)} className="px-8 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl">Cancel</button>
                    <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-10 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700">
-                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Save size={20}/>} {editingId ? "Update Record" : "Register Individual"}
+                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Save size={20}/>} {editingId ? "Update Record" : presenceOnly ? "Register Presence" : "Register Individual"}
                    </button>
                 </div>
              </form>
@@ -1513,6 +1664,20 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
            </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={bulkDeletePending}
+        title={`Delete ${selectedIds.size} Individual${selectedIds.size !== 1 ? 's' : ''}`}
+        message={
+          <>
+            Permanently delete <strong>{selectedIds.size} individual{selectedIds.size !== 1 ? 's' : ''}</strong>? This cannot be undone and will remove all associated health, weight, and breeding records.
+          </>
+        }
+        confirmLabel="Delete"
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setBulkDeletePending(false)}
+        isLoading={isDeleting}
+      />
     </div>
   );
 };

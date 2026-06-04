@@ -323,19 +323,41 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
      return <Icon size={24} className="text-emerald-600" />;
   };
   
-  const featuresToRender: LandingFeature[] = (landingConfig?.features && landingConfig.features.length > 0) ? landingConfig.features : [
-    { id: 'f1', title: t('securePrivate'), description: t('securePrivateDesc'), icon: 'Shield' },
-    { id: 'f2', title: t('floraFauna'), description: t('floraFaunaDesc'), icon: 'Sprout' },
-    { id: 'f3', title: t('globalNetwork'), description: t('globalNetworkDesc'), icon: 'Globe2' }
-  ];
+  // Per-language landing content: fall back through translations → default text → i18n key
+  const activeLandingTranslation = landingConfig?.translations?.[language];
 
-  const displayTitle = (landingConfig?.heroTitle && landingConfig.heroTitle.trim() !== "") 
-      ? landingConfig.heroTitle 
-      : t('landingTitle');
-      
-  const displaySubtitle = (landingConfig?.heroSubtitle && landingConfig.heroSubtitle.trim() !== "") 
-      ? landingConfig.heroSubtitle 
-      : t('landingSubtitle');
+  const displayTitle = activeLandingTranslation?.heroTitle?.trim()
+      ? activeLandingTranslation.heroTitle
+      : (landingConfig?.heroTitle?.trim() ? landingConfig.heroTitle : t('landingTitle'));
+
+  const displaySubtitle = activeLandingTranslation?.heroSubtitle?.trim()
+      ? activeLandingTranslation.heroSubtitle
+      : (landingConfig?.heroSubtitle?.trim() ? landingConfig.heroSubtitle : t('landingSubtitle'));
+
+  const displayRegistrationBanner = activeLandingTranslation?.registrationBanner?.trim()
+      ? activeLandingTranslation.registrationBanner
+      : settings.landingPageConfig?.registrationBanner;
+
+  const displayCustomContentHtml = activeLandingTranslation?.customContentHtml?.trim()
+      ? activeLandingTranslation.customContentHtml
+      : landingConfig?.customContentHtml;
+
+  const featuresToRender: LandingFeature[] = (() => {
+    // Use translated features if available for the current language
+    if (activeLandingTranslation?.features && activeLandingTranslation.features.length > 0) {
+      const originals = landingConfig?.features || [];
+      return activeLandingTranslation.features.map(tf => {
+        const orig = originals.find(f => f.id === tf.id);
+        return { id: tf.id, title: tf.title, description: tf.description, icon: orig?.icon || '' };
+      });
+    }
+    if (landingConfig?.features && landingConfig.features.length > 0) return landingConfig.features;
+    return [
+      { id: 'f1', title: t('securePrivate'), description: t('securePrivateDesc'), icon: 'Shield' },
+      { id: 'f2', title: t('floraFauna'), description: t('floraFaunaDesc'), icon: 'Sprout' },
+      { id: 'f3', title: t('globalNetwork'), description: t('globalNetworkDesc'), icon: 'Globe2' }
+    ];
+  })();
 
   return (
     <div className="min-h-screen bg-white flex flex-col relative">
@@ -389,8 +411,8 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 ))}
               </div>
             )}
-            {landingConfig?.customContentHtml && (
-              <div className="prose prose-slate max-w-none text-left py-8 border-t border-slate-100" dangerouslySetInnerHTML={{ __html: landingConfig.customContentHtml }} />
+            {displayCustomContentHtml && (
+              <div className="prose prose-slate max-w-none text-left py-8 border-t border-slate-100" dangerouslySetInnerHTML={{ __html: displayCustomContentHtml }} />
             )}
           </div>
         )}
@@ -434,10 +456,10 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
           <div className="w-full max-w-lg animate-in fade-in zoom-in duration-300 text-left">
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
               <button onClick={() => setViewMode('landing')} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
-              {settings.landingPageConfig?.registrationBanner && (
+              {displayRegistrationBanner && (
                 <div className="mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3">
                    <Info size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-                   <p className="text-xs text-indigo-700 leading-relaxed font-medium">{settings.landingPageConfig.registrationBanner}</p>
+                   <p className="text-xs text-indigo-700 leading-relaxed font-medium">{displayRegistrationBanner}</p>
                 </div>
               )}
               <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('registerOrg')}</h2>

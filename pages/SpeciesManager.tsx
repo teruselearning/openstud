@@ -6,6 +6,7 @@ import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase6
 import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare } from 'lucide-react';
 import { LanguageContext } from '../App';
+import ConfirmModal from '../components/ConfirmModal';
 
 interface SpeciesManagerProps {
   currentProjectId: string;
@@ -39,6 +40,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
   const [aiLimitInfo, setAiLimitInfo] = useState(() => getAiUsageInfo());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+
+  // Delete confirmation modal state
+  type DeleteTarget = { ids: string[]; label: string } | null;
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Species>>({
     commonName: '',
@@ -195,22 +201,29 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     handleCloseForm();
   };
 
-  const handleDeleteSpecies = async (id: string) => {
-    if (!confirm('Permanently delete this species? This cannot be undone.')) return;
-    await deleteSpecies(id);
-    setAllSpecies(getSpecies());
-    setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+  const handleDeleteSpecies = (id: string) => {
+    const sp = allSpecies.find(s => s.id === id);
+    const label = sp ? (sp.commonName || sp.scientificName || 'this species') : 'this species';
+    setDeleteTarget({ ids: [id], label });
   };
 
-  const handleBulkDeleteSpecies = async () => {
-    if (!confirm(`Permanently delete ${selectedIds.size} species? This cannot be undone.`)) return;
-    setIsDeletingBulk(true);
-    for (const id of selectedIds) {
-      await deleteSpecies(id);
+  const handleBulkDeleteSpecies = () => {
+    setDeleteTarget({ ids: [...selectedIds], label: `${selectedIds.size} species` });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      for (const id of deleteTarget.ids) {
+        await deleteSpecies(id);
+      }
+      setAllSpecies(getSpecies());
+      setSelectedIds(new Set());
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
     }
-    setAllSpecies(getSpecies());
-    setSelectedIds(new Set());
-    setIsDeletingBulk(false);
   };
 
   const toggleSelect = (id: string) => {
@@ -419,6 +432,20 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
         })}
       </div>
       {sortedSpecies.length === 0 && <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-slate-300"><PawPrint size={48} className="text-slate-300 mb-4 opacity-50"/><p className="text-slate-500 font-medium">{t('noSpeciesFound')}</p></div>}
+
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        title={deleteTarget?.ids.length === 1 ? 'Delete Species' : `Delete ${deleteTarget?.ids.length} Species`}
+        message={
+          <>
+            Permanently delete <strong>{deleteTarget?.label}</strong>? This cannot be undone and will remove all associated records.
+          </>
+        }
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+        isLoading={isDeleting}
+      />
     </div>
   );
 };

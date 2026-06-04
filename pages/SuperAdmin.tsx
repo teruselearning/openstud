@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronRight, Dna, Users, Activity, Leaf, MessageSquare, Code, Github
 } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, ExternalPartner, Project, Individual, Species, Sex } from '../types';
+import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, LandingTranslation, ExternalPartner, Project, Individual, Species, Sex } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS } from '../services/i18n';
 
@@ -52,6 +52,10 @@ const SuperAdmin: React.FC = () => {
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [aiFillSuccess, setAiFillSuccess] = useState(false);
   const [translationSearch, setTranslationSearch] = useState('');
+
+  const [isTranslatingLanding, setIsTranslatingLanding] = useState(false);
+  const [landingTranslationProgress, setLandingTranslationProgress] = useState<{ done: number; total: number } | null>(null);
+  const [landingTranslateSuccess, setLandingTranslateSuccess] = useState(false);
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -160,6 +164,78 @@ const SuperAdmin: React.FC = () => {
         features: features.map(f => f.id === id ? { ...f, [field]: value } : f)
       }
     });
+  };
+
+  const handleTranslateLanding = async () => {
+    const targetLangs = languages.filter(l => !l.isDefault);
+    if (targetLangs.length === 0) return;
+
+    const config = settings.landingPageConfig || {};
+
+    // Build a flat source dictionary with every translatable string
+    const sourceDict: Record<string, string> = {};
+    if (config.heroTitle?.trim())           sourceDict['heroTitle']           = config.heroTitle;
+    if (config.heroSubtitle?.trim())        sourceDict['heroSubtitle']        = config.heroSubtitle;
+    if (config.registrationBanner?.trim())  sourceDict['registrationBanner']  = config.registrationBanner;
+    if (config.customContentHtml?.trim())   sourceDict['customContentHtml']   = config.customContentHtml;
+    (config.features || []).forEach(f => {
+      if (f.title)       sourceDict[`feat_title_${f.id}`] = f.title;
+      if (f.description) sourceDict[`feat_desc_${f.id}`]  = f.description;
+    });
+
+    if (Object.keys(sourceDict).length === 0) return;
+
+    setIsTranslatingLanding(true);
+    setLandingTranslationProgress({ done: 0, total: targetLangs.length });
+    setLandingTranslateSuccess(false);
+
+    const newTranslations: Record<string, LandingTranslation> = { ...(config.translations || {}) };
+
+    for (let i = 0; i < targetLangs.length; i++) {
+      const lang = targetLangs[i];
+      try {
+        const results = await translateDictionary(sourceDict, lang.name);
+        const map: Record<string, string> = {};
+        results.forEach(({ k, v }) => { map[k] = v; });
+
+        const lt: LandingTranslation = {};
+        if (map['heroTitle'])          lt.heroTitle          = map['heroTitle'];
+        if (map['heroSubtitle'])       lt.heroSubtitle       = map['heroSubtitle'];
+        if (map['registrationBanner']) lt.registrationBanner = map['registrationBanner'];
+        if (map['customContentHtml'])  lt.customContentHtml  = map['customContentHtml'];
+
+        if ((config.features || []).length > 0) {
+          lt.features = (config.features || []).map(f => ({
+            id:          f.id,
+            title:       map[`feat_title_${f.id}`] || f.title,
+            description: map[`feat_desc_${f.id}`]  || f.description,
+          }));
+        }
+
+        newTranslations[lang.code] = lt;
+      } catch (e) {
+        console.error(`[Landing translate] Failed for ${lang.code}:`, e);
+      }
+      setLandingTranslationProgress({ done: i + 1, total: targetLangs.length });
+    }
+
+    const updatedSettings = {
+      ...settings,
+      landingPageConfig: { ...settings.landingPageConfig, translations: newTranslations }
+    };
+    setSettings(updatedSettings);
+
+    // Persist immediately so the Landing page sees the new translations without a manual Save
+    try {
+      await saveSystemSettings(updatedSettings);
+    } catch (e) {
+      console.error('[Landing translate] Failed to save translated settings:', e);
+    }
+
+    setIsTranslatingLanding(false);
+    setLandingTranslationProgress(null);
+    setLandingTranslateSuccess(true);
+    setTimeout(() => setLandingTranslateSuccess(false), 4000);
   };
 
   const handleImpersonate = (orgId: string) => {
@@ -427,8 +503,9 @@ const SuperAdmin: React.FC = () => {
                      </div>
                   )}
                </div>
-               <button onClick={handleSaveAllSettings} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all">
-                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} {t('saveSettings')}
+               <button onClick={handleSaveAllSettings} disabled={isSaving} className={`w-full mt-4 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all ${settingsSaved ? 'bg-emerald-500 shadow-emerald-100' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100'}`}>
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : settingsSaved ? <Check size={20} /> : <Save size={20} />}
+                  {isSaving ? 'Saving…' : settingsSaved ? 'Saved!' : t('saveSettings')}
                </button>
             </div>
 
@@ -494,8 +571,9 @@ const SuperAdmin: React.FC = () => {
                      </label>
                   </div>
                </div>
-               <button onClick={handleSaveAllSettings} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all">
-                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} {t('saveSettings')}
+               <button onClick={handleSaveAllSettings} disabled={isSaving} className={`w-full mt-4 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all ${settingsSaved ? 'bg-emerald-500 shadow-emerald-100' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100'}`}>
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : settingsSaved ? <Check size={20} /> : <Save size={20} />}
+                  {isSaving ? 'Saving…' : settingsSaved ? 'Saved!' : t('saveSettings')}
                </button>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center space-y-4">
@@ -523,8 +601,9 @@ const SuperAdmin: React.FC = () => {
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('appLogo')}</label><div className="flex items-center gap-4"><div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center overflow-hidden border border-slate-200">{settings.appLogoUrl ? <img src={settings.appLogoUrl} className="w-full h-full object-contain" /> : <ImageIcon size={32} className="text-slate-300" />}</div><label className="flex-1 px-4 py-3 bg-slate-900 hover:bg-black text-white text-center rounded-xl text-xs font-bold cursor-pointer transition-all uppercase tracking-widest">{t('uploadLogo')}<input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setSettings({...settings, appLogoUrl: r.result as string}); r.readAsDataURL(f); } }} /></label></div></div>
                   <div className="space-y-1"><label className="text-xs font-bold text-slate-500 uppercase">{t('customCss')}</label><textarea className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono" rows={5} placeholder=".text-custom { ... }" value={settings.customCss} onChange={e => setSettings({...settings, customCss: e.target.value})} /></div>
                </div>
-               <button onClick={handleSaveAllSettings} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all">
-                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} {t('saveSettings')}
+               <button onClick={handleSaveAllSettings} disabled={isSaving} className={`w-full mt-4 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all ${settingsSaved ? 'bg-emerald-500 shadow-emerald-100' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100'}`}>
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : settingsSaved ? <Check size={20} /> : <Save size={20} />}
+                  {isSaving ? 'Saving…' : settingsSaved ? 'Saved!' : t('saveSettings')}
                </button>
             </div>
 
@@ -534,9 +613,24 @@ const SuperAdmin: React.FC = () => {
                      <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
                      <h3 className="font-extrabold text-lg text-slate-900">Landing Page Editor</h3>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isRegEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                     {isRegEnabled ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
-                     Reg: {isRegEnabled ? 'Enabled' : 'Disabled'}
+                  <div className="flex items-center gap-2">
+                     <button
+                        onClick={handleTranslateLanding}
+                        disabled={isTranslatingLanding || languages.filter(l => !l.isDefault).length === 0}
+                        title="Use AI to translate all landing page text into every active language"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                        {isTranslatingLanding
+                           ? <><Loader2 size={11} className="animate-spin" /> {landingTranslationProgress ? `${landingTranslationProgress.done}/${landingTranslationProgress.total}` : '...'}</>
+                           : landingTranslateSuccess
+                              ? <><Check size={11} className="text-emerald-600" /> Translated!</>
+                              : <><Globe size={11} /> Auto-translate</>
+                        }
+                     </button>
+                     <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isRegEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {isRegEnabled ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>}
+                        Reg: {isRegEnabled ? 'Enabled' : 'Disabled'}
+                     </div>
                   </div>
                </div>
                <div className="space-y-4">
@@ -605,8 +699,9 @@ const SuperAdmin: React.FC = () => {
                      })}
                   </div>
                </div>
-               <button onClick={handleSaveAllSettings} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 transition-all">
-                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} {t('saveSettings')}
+               <button onClick={handleSaveAllSettings} disabled={isSaving} className={`w-full mt-4 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all ${settingsSaved ? 'bg-emerald-500 shadow-emerald-100' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100'}`}>
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : settingsSaved ? <Check size={20} /> : <Save size={20} />}
+                  {isSaving ? 'Saving…' : settingsSaved ? 'Saved!' : t('saveSettings')}
                </button>
             </div>
          </div>
