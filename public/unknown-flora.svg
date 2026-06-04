@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" rx="16" fill="#dcfce7"/>
+  <!-- Question mark -->
+  <text x="100" y="96" text-anchor="middle" font-size="72" font-weight="bold" fill="#4ade80" font-family="Arial,sans-serif">?</text>
+  <!-- Leaf -->
+  <path d="M100 120 C82 112 70 140 82 158 C89 168 100 174 100 174 C100 174 111 168 118 158 C130 140 118 112 100 120Z" fill="#4ade80"/>
+  <!-- Stem -->
+  <line x1="100" y1="174" x2="100" y2="184" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+</svg>

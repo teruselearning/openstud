@@ -7,6 +7,7 @@ import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, Breeding
 import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode, Box, Trash2, Loader2, Upload, ImageIcon, Info } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { LanguageContext } from '../App';
+import ConfirmModal from '../components/ConfirmModal';
 
 declare const L: any;
 
@@ -39,6 +40,7 @@ const IndividualDetail: React.FC = () => {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState<number>(-1);
+  const [showDnaDeleteConfirm, setShowDnaDeleteConfirm] = useState(false);
 
   // Form Media State
   const [pendingLogImage, setPendingLogImage] = useState<string>('');
@@ -118,7 +120,7 @@ const IndividualDetail: React.FC = () => {
     const ACCURACY_TARGET = 20;
     let settled = false;
 
-    const handleMapClick = (e: L.LeafletMouseEvent) => {
+    const handleMapClick = (e: any) => {
       const { lat, lng } = e.latlng;
       setPendingLatLng({ lat, lng });
       locationMarkerRef.current?.setLatLng([lat, lng]);
@@ -722,7 +724,7 @@ const IndividualDetail: React.FC = () => {
                       <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Sequence Detected: {individual.dnaFileType || 'FASTA'}</span>
                       <div className="flex gap-2">
                          <button className="text-slate-400 hover:text-white transition-colors" title="Download Sequence"><Download size={16}/></button>
-                         <button onClick={() => { if(confirm("Remove DNA data?")) setIndividual({...individual, dnaSequence: undefined}); }} className="text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={16}/></button>
+                         <button onClick={() => setShowDnaDeleteConfirm(true)} className="text-slate-400 hover:text-red-400 transition-colors"><Trash2 size={16}/></button>
                       </div>
                    </div>
                    <div className="bg-black/30 p-4 rounded font-mono text-[10px] text-emerald-600 break-all h-32 overflow-y-auto">
@@ -947,6 +949,17 @@ const IndividualDetail: React.FC = () => {
         );
       })()}
 
+      <ConfirmModal
+        isOpen={showDnaDeleteConfirm}
+        title="Remove DNA Data"
+        message="Permanently remove the stored DNA sequence for this individual? This cannot be undone."
+        confirmLabel="Remove"
+        onConfirm={() => {
+          if (individual) setIndividual({ ...individual, dnaSequence: undefined });
+          setShowDnaDeleteConfirm(false);
+        }}
+        onCancel={() => setShowDnaDeleteConfirm(false)}
+      />
     </div>
   );
 };

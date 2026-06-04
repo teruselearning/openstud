@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" rx="16" fill="#dbeafe"/>
+  <!-- Question mark -->
+  <text x="100" y="96" text-anchor="middle" font-size="72" font-weight="bold" fill="#93c5fd" font-family="Arial,sans-serif">?</text>
+  <!-- Paw print: main pad + four toe pads -->
+  <ellipse cx="100" cy="160" rx="18" ry="14" fill="#93c5fd"/>
+  <circle cx="74"  cy="146" r="10" fill="#93c5fd"/>
+  <circle cx="126" cy="146" r="10" fill="#93c5fd"/>
+  <circle cx="82"  cy="132" r="8"  fill="#93c5fd"/>
+  <circle cx="118" cy="132" r="8"  fill="#93c5fd"/>
+</svg>
