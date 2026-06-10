@@ -1,96 +1,83 @@
 # OpenStudbook Installation Guide
 
-OpenStudbook is a self-hosted conservation management platform. This guide will walk you through setting up the Node.js backend and the React frontend.
-
-## 1. Prerequisites
-
-*   **Node.js**: Version 18.x or higher.
-*   **MySQL Server**: A running instance (local or remote).
-*   **Gemini API Key**: Required for AI biological research and image generation. Get it from [Google AI Studio](https://aistudio.google.com/).
+> **This guide covers a quick manual setup. The [README](README.md) is the canonical reference — see it for full configuration options, production deployment, and security notes.**
 
 ---
 
-## 2. Backend Setup (Proxy & API)
+## Prerequisites
 
-The backend now handles all AI requests to keep your API key secure.
-
-1.  **Navigate to the backend directory**:
-    ```bash
-    cd backend
-    ```
-2.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
-3.  **Configure Environment**:
-    Create a `.env` file in the `backend/` folder:
-    ```env
-    PORT=3001
-    JWT_SECRET=your_long_random_secure_string
-    API_KEY=your_gemini_api_key_here
-    ```
-    *Note: You do not need to provide database credentials here yet; the web installer will handle the connection configuration.*
-
-4.  **Start the backend**:
-    ```bash
-    npm run dev
-    ```
-    The server will start on `http://localhost:3001`.
+- **Node.js** 18 LTS or higher (20 LTS recommended)
+- **MariaDB** 10.6+ or **MySQL** 8.0+ — must be running before you start
+- **npm** 9+ (bundled with Node)
 
 ---
 
-## 3. Frontend Setup
+## Setup
 
-1.  **Navigate to the project root**:
-    ```bash
-    cd ..
-    ```
-2.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
-3.  **Start the development server**:
-    ```bash
-    npm run dev
-    ```
-    The app will typically be available at `http://localhost:3000`.
+### 1. Clone and install dependencies
+
+```bash
+git clone https://github.com/teruselearning/openstud.git
+cd openstud
+npm install
+cd backend && npm install && cd ..
+```
+
+### 2. Configure the backend
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Open `backend/.env` and set at minimum:
+
+```env
+JWT_SECRET=<long random string>
+DATABASE_HOST=localhost
+DATABASE_USER=root
+DATABASE_PASSWORD=<your db password>
+DATABASE_NAME=openstudbook
+```
+
+Generate a secure JWT secret:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### 3. Create the database
+
+```bash
+mysql -u root -p -e "CREATE DATABASE openstudbook CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+```
+
+### 4. Start the app
+
+```bash
+# Terminal 1 — backend
+cd backend && npm run dev
+
+# Terminal 2 — frontend
+npm run dev
+```
+
+Open **http://localhost:3000** — the installer wizard will guide you through the rest.
 
 ---
 
-## 4. Web-Based System Configuration
+## First Run
 
-When you first launch the application in your browser, you will see the **System Installer**.
+The web installer will:
 
-1.  **Step 1: Welcome**: Review the prerequisites and click "Start Setup".
-2.  **Step 2: Database Config**: Enter your MySQL details:
-    *   **Hostname**: (e.g., `localhost`)
-    *   **Port**: (e.g., `3306`)
-    *   **User**: (e.g., `root`)
-    *   **Password**: Your MySQL password.
-    *   **Database Name**: `openstudbook` (The installer will create this if it's missing).
-3.  **Step 3: Install**: Click "Connect & Install".
-    *   The system will automatically create all SQL tables.
-    *   Default languages (UK/US English) will be seeded.
-    *   A default Super Admin account will be created.
+1. Verify your database connection
+2. Run all migrations and seed default data
+3. Create your first organisation and admin account
+
+After setup, configure SMTP, languages, and feature flags under **Super Admin** (gear icon in the sidebar).
 
 ---
 
-## 5. Getting Started
+## Production
 
-Once the installer finishes, you will be redirected to the landing page.
+See [Production Deployment](README.md#production-deployment) in the README for build steps, Nginx config, process management, and the security checklist.
 
-### Default Administrator Credentials:
-*   **Email**: `sarah@wild.org`
-*   **Password**: `password`
-
-### Recommended First Steps:
-1.  Log in as the administrator.
-2.  Go to **Organization Settings** to set your location and focus (Fauna or Flora).
-3.  Go to **Species** and use the "Autofill" feature to quickly catalog your collection.
-4.  Go to **Super Admin > Localisation** to add support for additional languages using AI translation.
-
-## Production Notes
-
-*   **Security**: Ensure your `JWT_SECRET` is unique and long.
-*   **HTTPS**: Geolocation and camera features require an HTTPS connection in production.
-*   **SMTP**: To enable email invitations, configure your SMTP settings in the **Super Admin > Email** tab after logging in.
+> **Never expose the app publicly without completing the security checklist first.**

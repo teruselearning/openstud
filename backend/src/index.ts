@@ -49,7 +49,13 @@ const resetPool = (newConfig: any) => {
 
 const app: any = express();
 const PORT = Number(process.env.PORT) || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'openstudbook-stable-dev-secret-2024';
+if (!process.env.JWT_SECRET) {
+  console.error('\n⛔  FATAL: JWT_SECRET is not set in backend/.env');
+  console.error('   Generate one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  console.error('   See backend/.env.example for full configuration.\n');
+  process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET as string;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));

@@ -208,7 +208,7 @@ export const switchOrganization = (partnerId: string, explicitOrg?: any): boolea
 };
 
 export const getOrg = (): Organization => {
-  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Fauna', isOrgPublic: false, isSpeciesPublic: false, obscureLocation: false, allowBreedingRequests: false, aiUsageLimit: 1000 };
+  const defaultOrg: Organization = { id: '', name: 'New Org', location: '', foundedYear: 2024, description: '', focus: 'Fauna', isOrgPublic: true, isSpeciesPublic: false, obscureLocation: true, allowBreedingRequests: false, aiUsageLimit: 1000 };
   return get(KEYS.ORG, defaultOrg);
 };
 

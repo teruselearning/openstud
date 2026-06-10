@@ -1,14 +1,9 @@
-<div align="center">
-<img width="1200" height="475" alt="OpenStudbook Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-
 # OpenStudbook
 
 **Open-source captive breeding and botanical collection management for zoos, aquariums, and botanical gardens.**
 
 [![Security Audit](https://github.com/teruselearning/openstud/actions/workflows/security.yml/badge.svg)](https://github.com/teruselearning/openstud/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
-
-</div>
 
 ---
 
@@ -18,9 +13,8 @@ OpenStudbook is a self-hosted web platform for managing captive animal and plant
 - 🐾 **Fauna & Flora modes** — unified management for animals and plants
 - 🧬 **Studbook & genetics** — lineage tracking, breeding recommendations, DNA records
 - 🌍 **Network map** — discover partner organisations and propose breeding loans
-- 🤖 **AI assist** — species autofill and illustration via Gemini (optional)
 - 🔒 **Multi-factor auth**, per-org user roles, and full data export
-- 🌐 **Multi-language** — 10+ languages with live AI translation
+- 🌐 **Multi-language** — 10 languages, switchable per user
 
 ---
 
@@ -33,10 +27,10 @@ OpenStudbook is a self-hosted web platform for managing captive animal and plant
 - [First-Time Setup (Installer)](#first-time-setup-installer)
 - [Production Deployment](#production-deployment)
 - [Resetting the Database](#resetting-the-database)
-- [Optional: AI Features](#optional-ai-features)
 - [Optional: Cloudflare / ngrok Tunnel](#optional-cloudflare--ngrok-tunnel)
 - [Security](#security)
 - [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -103,7 +97,6 @@ cp backend/.env.example backend/.env
 | `DATABASE_USER` | **Yes** | DB username |
 | `DATABASE_PASSWORD` | **Yes** | DB password |
 | `DATABASE_NAME` | **Yes** | DB name (e.g. `openstudbook`) |
-| `API_KEY` | No | Gemini API key — enables AI species autofill and illustrations. [Get one free.](https://aistudio.google.com/) |
 
 > **Never commit `backend/.env`** — it is gitignored by default.
 
@@ -299,24 +292,6 @@ Then restart the backend — it will re-run migrations and show the installer on
 
 ---
 
-## Optional: AI Features
-
-OpenStudbook integrates with [Google Gemini](https://aistudio.google.com/) for:
-
-- **Species autofill** — fill conservation status, lifespan, weight from scientific name
-- **AI illustration** — generate a representative species image
-- **Language translation** — auto-translate UI strings into new languages
-
-To enable, add your key to `backend/.env`:
-
-```
-API_KEY=your_gemini_api_key_here
-```
-
-AI usage is tracked per organisation and capped by the Super Admin. Organisations can also provide their own Gemini API key in Org Settings to bypass the shared limit.
-
----
-
 ## Optional: Cloudflare / ngrok Tunnel
 
 Expose your local dev instance publicly (useful for mobile testing, demos, or webhook testing).
@@ -337,7 +312,12 @@ Both print a public HTTPS URL to the console.
 
 ## Security
 
-See the [security maintenance plan in CLAUDE.md](CLAUDE.md#security-maintenance-plan) for the full automated and manual security schedule.
+The production checklist above covers the essential hardening steps. For ongoing maintenance:
+
+- Rotate `JWT_SECRET` and `DATABASE_PASSWORD` quarterly
+- Run `npm audit` in both root and `backend/` regularly — fix anything at high or critical severity
+- Review and merge Dependabot PRs promptly
+- Audit Super Admin accounts periodically — remove any that are no longer needed
 
 To report a vulnerability, please open a [GitHub Security Advisory](https://github.com/teruselearning/openstud/security/advisories/new) rather than a public issue.
 
@@ -353,6 +333,12 @@ Contributions are welcome! Please:
 4. Open a pull request against `main` with a clear description of the change
 
 For larger changes, open an issue first to discuss the approach.
+
+---
+
+## License
+
+MIT © OpenStudbook Contributors — see [LICENSE](LICENSE).
 
 ---
 
