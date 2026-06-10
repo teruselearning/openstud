@@ -8,8 +8,20 @@ import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprou
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
+import SpeciesModal from '../components/SpeciesModal';
 
 declare const L: any;
+
+const nativeStatusStyle = (status: string) => {
+  switch (status) {
+    case 'Native':     return 'bg-green-100 text-green-700';
+    case 'Introduced': return 'bg-amber-100 text-amber-700';
+    case 'Invasive':   return 'bg-red-100 text-red-600';
+    default:           return 'bg-slate-100 text-slate-400';
+  }
+};
+const nativeStatusLabel = (status: string) =>
+  status === 'Introduced' ? 'Non-Native' : status;
 
 const IndividualDetail: React.FC = () => {
   const { t } = useContext(LanguageContext);
@@ -41,6 +53,7 @@ const IndividualDetail: React.FC = () => {
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState<number>(-1);
   const [showDnaDeleteConfirm, setShowDnaDeleteConfirm] = useState(false);
+  const [showSpeciesModal, setShowSpeciesModal] = useState(false);
 
   // Form Media State
   const [pendingLogImage, setPendingLogImage] = useState<string>('');
@@ -319,15 +332,15 @@ const IndividualDetail: React.FC = () => {
         </div>
         <button onClick={() => navigate('/individuals', { state: { editId: individual.id, fromId: individual.id } })} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg font-bold shadow-sm transition-all">
           <Edit size={18} />
-          <span>Edit Profile</span>
+          <span>{t('editProfile')}</span>
         </button>
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 space-x-8">
-        <button onClick={() => setActiveTab('overview')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'overview' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Overview</button>
-        <button onClick={() => setActiveTab('history')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'history' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{isPlant ? 'History' : 'Health & History'}</button>
-        <button onClick={() => setActiveTab('genetics')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'genetics' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Genetics</button>
+        <button onClick={() => setActiveTab('overview')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'overview' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t('overview')}</button>
+        <button onClick={() => setActiveTab('history')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'history' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t('history')}</button>
+        <button onClick={() => setActiveTab('genetics')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'genetics' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t('genetics')}</button>
       </div>
 
       {activeTab === 'overview' && (
@@ -343,52 +356,52 @@ const IndividualDetail: React.FC = () => {
                </div>
                <div className="p-4 space-y-3">
                   <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Studbook ID</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('studbookId')}</span>
                     <span className="text-sm font-mono font-bold text-slate-700">{individual.studbookId}</span>
                   </div>
                   {(!(isPlant && individual.sex === Sex.UNKNOWN)) && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Sex</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('sex')}</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${individual.sex === Sex.MALE ? 'bg-blue-100 text-blue-700' : individual.sex === Sex.FEMALE ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700'}`}>{individual.sex}</span>
                     </div>
                   )}
                   <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{isPlant ? 'Planted' : 'Birth Date'}</span>
-                    <span className="text-sm font-bold text-slate-700">{individual.birthDate || 'Unknown'}</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{isPlant ? t('planted') : t('birthDate')}</span>
+                    <span className="text-sm font-bold text-slate-700">{individual.birthDate || t('unknownSex')}</span>
                   </div>
                   {individual.isDeceased && individual.deathDate && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{isPlant ? 'Removed' : 'Death Date'}</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{isPlant ? t('removed') : t('deathDate')}</span>
                       <span className="text-sm font-bold text-red-600">{individual.deathDate}</span>
                     </div>
                   )}
                   {individual.source && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Source</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('acquisitionSource')}</span>
                       <span className="text-sm font-bold text-slate-700">{individual.source}</span>
                     </div>
                   )}
                   {individual.sourceDetails && (
                     <div className="py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest block mb-1">Source Details</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest block mb-1">{t('sourceDetails')}</span>
                       <p className="text-sm text-slate-700 leading-relaxed">{individual.sourceDetails}</p>
                     </div>
                   )}
                   {individual.loanStatus && individual.loanStatus !== 'None' && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Loan Status</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('loanStatus')}</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${individual.loanStatus === 'Loaned Out' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{individual.loanStatus}</span>
                     </div>
                   )}
                   {individual.transferDate && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Transferred</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('transferred')}</span>
                       <span className="text-sm font-bold text-slate-700">{individual.transferDate}</span>
                     </div>
                   )}
                   {individual.transferNote && (
                     <div className="py-2 border-b border-slate-50">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest block mb-1">Transfer Note</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest block mb-1">{t('transferNote')}</span>
                       <p className="text-sm text-slate-700 leading-relaxed">{individual.transferNote}</p>
                     </div>
                   )}
@@ -396,7 +409,7 @@ const IndividualDetail: React.FC = () => {
                     <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 mt-2 flex items-center gap-3">
                       <Box size={20} className="text-purple-600" />
                       <div>
-                        <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Enclosure</p>
+                        <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">{t('enclosure')}</p>
                         <p className="text-sm font-bold text-purple-900">{enclosure.name}</p>
                       </div>
                     </div>
@@ -425,7 +438,9 @@ const IndividualDetail: React.FC = () => {
              {species && weightData.length <= 1 && (
                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                  <div className="p-4 border-b border-slate-100 flex items-center gap-2">
-                   <Info size={16} className="text-emerald-600" />
+                   <button onClick={() => setShowSpeciesModal(true)} title={t('speciesDetail')} className="text-emerald-600 hover:text-emerald-800 transition-colors flex-shrink-0">
+                     <Info size={16} />
+                   </button>
                    <h3 className="font-bold text-slate-800 text-sm">Species: {species.commonName}</h3>
                    <span className="italic text-slate-400 text-xs ml-1">{species.scientificName}</span>
                    {species.conservationStatus && species.conservationStatus !== 'Unknown' && (
@@ -435,46 +450,66 @@ const IndividualDetail: React.FC = () => {
                  <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                    {species.lifeExpectancyYears > 0 && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Life Expectancy</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('lifeExpectancyShort')}</p>
                        <p className="font-bold text-slate-800 text-sm">{species.lifeExpectancyYears} yrs</p>
                      </div>
                    )}
                    {species.sexualMaturityAgeYears > 0 && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Sexual Maturity</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('sexualMaturityShort')}</p>
                        <p className="font-bold text-slate-800 text-sm">{species.sexualMaturityAgeYears} yrs</p>
                      </div>
                    )}
                    {species.averageAdultWeightKg > 0 && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Avg Adult {isPlant ? 'Height' : 'Weight'}</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{isPlant ? t('avgAdultHeight') : t('avgAdultWeight')}</p>
                        <p className="font-bold text-slate-800 text-sm">{species.averageAdultWeightKg} {isPlant ? 'cm' : 'kg'}</p>
                      </div>
                    )}
                    {species.breedingSeasonStart && species.breedingSeasonEnd && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Breeding Season</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('breedingSeason')}</p>
                        <p className="font-bold text-slate-800 text-sm">
                          {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][species.breedingSeasonStart - 1]} – {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][species.breedingSeasonEnd - 1]}
                        </p>
                      </div>
                    )}
-                   {species.nativeStatusCountry && species.nativeStatusCountry !== 'Unknown' && (
-                     <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Native Status</p>
-                       <p className="font-bold text-slate-800 text-sm">{species.nativeStatusCountry}</p>
-                     </div>
-                   )}
+                   {(() => {
+                     const ns = (species.nativeStatusLocal && species.nativeStatusLocal !== 'Unknown')
+                       ? species.nativeStatusLocal
+                       : (species.nativeStatusCountry && species.nativeStatusCountry !== 'Unknown')
+                       ? species.nativeStatusCountry
+                       : null;
+                     return ns ? (
+                       <div className="bg-slate-50 rounded-lg p-3">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('nativeStatus')}</p>
+                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase ${nativeStatusStyle(ns)}`}>{nativeStatusLabel(ns)}</span>
+                       </div>
+                     ) : null;
+                   })()}
                  </div>
+                 {species.description && (
+                   <div className="px-4 pb-3">
+                     <p className="text-xs text-slate-500 leading-relaxed">{species.description}</p>
+                   </div>
+                 )}
                  <div className="px-4 pb-4 flex gap-2 flex-wrap">
-                   <a href={`https://en.wikipedia.org/wiki/${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
-                     className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
-                     <ExternalLink size={12}/> Wikipedia
-                   </a>
-                   <a href={`https://www.iucnredlist.org/search?query=${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
-                     className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
-                     <ExternalLink size={12}/> IUCN Red List
-                   </a>
+                   {!species.isUnknown && (
+                     <>
+                       <a href={`https://en.wikipedia.org/wiki/${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
+                         <ExternalLink size={12}/> Wikipedia
+                       </a>
+                       <a href={`https://www.iucnredlist.org/search?query=${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
+                         <ExternalLink size={12}/> IUCN Red List
+                       </a>
+                     </>
+                   )}
+                   <button onClick={() => setShowSpeciesModal(true)}
+                     className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors ml-auto">
+                     {t('speciesDetail')}
+                   </button>
                  </div>
                </div>
              )}
@@ -483,17 +518,17 @@ const IndividualDetail: React.FC = () => {
              {(weightData.length > 1 || (!species || weightData.length > 1)) && (
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-6">
-                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" />{isPlant ? 'Growth Trend' : 'Weight Trend'}</h3>
+                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-emerald-500" />{isPlant ? t('growthTrend') : t('weightTrend')}</h3>
                    <div className="flex items-center gap-2">
                      {isPlant && weightData.length > 0 && (
-                       <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-100 flex items-center gap-1"><Plus size={12}/> Log height</button>
+                       <button onClick={() => { setShowWeightModal(true); setPendingLogImage(''); }} className="text-xs text-slate-500 px-2 py-1 rounded-lg hover:bg-slate-100 flex items-center gap-1"><Plus size={12}/> {t('logHeight')}</button>
                      )}
-                     <button onClick={() => { isPlant ? (setShowHealthModal(true), setPendingLogImage('')) : (setShowWeightModal(true), setPendingLogImage('')); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> {isPlant ? 'Add Observation' : 'Log Weight'}</button>
+                     <button onClick={() => { isPlant ? (setShowHealthModal(true), setPendingLogImage('')) : (setShowWeightModal(true), setPendingLogImage('')); }} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-emerald-100"><Plus size={14}/> {isPlant ? t('addObservation') : t('logWeight')}</button>
                    </div>
                 </div>
                 {isPlant && weightData.length === 0 ? (
                   <div className="space-y-3">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Species Info</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t('speciesInfo')}</p>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div className="bg-slate-50 rounded-lg p-3">
                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Scientific Name</p>
@@ -508,8 +543,17 @@ const IndividualDetail: React.FC = () => {
                         <p className="font-medium text-slate-700">{species?.conservationStatus || '—'}</p>
                       </div>
                       <div className="bg-slate-50 rounded-lg p-3">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Native Status</p>
-                        <p className="font-medium text-slate-700">{species?.nativeStatusLocal || species?.nativeStatusCountry || '—'}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('nativeStatus')}</p>
+                        {(() => {
+                          const ns = (species?.nativeStatusLocal && species.nativeStatusLocal !== 'Unknown')
+                            ? species.nativeStatusLocal
+                            : (species?.nativeStatusCountry && species.nativeStatusCountry !== 'Unknown')
+                            ? species.nativeStatusCountry
+                            : null;
+                          return ns
+                            ? <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase ${nativeStatusStyle(ns)}`}>{nativeStatusLabel(ns)}</span>
+                            : <p className="font-medium text-slate-700">—</p>;
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -540,7 +584,9 @@ const IndividualDetail: React.FC = () => {
              {species && weightData.length > 1 && (
                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                  <div className="p-4 border-b border-slate-100 flex items-center gap-2">
-                   <Info size={16} className="text-emerald-600" />
+                   <button onClick={() => setShowSpeciesModal(true)} title={t('speciesDetail')} className="text-emerald-600 hover:text-emerald-800 transition-colors flex-shrink-0">
+                     <Info size={16} />
+                   </button>
                    <h3 className="font-bold text-slate-800 text-sm">Species: {species.commonName}</h3>
                    <span className="italic text-slate-400 text-xs ml-1">{species.scientificName}</span>
                    {species.conservationStatus && species.conservationStatus !== 'Unknown' && (
@@ -550,61 +596,81 @@ const IndividualDetail: React.FC = () => {
                  <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                    {species.lifeExpectancyYears > 0 && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Life Expectancy</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('lifeExpectancyShort')}</p>
                        <p className="font-bold text-slate-800 text-sm">{species.lifeExpectancyYears} yrs</p>
                      </div>
                    )}
                    {species.sexualMaturityAgeYears > 0 && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Sexual Maturity</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('sexualMaturityShort')}</p>
                        <p className="font-bold text-slate-800 text-sm">{species.sexualMaturityAgeYears} yrs</p>
                      </div>
                    )}
                    {species.averageAdultWeightKg > 0 && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Avg Adult {isPlant ? 'Height' : 'Weight'}</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{isPlant ? t('avgAdultHeight') : t('avgAdultWeight')}</p>
                        <p className="font-bold text-slate-800 text-sm">{species.averageAdultWeightKg} {isPlant ? 'cm' : 'kg'}</p>
                      </div>
                    )}
                    {species.breedingSeasonStart && species.breedingSeasonEnd && (
                      <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Breeding Season</p>
+                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('breedingSeason')}</p>
                        <p className="font-bold text-slate-800 text-sm">
                          {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][species.breedingSeasonStart - 1]} – {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][species.breedingSeasonEnd - 1]}
                        </p>
                      </div>
                    )}
-                   {species.nativeStatusCountry && species.nativeStatusCountry !== 'Unknown' && (
-                     <div className="bg-slate-50 rounded-lg p-3">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Native Status</p>
-                       <p className="font-bold text-slate-800 text-sm">{species.nativeStatusCountry}</p>
-                     </div>
-                   )}
+                   {(() => {
+                     const ns = (species.nativeStatusLocal && species.nativeStatusLocal !== 'Unknown')
+                       ? species.nativeStatusLocal
+                       : (species.nativeStatusCountry && species.nativeStatusCountry !== 'Unknown')
+                       ? species.nativeStatusCountry
+                       : null;
+                     return ns ? (
+                       <div className="bg-slate-50 rounded-lg p-3">
+                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('nativeStatus')}</p>
+                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase ${nativeStatusStyle(ns)}`}>{nativeStatusLabel(ns)}</span>
+                       </div>
+                     ) : null;
+                   })()}
                  </div>
+                 {species.description && (
+                   <div className="px-4 pb-3">
+                     <p className="text-xs text-slate-500 leading-relaxed">{species.description}</p>
+                   </div>
+                 )}
                  <div className="px-4 pb-4 flex gap-2 flex-wrap">
-                   <a href={`https://en.wikipedia.org/wiki/${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
-                     className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
-                     <ExternalLink size={12}/> Wikipedia
-                   </a>
-                   <a href={`https://www.iucnredlist.org/search?query=${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
-                     className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
-                     <ExternalLink size={12}/> IUCN Red List
-                   </a>
+                   {!species.isUnknown && (
+                     <>
+                       <a href={`https://en.wikipedia.org/wiki/${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
+                         <ExternalLink size={12}/> Wikipedia
+                       </a>
+                       <a href={`https://www.iucnredlist.org/search?query=${encodeURIComponent(species.scientificName)}`} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors">
+                         <ExternalLink size={12}/> IUCN Red List
+                       </a>
+                     </>
+                   )}
+                   <button onClick={() => setShowSpeciesModal(true)}
+                     className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors ml-auto">
+                     {t('speciesDetail')}
+                   </button>
                  </div>
                </div>
              )}
 
-             {(species?.type === 'Animal' || individual.sireId || individual.damId) && (
+             {(individual.sireId || individual.damId) && (
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                   <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><Baby size={20} className="text-blue-500" /> Parentage</h3>
+                   <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><Baby size={20} className="text-blue-500" /> {t('parentage')}</h3>
                    <div className="space-y-4 flex-1">
                       <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">S</div>
-                         <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sire</p><p className="text-sm font-bold text-slate-900">{individual.sireId || 'Unknown'}</p></div>
+                         <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('sire')}</p><p className="text-sm font-bold text-slate-900">{individual.sireId || t('unknownSex')}</p></div>
                       </div>
                       <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
                          <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center font-bold">D</div>
-                         <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dam</p><p className="text-sm font-bold text-slate-900">{individual.damId || 'Unknown'}</p></div>
+                         <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('dam')}</p><p className="text-sm font-bold text-slate-900">{individual.damId || t('unknownSex')}</p></div>
                       </div>
                    </div>
                 </div>
@@ -612,7 +678,7 @@ const IndividualDetail: React.FC = () => {
 
              {/* Location — full width */}
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><MapPin size={20} className="text-red-500" /> Location</h3>
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><MapPin size={20} className="text-red-500" /> {t('location')}</h3>
                 <div className="h-64 w-full rounded-lg bg-slate-100 overflow-hidden relative border border-slate-200">
                    {individual.latitude
                      ? (
@@ -642,7 +708,7 @@ const IndividualDetail: React.FC = () => {
                      )
                      : (
                        <div className="h-full flex flex-col items-center justify-center gap-3">
-                         <p className="text-slate-400 italic text-xs">No coordinates assigned</p>
+                         <p className="text-slate-400 italic text-xs">{t('noCoordinatesAssigned')}</p>
                          <button
                            onClick={handleSetLocation}
                            disabled={isSettingLocation}
@@ -650,7 +716,7 @@ const IndividualDetail: React.FC = () => {
                          >
                            {isSettingLocation
                              ? <><Loader2 size={13} className="animate-spin"/> Detecting…</>
-                             : <><Navigation size={13}/> Set Location</>
+                             : <><Navigation size={13}/> {t('setLocation')}</>
                            }
                          </button>
                          {locationError && <p className="text-[10px] text-red-500 text-center px-2">{locationError}</p>}
@@ -683,7 +749,7 @@ const IndividualDetail: React.FC = () => {
                                 <span className="text-xs font-bold text-slate-400">{log.date}</span>
                              </div>
                              <p className="text-sm text-slate-600 leading-relaxed mb-3">{log.description}</p>
-                             {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">Performed by: {log.performedBy}</p>}
+                             {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">{t('performedBy')}: {log.performedBy}</p>}
                              
                              {log.imageUrl && (
                                <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => {
@@ -960,6 +1026,10 @@ const IndividualDetail: React.FC = () => {
         }}
         onCancel={() => setShowDnaDeleteConfirm(false)}
       />
+
+      {showSpeciesModal && species && (
+        <SpeciesModal species={species} onClose={() => setShowSpeciesModal(false)} />
+      )}
     </div>
   );
 };

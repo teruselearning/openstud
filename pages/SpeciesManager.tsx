@@ -4,7 +4,7 @@ import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndiv
 import { Individual } from '../types';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
 import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
-import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare } from 'lucide-react';
+import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare, MapPin, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -12,6 +12,20 @@ interface SpeciesManagerProps {
   currentProjectId: string;
   syncVersion?: number;
 }
+
+/** Returns Tailwind classes for a NativeStatus value */
+const nativeStatusStyle = (status: string) => {
+  switch (status) {
+    case 'Native':     return 'bg-green-100 text-green-700 border-green-200';
+    case 'Introduced': return 'bg-amber-100 text-amber-700 border-amber-200';
+    case 'Invasive':   return 'bg-red-100 text-red-700 border-red-200';
+    default:           return 'bg-slate-100 text-slate-500 border-slate-200';
+  }
+};
+
+/** Display label: "Introduced" becomes "Non-Native" for clarity */
+const nativeStatusLabel = (status: string) =>
+  status === 'Introduced' ? 'Non-Native' : status;
 
 const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncVersion = 0 }) => {
   const { t } = useContext(LanguageContext);
@@ -163,7 +177,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     setFormData({ 
       commonName: '', scientificName: '', type: 'Animal', conservationStatus: '', sexualMaturityAgeYears: 0, 
       averageAdultWeightKg: 0, lifeExpectancyYears: 0, breedingSeasonStart: 1, breedingSeasonEnd: 12, 
-      imageUrl: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
+      imageUrl: '', description: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
       projectId: currentProjectId === 'ALL_PROJECTS' ? (allProjects.length === 1 ? allProjects[0].id : '') : currentProjectId
     });
   };
@@ -330,6 +344,44 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                        </div>
                     </div>
 
+                    <div className="space-y-4 pt-4 border-t border-slate-100">
+                       <h4 className="font-bold text-slate-800 flex items-center gap-2"><Info size={18} className="text-slate-400"/> Description</h4>
+                       <textarea
+                         rows={4}
+                         className="w-full px-4 py-3 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none text-sm leading-relaxed resize-none"
+                         placeholder="Describe the species — appearance, reproductive behaviour, native distribution. This is filled automatically when you use Autofill."
+                         value={formData.description || ''}
+                         onChange={e => setFormData({...formData, description: e.target.value})}
+                       />
+                    </div>
+
+                    {/* Native Status override */}
+                    <div className="space-y-3 pt-4 border-t border-slate-100">
+                      <h4 className="font-bold text-slate-800 flex items-center gap-2"><MapPin size={18} className="text-green-500"/> Native Status</h4>
+                      <p className="text-xs text-slate-500">Is this species native to your organisation's location? AI autofill determines this automatically — override it here if needed.</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(['Unknown', 'Native', 'Introduced', 'Invasive'] as const).map(status => {
+                          const isActive = (formData.nativeStatusLocal || 'Unknown') === status;
+                          return (
+                            <button
+                              key={status}
+                              type="button"
+                              onClick={() => setFormData({ ...formData, nativeStatusLocal: status })}
+                              className={`px-4 py-1.5 rounded-full text-sm font-bold border transition-all ${
+                                isActive
+                                  ? status === 'Unknown'
+                                    ? 'bg-slate-200 text-slate-700 border-slate-400'
+                                    : `${nativeStatusStyle(status)} border-2`
+                                  : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400 hover:text-slate-600'
+                              }`}
+                            >
+                              {status === 'Introduced' ? 'Non-Native' : status}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Image section moved to the bottom */}
                     <div className="space-y-4 pt-6 border-t border-slate-100">
                        <h4 className="font-bold text-slate-800 flex items-center gap-2"><ImageIcon size={18} className="text-purple-500"/> Representative Media</h4>
@@ -407,11 +459,32 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
               </div>
               <div className="p-5 flex-1 flex flex-col">
                 <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
-                <p className="text-sm text-slate-500 italic mb-4 font-serif">{species.scientificName}</p>
+                <p className="text-sm text-slate-500 italic mb-2 font-serif">{species.scientificName}</p>
+                {species.description && (
+                  <p className="text-xs text-slate-500 leading-relaxed mb-3 line-clamp-2">{species.description}</p>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('maturity')}</span><span className="text-sm font-bold text-slate-700">{species.sexualMaturityAgeYears} years</span></div>
                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-100"><span className="text-[10px] font-bold text-slate-400 uppercase block">{t('lifespan')}</span><span className="text-sm font-bold text-slate-700">{species.lifeExpectancyYears} years</span></div>
                 </div>
+                {/* Native status badge — single pill showing local status (falls back to national) */}
+                {(() => {
+                  const status =
+                    (species.nativeStatusLocal && species.nativeStatusLocal !== 'Unknown')
+                      ? species.nativeStatusLocal
+                      : (species.nativeStatusCountry && species.nativeStatusCountry !== 'Unknown')
+                        ? species.nativeStatusCountry
+                        : null;
+                  if (!status) return null;
+                  return (
+                    <div className="mt-3 flex items-center gap-1.5">
+                      <MapPin size={11} className="text-slate-400 shrink-0" />
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${nativeStatusStyle(status)}`}>
+                        {nativeStatusLabel(status)}
+                      </span>
+                    </div>
+                  );
+                })()}
                 {indCount > 0 ? (
                   <button
                     onClick={() => navigate('/individuals', { state: { filterSpeciesId: species.id } })}
