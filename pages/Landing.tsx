@@ -3,6 +3,7 @@ import { PawPrint, Shield, ArrowRight, Mail, User as UserIcon, Lock, ArrowLeft, 
 import * as LucideIcons from 'lucide-react';
 import { forgotPassword, resetPassword, restoreMainOrg, isMfaTrustedDevice, sendMfaCode, trustDevice, saveSession, getSystemSettings, checkInviteToken, acceptInvite, saveOrg, saveProjects, getProjects, saveCurrentProjectId } from '../services/storage';
 import { reverseGeocode } from '../services/geminiService';
+import InstallPromptButton from '../components/InstallPromptButton';
 import { fetchRemoteData } from '../services/syncService'; 
 import { User, OrganizationFocus, LandingFeature, Organization } from '../types';
 import { LanguageContext } from '../App';
@@ -395,6 +396,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                     <Github size={20} /> GitHub
                   </a>
                 )}
+                <InstallPromptButton variant="hero" />
                 {/* Explore demo button hidden */}
               </div>
             </div>

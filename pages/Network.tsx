@@ -81,8 +81,8 @@ const Network: React.FC = () => {
         leafletMap.current = map;
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
 
-        // ATTEMPT TO CENTER ON CURRENT LOCATION
-        if (navigator.geolocation) {
+        // Only fall back to browser geolocation if the org has no stored location
+        if (typeof myOrg?.latitude !== 'number' && navigator.geolocation) {
            navigator.geolocation.getCurrentPosition(
              (pos) => {
                const { latitude, longitude } = pos.coords;

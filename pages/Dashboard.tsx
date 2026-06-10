@@ -5,6 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recha
 import { Users, Leaf, Activity, Heart, ArrowRight, Dna, Info, FolderOpen, Megaphone, Layers, Search, ChevronDown, PawPrint, Sprout } from 'lucide-react';
 import { Species, Individual, Sex, Project, Organization } from '../types';
 import { LanguageContext } from '../App';
+import InstallPromptButton from '../components/InstallPromptButton';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -159,11 +160,14 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
           </div>
           <p className="text-slate-500">{t('welcomeBack')}</p>
         </div>
-        {currentProjectId === 'ALL_PROJECTS' && (
-          <div className="bg-indigo-50 border border-indigo-100 p-2 px-4 rounded-xl text-indigo-700 text-sm font-medium flex items-center gap-2">
-            <Info size={18}/> Consolidated enterprise view enabled.
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {currentProjectId === 'ALL_PROJECTS' && (
+            <div className="bg-indigo-50 border border-indigo-100 p-2 px-4 rounded-xl text-indigo-700 text-sm font-medium flex items-center gap-2">
+              <Info size={18}/> Consolidated enterprise view enabled.
+            </div>
+          )}
+          <InstallPromptButton variant="compact" />
+        </div>
       </div>
 
       {/* Org announcement block */}
