@@ -100,8 +100,9 @@ const fromDbSpecies = (s: any): Species => ({
   breedingSeasonStart: s.breeding_season_start, 
   breedingSeasonEnd: s.breeding_season_end, 
   imageUrl: s.image_url, 
-  nativeStatusCountry: s.native_status_country, 
-  nativeStatusLocal: s.native_status_local 
+  nativeStatusCountry: s.native_status_country,
+  nativeStatusLocal: s.native_status_local,
+  description: s.description || undefined,
 });
 
 const fromDbInd = (i: any): Individual => ({ 
@@ -254,8 +255,9 @@ export const mapSpeciesToDb = (s: Species) => ({
   breeding_season_start: sanitizeNum(s.breedingSeasonStart, null), 
   breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), 
   image_url: s.imageUrl || null, 
-  native_status_country: s.nativeStatusCountry || null, 
-  native_status_local: s.nativeStatusLocal || null 
+  native_status_country: s.nativeStatusCountry || null,
+  native_status_local: s.nativeStatusLocal || null,
+  description: s.description || null,
 });
 
 export const mapIndToDb = (i: Individual) => ({ 

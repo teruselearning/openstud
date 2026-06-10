@@ -228,7 +228,9 @@ export interface Species {
   imageUrl?: string;
   nativeStatusCountry?: NativeStatus;
   nativeStatusLocal?: NativeStatus;
-  /** True for auto-created "Unknown Fauna/Flora Species" placeholders */
+  /** Free-text description: appearance, reproduction, and native distribution. AI-populated on autofill. */
+  description?: string;
+  /** True for unidentified-species placeholders created from the individual registration form */
   isUnknown?: boolean;
 }
 

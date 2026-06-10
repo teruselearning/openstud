@@ -10,6 +10,17 @@ import ConfirmModal from '../components/ConfirmModal';
 
 declare const L: any;
 
+const nativeStatusStyle = (status: string) => {
+  switch (status) {
+    case 'Native':     return 'bg-green-100 text-green-700';
+    case 'Introduced': return 'bg-amber-100 text-amber-700';
+    case 'Invasive':   return 'bg-red-100 text-red-600';
+    default:           return 'bg-slate-100 text-slate-400';
+  }
+};
+const nativeStatusLabel = (status: string) =>
+  status === 'Introduced' ? 'Non-Native' : status;
+
 type ViewMode = 'grid' | 'list' | 'map';
 
 interface IndividualManagerProps {
@@ -42,9 +53,12 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId,
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const [addLocation, setAddLocation] = useState(false);
 
-  // Unknown Species picker
+  // Unidentified species form
   const [showUnknownPicker, setShowUnknownPicker] = useState(false);
   const [isCreatingUnknown, setIsCreatingUnknown] = useState(false);
+  const [unknownType, setUnknownType] = useState<SpeciesType>('Animal');
+  const [unknownName, setUnknownName] = useState('');
+  const [unknownDesc, setUnknownDesc] = useState('');
 
   // Presence-only mode (species generally present, no specific individual tracked)
   const [presenceOnly, setPresenceOnly] = useState(false);
@@ -415,16 +429,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     const projs = getProjects();
     console.log(`[IndividualManager] useEffect: syncVersion=${syncVersion}, currentProjectId="${currentProjectId}", cache=${individuals.length} individuals, ${projs.length} projects`);
     setAllIndividuals(individuals);
-    // Repair any unknown-species records that were saved with a broken upload URL
-    // (pre-fix they ended up as /uploads/xxx.svgxml instead of the static path)
-    const loadedSpecies = getSpecies().map(s => {
-      if (s.isUnknown) {
-        const correctUrl = s.type === 'Animal' ? '/unknown-fauna.svg' : '/unknown-flora.svg';
-        if (s.imageUrl !== correctUrl) return { ...s, imageUrl: correctUrl };
-      }
-      return s;
-    });
-    setAllSpecies(loadedSpecies);
+    setAllSpecies(getSpecies());
     setAllProjects(projs);
     setAllEnclosures(getEnclosures());
     const currentOrg = getOrg();
@@ -650,6 +655,9 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     setSpeciesSearchQuery('');
     setAddLocation(false);
     setShowUnknownPicker(false);
+    setUnknownType('Animal');
+    setUnknownName('');
+    setUnknownDesc('');
     setPresenceOnly(false);
     setShowForm(true);
   };
@@ -731,46 +739,41 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     }
   };
 
-  /** Find or create the shared "Unknown Fauna/Flora Species" for this project */
-  const getOrCreateUnknownSpecies = async (type: SpeciesType): Promise<Species> => {
+  /** Create a new unique unidentified-species record for this individual */
+  const handleRegisterUnidentified = async () => {
     const targetProjectId = isAll ? formData.projectId : currentProjectId;
-    if (!targetProjectId) throw new Error('Select a project first.');
+    if (!targetProjectId) { alert('Select a project first.'); return; }
 
-    // Re-use an existing unknown species of this type in this project
-    const existing = allSpecies.find(s => s.isUnknown && s.type === type && s.projectId === targetProjectId);
-    if (existing) return existing;
-
-    // Static placeholder images shipped with the app (avoids the base64 upload pipeline)
-    const imageUrl = type === 'Animal' ? '/unknown-fauna.svg' : '/unknown-flora.svg';
-
-    const newSpecies: Species = {
-      id: `unknown-${type.toLowerCase()}-${targetProjectId}`,
-      projectId: targetProjectId,
-      commonName: type === 'Animal' ? 'Unknown Fauna Species' : 'Unknown Flora Species',
-      scientificName: 'Species incognita',
-      type,
-      conservationStatus: 'Unknown',
-      sexualMaturityAgeYears: 0,
-      lifeExpectancyYears: 0,
-      averageAdultWeightKg: 0,
-      imageUrl,
-      isUnknown: true,
-    };
-
-    const updated = [...allSpecies, newSpecies];
-    await saveSpecies(updated);
-    setAllSpecies(updated);
-    return newSpecies;
-  };
-
-  const handleSelectUnknown = async (type: SpeciesType) => {
     setIsCreatingUnknown(true);
     try {
-      const sp = await getOrCreateUnknownSpecies(type);
-      setFormData(prev => ({ ...prev, speciesId: sp.id }));
-      setSpeciesSearchQuery(sp.commonName);
+      const imageUrl = unknownType === 'Animal' ? '/unknown-fauna.svg' : '/unknown-flora.svg';
+      const uid = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const defaultName = unknownType === 'Animal' ? `Unidentified Fauna #${uid.slice(-4).toUpperCase()}` : `Unidentified Flora #${uid.slice(-4).toUpperCase()}`;
+
+      const newSpecies: Species = {
+        id: `unid-${unknownType.toLowerCase()}-${uid}`,
+        projectId: targetProjectId,
+        commonName: unknownName.trim() || defaultName,
+        scientificName: 'Species incognita',
+        type: unknownType,
+        conservationStatus: 'Unknown',
+        sexualMaturityAgeYears: 0,
+        lifeExpectancyYears: 0,
+        averageAdultWeightKg: 0,
+        description: unknownDesc.trim() || undefined,
+        imageUrl,
+        isUnknown: true,
+      };
+
+      const updated = [...allSpecies, newSpecies];
+      await saveSpecies(updated);
+      setAllSpecies(updated);
+      setFormData(prev => ({ ...prev, speciesId: newSpecies.id }));
+      setSpeciesSearchQuery(newSpecies.commonName);
       setIsSpeciesDropdownOpen(false);
       setShowUnknownPicker(false);
+      setUnknownName('');
+      setUnknownDesc('');
     } catch (e: any) {
       alert(e.message);
     } finally {
@@ -1018,16 +1021,26 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                       <Link to={`/individuals/${ind.id}`} className={`font-bold truncate block transition-colors text-sm ${ind.isDeceased ? 'text-slate-400 line-through' : 'text-slate-900 group-hover:text-emerald-700'}`}>
                         {ind.studbookId} — {sp?.commonName}
                       </Link>
-                      <p className="text-xs text-slate-400 italic mb-2 truncate">{sp?.scientificName}</p>
+                      <p className="text-xs text-slate-400 italic truncate">{sp?.scientificName}</p>
                     </>
                   ) : (
                     <>
                       <Link to={`/individuals/${ind.id}`} className={`font-bold truncate block transition-colors ${ind.isDeceased ? 'text-slate-400 line-through' : 'text-slate-900 group-hover:text-emerald-700'}`}>
                         {ind.name}
                       </Link>
-                      <p className="text-xs text-slate-500 mb-2 truncate">{sp?.commonName}</p>
+                      <p className="text-xs text-slate-500 truncate">{sp?.commonName}</p>
                     </>
                   )}
+                  {(() => {
+                    const ns = (sp?.nativeStatusLocal && sp.nativeStatusLocal !== 'Unknown')
+                      ? sp.nativeStatusLocal
+                      : (sp?.nativeStatusCountry && sp.nativeStatusCountry !== 'Unknown')
+                      ? sp.nativeStatusCountry
+                      : null;
+                    return ns ? (
+                      <span className={`inline-block mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${nativeStatusStyle(ns)}`}>{nativeStatusLabel(ns)}</span>
+                    ) : null;
+                  })()}
                   <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-50">
                     <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
                     <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setPresenceOnly(!!ind.isPresenceOnly); setShowForm(true); }} className="ml-auto text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
@@ -1078,7 +1091,19 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                             {ind.isPresenceOnly && <span className="ml-2 text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded uppercase">Presence</span>}
                             {ind.isDeceased && <span className="ml-2 text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">Deceased</span>}
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-600">{isPlantInd ? '' : sp?.commonName}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            {isPlantInd ? '' : sp?.commonName}
+                            {(() => {
+                              const ns = (sp?.nativeStatusLocal && sp.nativeStatusLocal !== 'Unknown')
+                                ? sp.nativeStatusLocal
+                                : (sp?.nativeStatusCountry && sp.nativeStatusCountry !== 'Unknown')
+                                ? sp.nativeStatusCountry
+                                : null;
+                              return ns ? (
+                                <span className={`ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${nativeStatusStyle(ns)}`}>{nativeStatusLabel(ns)}</span>
+                              ) : null;
+                            })()}
+                          </td>
                           <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{ind.studbookId}</td>
                           <td className="px-6 py-4 text-right">
                              <div className="flex justify-end gap-2">
@@ -1456,21 +1481,51 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                                     <HelpCircle size={12}/> Species not yet identified?
                                   </button>
                                 ) : (
-                                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in slide-in-from-top-1 duration-150">
-                                    <span className="text-[11px] text-slate-500 font-semibold whitespace-nowrap">Register as:</span>
+                                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-bold text-slate-600">Register unidentified species</span>
+                                      <button type="button" onClick={() => setShowUnknownPicker(false)} className="text-slate-300 hover:text-slate-500 transition-colors"><XIcon size={13}/></button>
+                                    </div>
+                                    {/* Fauna / Flora toggle */}
+                                    <div className="flex gap-2">
+                                      <button type="button"
+                                        onClick={() => setUnknownType('Animal')}
+                                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${unknownType === 'Animal' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
+                                        <PawPrint size={11}/> Fauna
+                                      </button>
+                                      <button type="button"
+                                        onClick={() => setUnknownType('Plant')}
+                                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${unknownType === 'Plant' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
+                                        <Sprout size={11}/> Flora
+                                      </button>
+                                    </div>
+                                    {/* Working name */}
+                                    <div>
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Working name <span className="text-slate-300 font-normal normal-case">(optional)</span></label>
+                                      <input
+                                        type="text"
+                                        value={unknownName}
+                                        onChange={e => setUnknownName(e.target.value)}
+                                        placeholder={`e.g. "Spotted bird near river"`}
+                                        className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                                      />
+                                    </div>
+                                    {/* Description */}
+                                    <div>
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Identifying features <span className="text-slate-300 font-normal normal-case">(optional)</span></label>
+                                      <textarea
+                                        rows={2}
+                                        value={unknownDesc}
+                                        onChange={e => setUnknownDesc(e.target.value)}
+                                        placeholder="Colour, size, markings, habitat…"
+                                        className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-400 bg-white resize-none"
+                                      />
+                                    </div>
                                     <button type="button" disabled={isCreatingUnknown}
-                                      onClick={() => handleSelectUnknown('Animal')}
-                                      className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
-                                      {isCreatingUnknown ? <Loader2 size={11} className="animate-spin"/> : <PawPrint size={11}/>} Fauna
-                                    </button>
-                                    <button type="button" disabled={isCreatingUnknown}
-                                      onClick={() => handleSelectUnknown('Plant')}
-                                      className="flex items-center gap-1.5 px-3 py-1 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
-                                      {isCreatingUnknown ? <Loader2 size={11} className="animate-spin"/> : <Sprout size={11}/>} Flora
-                                    </button>
-                                    <button type="button" onClick={() => setShowUnknownPicker(false)}
-                                      className="ml-auto text-slate-300 hover:text-slate-500 transition-colors">
-                                      <XIcon size={13}/>
+                                      onClick={handleRegisterUnidentified}
+                                      className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors disabled:opacity-50">
+                                      {isCreatingUnknown ? <Loader2 size={12} className="animate-spin"/> : <HelpCircle size={12}/>}
+                                      Register as Unidentified Species
                                     </button>
                                   </div>
                                 )}

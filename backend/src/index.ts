@@ -122,13 +122,15 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country TEXT, native_status_local TEXT)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country TEXT, native_status_local TEXT, description LONGTEXT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, thumbnail_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
   // Migration: add thumbnail_url to existing installs
   try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS thumbnail_url LONGTEXT`); } catch (_) {}
   // Migration: widen native_status columns from VARCHAR(50) to TEXT for existing installs
   try { await db.execute(`ALTER TABLE species MODIFY COLUMN native_status_country TEXT`); } catch (_) {}
   try { await db.execute(`ALTER TABLE species MODIFY COLUMN native_status_local TEXT`); } catch (_) {}
+  // Migration: add description column to existing species tables
+  try { await db.execute(`ALTER TABLE species ADD COLUMN IF NOT EXISTS description LONGTEXT`); } catch (_) {}
   // Migration: orgs that still have the old hard-coded default limit of 100 get reset to 0 (unlimited).
   // 0 means no cap (superadmin / owner org behaviour). Also clear any stale monthly counter so the
   // org isn't stuck in a "limit reached" state caused by the low default.
@@ -281,7 +283,7 @@ app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
     const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
-      contents: `Provide biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}). Org location: ${locationContext}. Return ONLY JSON.`,
+      contents: `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Introduced (non-native), or Invasive specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. Return ONLY JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: speciesSchema,
@@ -656,7 +658,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, image_url, native_status_country, native_status_local FROM species`);
+            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, image_url, native_status_country, native_status_local, description FROM species`);
             speciesRows = s;
             const [i]: any = await db.execute(`SELECT id, project_id, species_id, enclosure_id, studbook_id, name, sex, birth_date, weight_kg, sire_id, dam_id, thumbnail_url, dna_sequence, notes, source, source_details, latitude, longitude, is_deceased, death_date, loan_status, transferred_to_org_id, transfer_date, transfer_note, weight_history, growth_history, health_history FROM individuals`);
             individualsRows = i;
@@ -671,7 +673,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.image_url, s.native_status_country, s.native_status_local FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.image_url, s.native_status_country, s.native_status_local, s.description FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             speciesRows = s;
             const [i]: any = await db.execute(`SELECT i.id, i.project_id, i.species_id, i.enclosure_id, i.studbook_id, i.name, i.sex, i.birth_date, i.weight_kg, i.sire_id, i.dam_id, i.thumbnail_url, i.dna_sequence, i.notes, i.source, i.source_details, i.latitude, i.longitude, i.is_deceased, i.death_date, i.loan_status, i.transferred_to_org_id, i.transfer_date, i.transfer_note, i.weight_history, i.growth_history, i.health_history FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             individualsRows = i;
