@@ -349,6 +349,23 @@ export const BASE_TRANSLATIONS = {
     passwordMismatch: "Passwords do not match.",
     passwordTooShort: "Password must be at least 8 characters.",
     activationFailed: "Failed to activate account.",
+
+    // Super Admin - Upgrade Translations
+    upgradeTranslationsBtn: "Upgrade Translations from Build",
+    upgradingTranslations: "Upgrading...",
+    upgradeResult: "Result:",
+    translationsUpToDate: "All translations are up to date.",
+    newKeys: "new key(s)",
+    createLanguageProfile: "+ Create Language Profile",
+    localisationDictionaryFor: "Localisation Dictionary for",
+    dictionaryMerged: "Dictionary Merged!",
+    localiseViaGeminiAI: "Localise via Gemini AI",
+    setAsSystemDefault: "Set as System Default",
+    retranslateAll: "Retranslate All",
+    insertMissingTranslations: "Insert Missing Translations",
+    searchDictionaryKeys: "Search dictionary keys or English values...",
+    localisationHub: "Localisation Hub",
+    selectLanguageProfile: "Select a language profile to start editing translations or use AI to generate a complete dictionary automatically.",
 };
 
 export type TranslationKey = keyof typeof BASE_TRANSLATIONS;

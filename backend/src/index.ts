@@ -335,7 +335,7 @@ app.post('/api/ai/translate', authenticate, async (req: any, res: any) => {
   try {
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
     const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
-    const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
+    const prompt = `You are a professional translator. Translate the value (v) of each object into ${targetLanguage}. Return the SAME array structure with the translated values. Never return English — every "v" field MUST be in ${targetLanguage}. Source: ${JSON.stringify(payload)}`;
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: prompt,
@@ -527,6 +527,61 @@ app.get('/api/config', async (req: any, res: any) => {
         if (typeof settings === 'string') settings = JSON.parse(settings);
         res.json({ success: true, data: { settings, languages: langRows } });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/upgrade-translations', authenticate, async (req: any, res: any) => {
+    const { role } = req.user;
+    if (role !== 'Super Admin') return res.status(403).json({ error: 'Super Admin only' });
+    const { seedLanguages } = req.body;
+    if (!seedLanguages || !Array.isArray(seedLanguages) || seedLanguages.length === 0) {
+        return res.status(400).json({ error: 'seedLanguages array required' });
+    }
+    try {
+        const db = getDb();
+        type ChangesSummary = { code: string; name: string; addedKeys: string[] };
+        const summary: ChangesSummary[] = [];
+
+        for (const seed of seedLanguages) {
+            const [rows]: any = await db.execute(`SELECT code, name, translations FROM languages WHERE code = ?`, [seed.code]);
+            const addedKeys: string[] = [];
+
+            if (rows.length === 0) {
+                // Language not in DB yet — insert the whole seed
+                await db.execute(
+                    `INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, ?, ?)`,
+                    [seed.code, seed.name, seed.isDefault ? 1 : 0, JSON.stringify(seed.translations || {})]
+                );
+                addedKeys.push(...Object.keys(seed.translations || {}));
+            } else {
+                const dbTranslations: Record<string, string> = typeof rows[0].translations === 'string'
+                    ? JSON.parse(rows[0].translations) : (rows[0].translations || {});
+                const seedTrans: Record<string, string> = seed.translations || {};
+                const merged = { ...dbTranslations };
+
+                for (const [key, value] of Object.entries(seedTrans)) {
+                    if (!(key in dbTranslations)) {
+                        merged[key] = value;
+                        addedKeys.push(key);
+                    }
+                }
+
+                if (addedKeys.length > 0) {
+                    await db.execute(
+                        `UPDATE languages SET translations = ? WHERE code = ?`,
+                        [JSON.stringify(merged), seed.code]
+                    );
+                }
+            }
+
+            if (addedKeys.length > 0) {
+                summary.push({ code: seed.code, name: seed.name, addedKeys });
+            }
+        }
+
+        res.json({ success: true, summary });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/demo-login', async (req: any, res: any) => {
