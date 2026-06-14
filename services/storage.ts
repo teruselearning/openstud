@@ -123,7 +123,14 @@ export const getSystemSettings = (): SystemSettings => {
     termsPage: { enabled: true, title: 'Terms', contentHtml: '' },
     enableMfa: false,
     enableRegistration: true,
-    landingPageConfig: { heroTitle: "", heroSubtitle: "", showFeatures: true, features: [] }
+    landingPageConfig: { heroTitle: "", heroSubtitle: "", showFeatures: true, features: [] },
+    aiProviderText: 'google',
+    aiProviderImage: 'google',
+    aiResearchModel: 'gemini-3-flash-preview',
+    aiImageModel: 'gemini-2.5-flash-image',
+    openrouterApiKey: '',
+    openrouterBaseUrl: 'https://openrouter.ai/api/v1',
+    geminiApiKey: '',
   };
   const stored = get<Partial<SystemSettings>>(KEYS.SETTINGS, {});
   return { ...defaults, ...stored };
@@ -406,7 +413,7 @@ export const sendMfaCode = async (email: string, code: string, lang?: string) =>
   );
 };
 
-export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+export const forgotPassword = async (email: string): Promise<{ success: boolean; message?: string; error?: string; fallbackCode?: string }> => {
   try {
     const users = getUsers();
     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
@@ -417,7 +424,7 @@ export const forgotPassword = async (email: string): Promise<{ success: boolean;
     });
     const data = await response.json();
     if (!response.ok) return { success: false, error: data.error };
-    return { success: true, message: data.message };
+    return { success: true, message: data.message, fallbackCode: data.fallbackCode };
   } catch (e: any) {
     return { success: false, error: "Network error." };
   }
@@ -568,4 +575,35 @@ export const generatePartnerInvite = (): string => {
 
 export const redeemPartnerInvite = (code: string): { success: boolean; message: string } => {
   return { success: true, message: "Partnership established successfully!" };
+};
+
+/** Save an org's OpenRouter API key (server-side). */
+export const saveOpenrouterKey = async (key: string): Promise<boolean> => {
+  try {
+    const token = (localStorage.getItem('os_token') || '').replace(/"/g, '');
+    const response = await fetch('/api/org/openrouter-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ key }),
+    });
+    const data = await response.json();
+    return data.success;
+  } catch { return false; }
+};
+
+/** Save an org's AI provider and model overrides. */
+export const saveOrgAiConfig = async (cfg: {
+  providerText?: string; providerImage?: string;
+  researchModel?: string; imageModel?: string;
+}): Promise<boolean> => {
+  try {
+    const token = (localStorage.getItem('os_token') || '').replace(/"/g, '');
+    const response = await fetch('/api/org/ai-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(cfg),
+    });
+    const data = await response.json();
+    return data.success;
+  } catch { return false; }
 };

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession, clearLocalData } from '../services/storage';
-import { reverseGeocode } from '../services/geminiService';
+import { getOrg, saveOrg, exportFullData, importFullData, getUsers, getProjects, saveProjects, getSpecies, saveSpecies, getIndividuals, saveIndividuals, getCurrentProjectId, saveCurrentProjectId, exportDataAsCSV, getSession, clearLocalData, saveOpenrouterKey, saveOrgAiConfig } from '../services/storage';
+import { reverseGeocode, testAiConfig } from '../services/geminiService';
 import { Organization, User, Project, Species, Individual, UserRole } from '../types';
-import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, Eye, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Check, MapPin, Lock, HeartHandshake, Eye, EyeOff, LayoutTemplate, Briefcase, Trash2, Pencil, FolderOpen, ArrowRightLeft, AlertTriangle, CheckSquare, Square, X, Copy, Users, Plus, Globe, FileSpreadsheet, Shield, Settings, Loader2, ShieldAlert, Box, Dna, PawPrint, Database, Crosshair, Sparkles, PartyPopper, ArrowRight, Image, Zap } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { LanguageContext } from '../App';
 import UserManager from './UserManager';
@@ -41,6 +41,19 @@ const OrgSettings: React.FC = () => {
   const [isSavingGeminiKey, setIsSavingGeminiKey] = useState(false);
   const [geminiKeySaved, setGeminiKeySaved] = useState(false);
 
+  const [openrouterKeyInput, setOpenrouterKeyInput] = useState('');
+  const [showOpenrouterKey, setShowOpenrouterKey] = useState(false);
+  const [isSavingOpenrouterKey, setIsSavingOpenrouterKey] = useState(false);
+  const [openrouterKeySaved, setOpenrouterKeySaved] = useState(false);
+  const [aiProviderText, setAiProviderText] = useState(org?.aiProviderText || 'google');
+  const [aiProviderImage, setAiProviderImage] = useState(org?.aiProviderImage || 'google');
+  const [aiResearchModel, setAiResearchModel] = useState(org?.aiResearchModel || '');
+  const [aiImageModel, setAiImageModel] = useState(org?.aiImageModel || '');
+  const [isSavingAiConfig, setIsSavingAiConfig] = useState(false);
+  const [aiConfigSaved, setAiConfigSaved] = useState(false);
+  const [isTestingAi, setIsTestingAi] = useState<'text' | 'image' | null>(null);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; result?: string; error?: string } | null>(null);
+
   const [isClearingCache, setIsClearingCache] = useState(false);
 
   const mapRef = useRef<HTMLDivElement>(null);
@@ -51,6 +64,10 @@ const OrgSettings: React.FC = () => {
   useEffect(() => {
     const currentOrg = getOrg();
     setOrg(currentOrg);
+    setAiProviderText(currentOrg?.aiProviderText || 'google');
+    setAiProviderImage(currentOrg?.aiProviderImage || 'google');
+    setAiResearchModel(currentOrg?.aiResearchModel || '');
+    setAiImageModel(currentOrg?.aiImageModel || '');
     setUsers(getUsers());
     
     const allProjects = getProjects();
@@ -481,6 +498,186 @@ const OrgSettings: React.FC = () => {
             )}
           </div>
           <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={12} /> Your key is stored encrypted on the server. It is never sent to your browser after being saved.</p>
+        </div>
+      )}
+
+      {/* OpenRouter API Key */}
+      {activeTab === 'general' && !isDemoOrg && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-blue-600" />
+            <h3 className="font-medium text-slate-900">AI Integration — OpenRouter API Key</h3>
+            {org?.hasOpenrouterKey && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 ml-1">
+                <Check size={12} /> Active
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500">
+            OpenRouter provides access to many models (Claude, GPT, Gemini, Llama, and more) through a single API key.
+            Get a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-blue-600 underline hover:text-blue-700">openrouter.ai/keys</a>.
+          </p>
+          {org?.hasOpenrouterKey && (
+            <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-800 border border-blue-200">
+              <Check size={16} className="shrink-0" />
+              <span>An OpenRouter API key is active for this organisation.</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showOpenrouterKey ? 'text' : 'password'}
+                value={openrouterKeyInput}
+                onChange={e => setOpenrouterKeyInput(e.target.value)}
+                placeholder={org?.hasOpenrouterKey ? 'Enter new key to replace existing…' : 'Paste your OpenRouter API key here…'}
+                className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 font-mono text-sm"
+              />
+              <button type="button" onClick={() => setShowOpenrouterKey(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                {showOpenrouterKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setIsSavingOpenrouterKey(true);
+                const ok = await saveOpenrouterKey(openrouterKeyInput);
+                if (ok) {
+                  setOrg(prev => prev ? { ...prev, hasOpenrouterKey: true } : prev);
+                  setOpenrouterKeyInput('');
+                  setOpenrouterKeySaved(true);
+                  setTimeout(() => setOpenrouterKeySaved(false), 3000);
+                } else { alert('Failed to save OpenRouter API key.'); }
+                setIsSavingOpenrouterKey(false);
+              }}
+              disabled={!openrouterKeyInput.trim() || isSavingOpenrouterKey}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium text-sm transition-colors"
+            >
+              {isSavingOpenrouterKey ? <Loader2 size={16} className="animate-spin" /> : openrouterKeySaved ? <Check size={16} /> : <Save size={16} />}
+              {openrouterKeySaved ? 'Saved!' : 'Save Key'}
+            </button>
+            {org?.hasOpenrouterKey && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm('Remove the OpenRouter API key?')) return;
+                  setIsSavingOpenrouterKey(true);
+                  const ok = await saveOpenrouterKey('');
+                  if (ok) {
+                    setOrg(prev => prev ? { ...prev, hasOpenrouterKey: false } : prev);
+                  }
+                  setIsSavingOpenrouterKey(false);
+                }}
+                disabled={isSavingOpenrouterKey}
+                className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 font-medium text-sm transition-colors"
+              >
+                <X size={16} /> Remove
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 flex items-center gap-1"><Lock size={12} /> Your key is stored securely on the server.</p>
+        </div>
+      )}
+
+      {/* AI Provider and Model Overrides */}
+      {activeTab === 'general' && !isDemoOrg && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Zap size={18} className="text-amber-500" />
+            <h3 className="font-medium text-slate-900">AI Provider & Model Overrides</h3>
+          </div>
+          <p className="text-sm text-slate-500">
+            Override the global AI provider and model defaults for this organization. Leave blank to use the system defaults set by the Super Admin.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Research Model Provider</label>
+              <select value={aiProviderText} onChange={e => setAiProviderText(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900">
+                <option value="">Use System Default</option>
+                <option value="google">Google (Gemini)</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Image Generation Provider</label>
+              <select value={aiProviderImage} onChange={e => setAiProviderImage(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900">
+                <option value="">Use System Default</option>
+                <option value="google">Google (Gemini)</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Research Model</label>
+              <input type="text" value={aiResearchModel} onChange={e => setAiResearchModel(e.target.value)} placeholder="Use system default" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Image Model</label>
+              <input type="text" value={aiImageModel} onChange={e => setAiImageModel(e.target.value)} placeholder="Use system default" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={async () => {
+                setIsSavingAiConfig(true);
+                const ok = await saveOrgAiConfig({
+                  providerText: aiProviderText || undefined,
+                  providerImage: aiProviderImage || undefined,
+                  researchModel: aiResearchModel || undefined,
+                  imageModel: aiImageModel || undefined,
+                });
+                if (ok) {
+                  setAiConfigSaved(true);
+                  setTimeout(() => setAiConfigSaved(false), 3000);
+                } else { alert('Failed to save AI config.'); }
+                setIsSavingAiConfig(false);
+              }}
+              disabled={isSavingAiConfig}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-black font-medium text-sm transition-colors disabled:opacity-50"
+            >
+              {isSavingAiConfig ? <Loader2 size={16} className="animate-spin" /> : aiConfigSaved ? <Check size={16} /> : <Save size={16} />}
+              {aiConfigSaved ? 'Saved!' : 'Save AI Config'}
+            </button>
+
+            {/* Test Text Model */}
+            <button
+              type="button"
+              onClick={async () => {
+                setIsTestingAi('text');
+                setAiTestResult(null);
+                const res = await testAiConfig({ provider: aiProviderText || 'google', model: aiResearchModel || 'gemini-3-flash-preview', purpose: 'text' });
+                setAiTestResult(res);
+                setIsTestingAi(null);
+              }}
+              disabled={isTestingAi !== null}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+            >
+              {isTestingAi === 'text' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              {isTestingAi === 'text' ? 'Testing...' : 'Test Text Model'}
+            </button>
+
+            {/* Test Image Model */}
+            <button
+              type="button"
+              onClick={async () => {
+                setIsTestingAi('image');
+                setAiTestResult(null);
+                const res = await testAiConfig({ provider: aiProviderImage || 'google', model: aiImageModel || 'gemini-2.5-flash-image', purpose: 'image' });
+                setAiTestResult(res);
+                setIsTestingAi(null);
+              }}
+              disabled={isTestingAi !== null}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+            >
+              {isTestingAi === 'image' ? <Loader2 size={16} className="animate-spin" /> : <Image size={16} />}
+              {isTestingAi === 'image' ? 'Testing...' : 'Test Image Model'}
+            </button>
+          </div>
+          {aiTestResult && (
+            <div className={`p-3 rounded-lg text-sm ${aiTestResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {aiTestResult.success ? 'Configuration works!' : `Test failed: ${aiTestResult.error}`}
+              {aiTestResult.result && <pre className="mt-1 text-xs text-slate-600 bg-slate-50 p-2 rounded overflow-auto max-h-32">{aiTestResult.result}</pre>}
+            </div>
+          )}
         </div>
       )}
 

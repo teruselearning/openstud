@@ -63,6 +63,12 @@ export interface Organization {
   aiUsageCount?: number;
   aiUsageLastReset?: string;
   hasOwnGeminiKey?: boolean; // true when a Gemini API key is stored server-side for this org
+  // Per-org AI provider overrides
+  aiProviderText?: string;
+  aiProviderImage?: string;
+  aiResearchModel?: string;
+  aiImageModel?: string;
+  hasOpenrouterKey?: boolean;
   deleted?: boolean;
 }
 
@@ -196,6 +202,14 @@ export interface SystemSettings {
   enableMfa: boolean;
   enableRegistration: boolean;
   aiModel?: string;
+  // Global AI provider defaults (overridable per-org)
+  aiProviderText?: string;
+  aiProviderImage?: string;
+  aiResearchModel?: string;
+  aiImageModel?: string;
+  openrouterApiKey?: string;
+  openrouterBaseUrl?: string;
+  geminiApiKey?: string;
 }
 
 export interface LanguageConfig {

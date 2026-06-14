@@ -1,7 +1,7 @@
 import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals, upgradeTranslations } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
-import { translateDictionary } from '../services/geminiService';
+import { translateDictionary, testAiConfig } from '../services/geminiService';
 import {
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2,
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette,
@@ -14,7 +14,7 @@ import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConf
 import RichTextEditor from '../components/RichTextEditor';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from '../services/i18n';
 
-type AdminTab = 'overview' | 'email' | 'settings' | 'security' | 'languages';
+type AdminTab = 'overview' | 'email' | 'settings' | 'security' | 'languages' | 'ai';
 type OverviewSubTab = 'organizations' | 'species_browser';
 
 const SuperAdmin: React.FC = () => {
@@ -60,6 +60,17 @@ const SuperAdmin: React.FC = () => {
   const [isTranslatingLanding, setIsTranslatingLanding] = useState(false);
   const [landingTranslationProgress, setLandingTranslationProgress] = useState<{ done: number; total: number } | null>(null);
   const [landingTranslateSuccess, setLandingTranslateSuccess] = useState(false);
+
+  const [aiProviderText, setAiProviderText] = useState(settings.aiProviderText || 'google');
+  const [aiProviderImage, setAiProviderImage] = useState(settings.aiProviderImage || 'google');
+  const [aiResearchModel, setAiResearchModel] = useState(settings.aiResearchModel || 'gemini-3-flash-preview');
+  const [aiImageModel, setAiImageModel] = useState(settings.aiImageModel || 'gemini-2.5-flash-image');
+  const [openrouterKey, setOpenrouterKey] = useState('');
+  const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState(settings.openrouterBaseUrl || 'https://openrouter.ai/api/v1');
+  const [geminiKey, setGeminiKey] = useState('');
+  const [isTestingAi, setIsTestingAi] = useState<'text' | 'image' | null>(null);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; result?: string; error?: string } | null>(null);
+  const [aiConfigSaved, setAiConfigSaved] = useState(false);
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -382,6 +393,7 @@ finally { setIsAutoFilling(false); }
            <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> {t('email')}</button>
            <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> {t('landing')}</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('localisation')}</button>
+           <button onClick={() => setActiveTab('ai')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${activeTab === 'ai' ? 'bg-white text-cyan-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><Sparkles size={14} className="inline mr-1" /> AI</button>
         </div>
       </div>
 
@@ -860,6 +872,119 @@ finally { setIsAutoFilling(false); }
                )}
             </div>
          </div>
+      )}
+
+      {activeTab === 'ai' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Sparkles size={20} className="text-cyan-600" />
+              <h3 className="text-lg font-bold text-slate-900">{t('aiGlobalDefaults')}</h3>
+            </div>
+            <p className="text-sm text-slate-500">{t('aiGlobalDefaultsDesc')}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiProviderText')}</label>
+                <select value={aiProviderText} onChange={e => setAiProviderText(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900">
+                  <option value="google">{t('aiGoogle')}</option>
+                  <option value="openrouter">{t('aiOpenrouter')}</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiProviderImage')}</label>
+                <select value={aiProviderImage} onChange={e => setAiProviderImage(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900">
+                  <option value="google">{t('aiGoogle')}</option>
+                  <option value="openrouter">{t('aiOpenrouter')}</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiResearchModel')}</label>
+                <input type="text" value={aiResearchModel} onChange={e => setAiResearchModel(e.target.value)} placeholder={t('aiResearchModelPlaceholder')} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiImageModel')}</label>
+                <input type="text" value={aiImageModel} onChange={e => setAiImageModel(e.target.value)} placeholder={t('aiImageModelPlaceholder')} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <h4 className="text-sm font-bold text-slate-700">{t('openrouterApiKey')}</h4>
+              <p className="text-xs text-slate-500">{t('openrouterApiKeyDesc')}</p>
+              <input type="password" value={openrouterKey} onChange={e => setOpenrouterKey(e.target.value)} placeholder="sk-or-v1-..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('openrouterBaseUrl')}</label>
+                <input type="text" value={openrouterBaseUrl} onChange={e => setOpenrouterBaseUrl(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <h4 className="text-sm font-bold text-slate-700">{t('geminiApiKey')}</h4>
+              <p className="text-xs text-slate-500">{t('geminiApiKeyDesc')}</p>
+              <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={async () => {
+                  const s = { ...settings, aiProviderText, aiProviderImage, aiResearchModel, aiImageModel, openrouterApiKey: openrouterKey || settings.openrouterApiKey, openrouterBaseUrl, geminiApiKey: geminiKey || settings.geminiApiKey };
+                  await saveSystemSettings(s);
+                  setSettings(s);
+                  setAiConfigSaved(true);
+                  setTimeout(() => setAiConfigSaved(false), 3000);
+                }}
+                className="flex items-center gap-2 px-5 py-2 bg-slate-900 text-white rounded-lg hover:bg-black font-bold text-sm transition-colors"
+              >
+                {aiConfigSaved ? <CheckCircle2 size={16} /> : <Save size={16} />}
+                {aiConfigSaved ? t('saved') : t('saveSettings')}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+            <h3 className="font-medium text-slate-900 flex items-center gap-2"><Zap size={18} className="text-amber-500"/> {t('aiTestBtn')}</h3>
+            <p className="text-sm text-slate-500">{t('aiTestDesc')}</p>
+            {aiTestResult && (
+              <div className={`p-3 rounded-lg text-sm ${aiTestResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {aiTestResult.success ? <CheckCircle2 size={16} className="inline mr-1" /> : <AlertCircle size={16} className="inline mr-1" />}
+                {aiTestResult.success ? t('aiTestSuccess') : (t('aiTestFail').replace('{{error}}', aiTestResult.error || ''))}
+                {aiTestResult.result && <pre className="mt-1 text-xs text-slate-600 bg-slate-50 p-2 rounded overflow-auto max-h-32">{aiTestResult.result}</pre>}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  setIsTestingAi('text');
+                  setAiTestResult(null);
+                  const testKey = aiProviderText === 'openrouter' ? (openrouterKey || undefined) : (geminiKey || undefined);
+                  const res = await testAiConfig({ provider: aiProviderText, model: aiResearchModel, apiKey: testKey, purpose: 'text' });
+                  setAiTestResult(res);
+                  setIsTestingAi(null);
+                }}
+                disabled={isTestingAi !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+              >
+                {isTestingAi === 'text' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {isTestingAi === 'text' ? t('aiTesting') : t('aiTestText')}
+              </button>
+              <button
+                onClick={async () => {
+                  setIsTestingAi('image');
+                  setAiTestResult(null);
+                  const testKey = aiProviderImage === 'openrouter' ? (openrouterKey || undefined) : (geminiKey || undefined);
+                  const res = await testAiConfig({ provider: aiProviderImage, model: aiImageModel, apiKey: testKey, purpose: 'image' });
+                  setAiTestResult(res);
+                  setIsTestingAi(null);
+                }}
+                disabled={isTestingAi !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+              >
+                {isTestingAi === 'image' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                {isTestingAi === 'image' ? t('aiTesting') : t('aiTestImage')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Permanently Delete Organization Modal */}
