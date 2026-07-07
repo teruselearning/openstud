@@ -1,0 +1,84 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openrouter": {
+      "npm": "@openrouter/ai-sdk-provider",
+      "models": {
+        "xiaomi/mimo-v2.5": {},
+        "deepseek/deepseek-r1": {},
+        "google/gemini-2.5-flash": {},
+        "google/gemini-2.5-pro": {},
+        "deepseek/deepseek-v4-flash": {}
+      }
+    }
+  },
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "description": "Full-stack developer agent for writing and editing code",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
+      "temperature": 0.2,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
+      }
+    },
+    "plan": {
+      "mode": "primary",
+      "description": "Planning agent — analyses code and creates plans without making changes",
+      "model": "openrouter/google/gemini-2.5-flash",
+      "temperature": 0.1,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "mcp:codegraph:codegraph_explore": "allow",
+        "mcp:codegraph:codegraph_search": "allow",
+        "mcp:codegraph:codegraph_callers": "allow",
+        "mcp:codegraph:codegraph_callees": "allow",
+        "mcp:codegraph:codegraph_impact": "allow",
+        "mcp:codegraph:codegraph_files": "allow",
+        "mcp:codegraph:codegraph_status": "allow"        
+      }
+    },
+    "reviewer": {
+      "mode": "subagent",
+      "description": "Code reviewer — called automatically when code changes are made. Reviews for security, performance, and correctness.",
+      "model": "openrouter/google/gemini-2.5-flash",
+      "temperature": 0.1,
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      }
+    },
+    "researcher": {
+      "mode": "subagent",
+      "description": "Research agent — searches documentation, external repos, and the web for answers to technical questions.",
+      "model": "openrouter/openai/o3-mini",
+      "temperature": 0.3,
+      "permission": {
+        "edit": "deny",
+        "bash": "allow"
+      }
+    },
+    "wiki-writer": {
+      "mode": "subagent",
+      "description": "Wiki maintenance agent — updates the LLM wiki after significant changes. Called after major code changes or decisions.",
+      "model": "openrouter/google/gemini-2.5-flash",
+      "temperature": 0.2,
+      "permission": {
+        "edit": "allow",
+        "bash": "deny"
+      }
+    },
+    "translation-checker": {
+      "mode": "subagent",
+      "description": "Translation checker — invoked after feature development to ensure all frontend strings are added to the translation system (BASE_TRANSLATIONS, SEED_LANGUAGES, and backend seed file).",
+      "model": "openrouter/google/gemini-2.5-pro",
+      "temperature": 0.1,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
+      }
+    }
+  }
+}

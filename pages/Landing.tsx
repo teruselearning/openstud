@@ -291,7 +291,7 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
     setError(null);
     try {
        const res = await forgotPassword(forgotEmail);
-       if (res.success) { setSuccess(res.message || "Code sent."); setViewMode('reset_password'); } 
+       if (res.success) { setSuccess(res.message || "Code sent."); if (res.fallbackCode) setFallbackCode(res.fallbackCode); setViewMode('reset_password'); } 
        else { setError(res.error || "Request failed."); }
     } catch(e: any) { setError(e.message); }
     finally { setIsLoading(false); }
@@ -501,6 +501,48 @@ const Landing: React.FC<LandingProps> = ({ onLogin, initialView = 'landing' }) =
                 <div><input className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" placeholder="000000" maxLength={6} value={regData.code} onChange={e => setRegData({...regData, code: e.target.value.replace(/\D/g, '')})} required autoFocus /></div>
                 <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2" disabled={isLoading || regData.code.length < 6}>{isLoading ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20}/>} Complete Registration</button>
                 <button type="button" onClick={handleSendRegCode} className="text-sm text-slate-400 font-medium hover:text-emerald-600 transition-colors">Resend Code</button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'forgot_password' && (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
+              <button onClick={() => { setSuccess(null); setError(null); setViewMode('login'); }} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('backToLogin')}</button>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('forgotPasswordTitle')}</h2>
+              <p className="text-slate-500 mb-6 text-sm">{t('forgotPasswordDesc')}</p>
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold"><Shield size={16} /> {error}</div>}
+              {success && <div className="mb-4 p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2 font-bold"><CheckCircle2 size={16} /> {success}</div>}
+              <form onSubmit={handleForgotSubmit} className="space-y-4">
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('workEmail')}</label><div className="relative"><Mail size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="you@organisation.org" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required /></div></div>
+                <div className="pt-2"><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-black transition-colors flex items-center justify-center gap-2" disabled={isLoading}>{isLoading ? <Loader2 size={18} className="animate-spin" /> : <Mail size={18} />} {t('sendResetCode')}</button></div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'reset_password' && (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 text-left">
+              <button onClick={() => { setSuccess(null); setError(null); setViewMode('forgot_password'); }} className="text-sm text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1">← {t('back')}</button>
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><Key size={32} /></div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2 text-center">{t('checkYourEmail')}</h2>
+              <p className="text-slate-500 mb-6 text-sm text-center">{t('resetPasswordDesc')}</p>
+              {fallbackCode && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+                  <p className="text-amber-800 text-xs font-bold uppercase tracking-wide mb-1">⚠ Email not configured</p>
+                  <p className="text-amber-700 text-sm mb-2">Your password reset code is:</p>
+                  <div className="text-center font-mono text-3xl font-bold tracking-[0.4em] text-amber-900 py-2">{fallbackCode}</div>
+                </div>
+              )}
+              {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 font-bold"><Shield size={16} /> {error}</div>}
+              {success && <div className="mb-4 p-3 bg-emerald-50 text-emerald-600 text-sm rounded-lg flex items-center gap-2 font-bold"><CheckCircle2 size={16} /> {success}</div>}
+              <form onSubmit={handleResetSubmit} className="space-y-4">
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('resetCode')}</label><input className="w-full text-center text-3xl font-bold tracking-[0.5em] py-4 border-2 border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-50 text-slate-900" placeholder="000000" maxLength={6} value={resetData.code} onChange={e => setResetData({...resetData, code: e.target.value.replace(/\D/g, '')})} required autoFocus /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('newPassword')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="new-password" autoComplete="new-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={resetData.newPassword} onChange={e => setResetData({...resetData, newPassword: e.target.value})} required /></div></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">{t('confirmNewPassword')}</label><div className="relative"><Lock size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" /><input type="password" name="confirm-password" autoComplete="new-password" className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="••••••••" value={resetData.confirmPassword} onChange={e => setResetData({...resetData, confirmPassword: e.target.value})} required /></div></div>
+                <div className="pt-2"><button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2 shadow-lg" disabled={isLoading || resetData.code.length < 6}>{isLoading ? <Loader2 size={18} className="animate-spin" /> : <Key size={18} />} {t('resetPasswordBtn')}</button></div>
               </form>
             </div>
           </div>

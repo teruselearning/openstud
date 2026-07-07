@@ -141,3 +141,23 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
     return handleAiError(e);
   }
 };
+
+/** Test an AI provider configuration. */
+export const testAiConfig = async (params: {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  purpose: 'text' | 'image';
+}): Promise<{ success: boolean; result?: string; error?: string }> => {
+  try {
+    const response = await fetch('/api/ai/test', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(params),
+    });
+    const data = await response.json();
+    return data;
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+};

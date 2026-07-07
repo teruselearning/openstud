@@ -144,6 +144,12 @@ const runMigrations = async (db: mysql.Pool) => {
   try { await db.execute(`UPDATE organizations SET ai_usage_count = 0 WHERE ai_usage_limit = 0`); } catch (_) {}
   // Migration: add per-org Gemini API key storage (key never leaves the server).
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key TEXT NULL`); } catch (_) {}
+  // Migration: add per-org OpenRouter API key and AI provider/model config
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS openrouter_api_key TEXT NULL`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_text VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_image VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_research_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_image_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
   await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON, feed_schedules JSON)`);
   try { await db.execute(`ALTER TABLE enclosures ADD COLUMN feed_schedules JSON`); } catch (e: any) { if (!e.message?.includes('Duplicate column')) throw e; }
   await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
@@ -248,22 +254,71 @@ app.post('/api/install/setup', async (req: any, res: any) => {
 
 // --- AI Proxy Endpoints ---
 
-/** Returns the best available Gemini API key for a given org (org key > env key). */
-const getEffectiveApiKey = async (orgId: string): Promise<string> => {
-  try {
-    const db = getDb();
-    const [rows]: any = await db.execute(`SELECT gemini_api_key FROM organizations WHERE id = ?`, [orgId]);
-    const orgKey = rows[0]?.gemini_api_key;
-    if (orgKey) return orgKey;
-  } catch (_) {}
-  return process.env.API_KEY || '';
+/** AI provider configuration for an org (merged global defaults + org overrides). */
+interface AiConfig {
+  providerText: string;
+  providerImage: string;
+  researchModel: string;
+  imageModel: string;
+  googleApiKey: string;
+  openrouterApiKey: string;
+  openrouterBaseUrl: string;
+}
+
+const DEFAULT_AI_CONFIG: AiConfig = {
+  providerText: 'google',
+  providerImage: 'google',
+  researchModel: 'gemini-3-flash-preview',
+  imageModel: 'gemini-2.5-flash-image',
+  googleApiKey: process.env.API_KEY || '',
+  openrouterApiKey: '',
+  openrouterBaseUrl: 'https://openrouter.ai/api/v1',
 };
 
-/** Strip the raw gemini_api_key from an org row before sending to clients; expose only a boolean. */
+const getAiConfig = async (orgId: string): Promise<AiConfig> => {
+  const config = { ...DEFAULT_AI_CONFIG };
+  try {
+    const db = getDb();
+    // 1. Load global defaults from app_config
+    const [appRows]: any = await db.execute(`SELECT settings FROM app_config WHERE id = 'global-settings'`);
+    if (appRows.length > 0) {
+      const globalSettings = typeof appRows[0].settings === 'string'
+        ? JSON.parse(appRows[0].settings) : (appRows[0].settings || {});
+      if (globalSettings.aiResearchModel) config.researchModel = globalSettings.aiResearchModel;
+      if (globalSettings.aiImageModel) config.imageModel = globalSettings.aiImageModel;
+      if (globalSettings.aiProviderText) config.providerText = globalSettings.aiProviderText;
+      if (globalSettings.aiProviderImage) config.providerImage = globalSettings.aiProviderImage;
+      if (globalSettings.openrouterApiKey) {
+        config.openrouterApiKey = globalSettings.openrouterApiKey;
+        config.openrouterBaseUrl = globalSettings.openrouterBaseUrl || 'https://openrouter.ai/api/v1';
+      }
+      if (globalSettings.geminiApiKey) {
+        config.googleApiKey = globalSettings.geminiApiKey;
+      }
+    }
+    // 2. Override with org-specific settings
+    const [orgRows]: any = await db.execute(
+      `SELECT gemini_api_key, openrouter_api_key, ai_provider_text, ai_provider_image, ai_research_model, ai_image_model FROM organizations WHERE id = ?`,
+      [orgId]
+    );
+    if (orgRows.length > 0) {
+      const org = orgRows[0];
+      if (org.ai_provider_text) config.providerText = org.ai_provider_text;
+      if (org.ai_provider_image) config.providerImage = org.ai_provider_image;
+      if (org.ai_research_model) config.researchModel = org.ai_research_model;
+      if (org.ai_image_model) config.imageModel = org.ai_image_model;
+      if (org.gemini_api_key) config.googleApiKey = org.gemini_api_key;
+      if (org.openrouter_api_key) config.openrouterApiKey = org.openrouter_api_key;
+    }
+  } catch (_) {}
+  return config;
+};
+
+/** Strip raw API keys from an org row before sending to clients; expose only booleans. */
 const sanitizeOrgForClient = (org: any) => {
   if (!org) return org;
-  const { gemini_api_key, ...rest } = org;
-  return { ...rest, has_gemini_api_key: !!gemini_api_key };
+  const { gemini_api_key, openrouter_api_key, ...rest } = org;
+  return { ...rest, has_gemini_api_key: !!gemini_api_key, has_openrouter_key: !!openrouter_api_key };
 };
 
 /** Save or clear an org's Gemini API key. Only Admin / Super Admin roles may call this. */
@@ -272,7 +327,7 @@ app.post('/api/org/gemini-key', authenticate, async (req: any, res: any) => {
   if (!['Admin', 'Super Admin'].includes(role)) {
     return res.status(403).json({ error: 'Insufficient permissions' });
   }
-  const { key } = req.body; // empty string / null = clear
+  const { key } = req.body;
   try {
     const db = getDb();
     const cleanKey = (typeof key === 'string' && key.trim()) ? key.trim() : null;
@@ -283,20 +338,116 @@ app.post('/api/org/gemini-key', authenticate, async (req: any, res: any) => {
   }
 });
 
-app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
-  const { commonName, type, locationContext } = req.body;
+/** Save or clear an org's OpenRouter API key. Admin / Super Admin only. */
+app.post('/api/org/openrouter-key', authenticate, async (req: any, res: any) => {
+  const { orgId, role } = req.user;
+  if (!['Admin', 'Super Admin'].includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  const { key } = req.body;
   try {
-    const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Introduced (non-native), or Invasive specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. Return ONLY JSON.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: speciesSchema,
+    const db = getDb();
+    const cleanKey = (typeof key === 'string' && key.trim()) ? key.trim() : null;
+    await db.execute(`UPDATE organizations SET openrouter_api_key = ? WHERE id = ?`, [cleanKey, orgId]);
+    res.json({ success: true, has_openrouter_key: !!cleanKey });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Save org-level AI provider and model overrides. */
+app.post('/api/org/ai-config', authenticate, async (req: any, res: any) => {
+  const { orgId, role } = req.user;
+  if (!['Admin', 'Super Admin'].includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  const { providerText, providerImage, researchModel, imageModel } = req.body;
+  try {
+    const db = getDb();
+    await db.execute(
+      `UPDATE organizations SET ai_provider_text = ?, ai_provider_image = ?, ai_research_model = ?, ai_image_model = ? WHERE id = ?`,
+      [providerText || null, providerImage || null, researchModel || null, imageModel || null, orgId]
+    );
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * Route an AI request to the configured provider.
+ * Works for both Gemini (Google GenAI SDK) and OpenRouter (OpenAI-compatible API).
+ */
+const callAiProvider = async (config: AiConfig, purpose: 'text' | 'image', prompt: string, jsonMode = false): Promise<string> => {
+  const provider = purpose === 'image' ? config.providerImage : config.providerText;
+  const model = purpose === 'image' ? config.imageModel : config.researchModel;
+
+  if (provider === 'openrouter') {
+    if (!config.openrouterApiKey) throw new Error('OpenRouter API key is not configured.');
+    const openAiBody: any = {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+    };
+    if (jsonMode) openAiBody.response_format = { type: 'json_object' };
+    if (purpose === 'image') openAiBody.response_format = undefined; // image gen may not support JSON
+
+    const response = await fetch(`${config.openrouterBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.openrouterApiKey}`,
       },
+      body: JSON.stringify(openAiBody),
     });
-    if (response.text) {
-      const sanitized = sanitizeJsonResponse(response.text);
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      throw new Error(`OpenRouter error (${response.status}): ${errBody}`);
+    }
+    const data: any = await response.json();
+    const text = data?.choices?.[0]?.message?.content || '';
+    return text;
+  }
+
+  // Default: Gemini (Google)
+  if (!config.googleApiKey) throw new Error('Google AI (Gemini) API key is not configured.');
+  const { GoogleGenAI } = await import('@google/genai');
+  const ai = new GoogleGenAI({ apiKey: config.googleApiKey });
+
+  if (purpose === 'image') {
+    const response = await ai.models.generateContent({
+      model,
+      contents: { parts: [{ text: prompt }] },
+    });
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData) {
+            return `IMAGE_BASE64:${part.inlineData.data}`;
+          }
+        }
+      }
+    }
+    throw new Error('No image generated');
+  }
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: jsonMode ? { responseMimeType: "application/json", responseSchema: purpose === 'text' ? speciesSchema : translationSchema } : undefined,
+  });
+  return response.text || '';
+};
+
+app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
+  const { commonName, type, locationContext, model: reqModel } = req.body;
+  try {
+    const config = await getAiConfig(req.user.orgId);
+    if (reqModel) config.researchModel = reqModel;
+    const prompt = `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Introduced (non-native), or Invasive specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. Return ONLY JSON.`;
+    const text = await callAiProvider(config, 'text', prompt, true);
+    if (text) {
+      const sanitized = sanitizeJsonResponse(text);
       res.json(JSON.parse(sanitized));
     } else {
       res.status(500).json({ error: "AI returned empty response" });
@@ -307,23 +458,20 @@ app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
 });
 
 app.post('/api/ai/generate-image', authenticate, async (req: any, res: any) => {
-  const { prompt } = req.body;
+  const { prompt, model: reqModel } = req.body;
   try {
-    const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
-    const response = await ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: { parts: [{ text: prompt }] }
-    });
-    if (response.candidates && response.candidates.length > 0) {
-      const candidate = response.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        for (const part of candidate.content.parts) {
-          if (part.inlineData) {
-            return res.json({ imageUrl: `data:image/png;base64,${part.inlineData.data}` });
-          }
-        }
-      }
+    const config = await getAiConfig(req.user.orgId);
+    if (reqModel) config.imageModel = reqModel;
+    const result = await callAiProvider(config, 'image', prompt, false);
+    if (result.startsWith('IMAGE_BASE64:')) {
+      return res.json({ imageUrl: `data:image/png;base64,${result.slice(13)}` });
     }
+    if (result.startsWith('data:image') || result.startsWith('http')) {
+      return res.json({ imageUrl: result });
+    }
+    // For OpenRouter, images often come as markdown or URL
+    const urlMatch = result.match(/(https?:\/\/[^\s\)]+\.(png|jpg|jpeg|gif|webp))/i);
+    if (urlMatch) return res.json({ imageUrl: urlMatch[1] });
     res.status(404).json({ error: "No image generated" });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -331,27 +479,50 @@ app.post('/api/ai/generate-image', authenticate, async (req: any, res: any) => {
 });
 
 app.post('/api/ai/translate', authenticate, async (req: any, res: any) => {
-  const { sourceData, targetLanguage } = req.body;
+  const { sourceData, targetLanguage, model: reqModel } = req.body;
   try {
+    const config = await getAiConfig(req.user.orgId);
+    if (reqModel) config.researchModel = reqModel;
     const payload = Object.entries(sourceData).map(([k, v]) => ({ k, v }));
-    const ai = new GoogleGenAI({ apiKey: await getEffectiveApiKey(req.user.orgId) });
-    const prompt = `Translate interface strings into "${targetLanguage}": ${JSON.stringify(payload)}`;
-    const response = await ai.models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: translationSchema
-      }
-    });
-    if (response.text) {
-      const sanitized = sanitizeJsonResponse(response.text);
+    const prompt = `You are a professional translator. Translate the value (v) of each object into ${targetLanguage}. Return the SAME array structure with the translated values. Never return English — every "v" field MUST be in ${targetLanguage}. Source: ${JSON.stringify(payload)}`;
+    const text = await callAiProvider(config, 'text', prompt, true);
+    if (text) {
+      const sanitized = sanitizeJsonResponse(text);
       res.json(JSON.parse(sanitized));
     } else {
       res.json([]);
     }
   } catch (e: any) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+/** Test AI configuration — sends a short prompt and returns success/error. */
+app.post('/api/ai/test', authenticate, async (req: any, res: any) => {
+  const { provider, model, apiKey, purpose } = req.body;
+  const textPurpose: 'text' | 'image' = purpose === 'image' ? 'image' : 'text';
+  try {
+    const config = await getAiConfig(req.user.orgId);
+    // Override with test values if provided
+    if (provider) {
+      if (textPurpose === 'text') config.providerText = provider;
+      else config.providerImage = provider;
+    }
+    if (model) {
+      if (textPurpose === 'text') config.researchModel = model;
+      else config.imageModel = model;
+    }
+    if (apiKey) {
+      if (provider === 'openrouter') config.openrouterApiKey = apiKey;
+      else config.googleApiKey = apiKey;
+    }
+    const testPrompt = textPurpose === 'image'
+      ? 'A simple green square on a white background. Return ONLY the image, no text.'
+      : 'Respond with a single JSON object: {"status":"ok","model":"' + (model || (textPurpose === 'text' ? config.researchModel : config.imageModel)) + '"}. Do not include any other text.';
+    const result = await callAiProvider(config, textPurpose, testPrompt, true);
+    res.json({ success: true, result: result.substring(0, 500) });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
@@ -529,6 +700,61 @@ app.get('/api/config', async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/upgrade-translations', authenticate, async (req: any, res: any) => {
+    const { role } = req.user;
+    if (role !== 'Super Admin') return res.status(403).json({ error: 'Super Admin only' });
+    const { seedLanguages } = req.body;
+    if (!seedLanguages || !Array.isArray(seedLanguages) || seedLanguages.length === 0) {
+        return res.status(400).json({ error: 'seedLanguages array required' });
+    }
+    try {
+        const db = getDb();
+        type ChangesSummary = { code: string; name: string; addedKeys: string[] };
+        const summary: ChangesSummary[] = [];
+
+        for (const seed of seedLanguages) {
+            const [rows]: any = await db.execute(`SELECT code, name, translations FROM languages WHERE code = ?`, [seed.code]);
+            const addedKeys: string[] = [];
+
+            if (rows.length === 0) {
+                // Language not in DB yet — insert the whole seed
+                await db.execute(
+                    `INSERT INTO languages (code, name, is_default, translations) VALUES (?, ?, ?, ?)`,
+                    [seed.code, seed.name, seed.isDefault ? 1 : 0, JSON.stringify(seed.translations || {})]
+                );
+                addedKeys.push(...Object.keys(seed.translations || {}));
+            } else {
+                const dbTranslations: Record<string, string> = typeof rows[0].translations === 'string'
+                    ? JSON.parse(rows[0].translations) : (rows[0].translations || {});
+                const seedTrans: Record<string, string> = seed.translations || {};
+                const merged = { ...dbTranslations };
+
+                for (const [key, value] of Object.entries(seedTrans)) {
+                    if (!(key in dbTranslations)) {
+                        merged[key] = value;
+                        addedKeys.push(key);
+                    }
+                }
+
+                if (addedKeys.length > 0) {
+                    await db.execute(
+                        `UPDATE languages SET translations = ? WHERE code = ?`,
+                        [JSON.stringify(merged), seed.code]
+                    );
+                }
+            }
+
+            if (addedKeys.length > 0) {
+                summary.push({ code: seed.code, name: seed.name, addedKeys });
+            }
+        }
+
+        res.json({ success: true, summary });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/demo-login', async (req: any, res: any) => {
     try {
         const db = getDb();
@@ -644,6 +870,56 @@ app.post('/api/login', async (req: any, res: any) => {
             user: { ...user, orgId: user.org_id, avatarUrl: user.avatar_url, allowedProjectIds: typeof user.allowed_project_ids === 'string' ? JSON.parse(user.allowed_project_ids) : (user.allowed_project_ids || []) }, 
             organization: sanitizeOrgForClient(orgRows[0])
         });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/forgot-password', async (req: any, res: any) => {
+    const { email, language } = req.body;
+    try {
+        const db = getDb();
+        const cleanEmail = email.toLowerCase().trim();
+        const [rows]: any = await db.execute(`SELECT id, preferred_language FROM users WHERE email = ?`, [cleanEmail]);
+        const user = rows[0];
+
+        // Always return success to prevent email enumeration
+        if (!user) return res.json({ success: true, message: "If this email is registered, a reset code has been sent." });
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = Date.now() + (30 * 60 * 1000); // 30 minutes
+
+        await db.execute(
+            `UPDATE users SET reset_code = ?, reset_expires = ? WHERE id = ?`,
+            [code, expires, user.id]
+        );
+
+        console.log(`[EMAIL LOG] Password reset code for ${cleanEmail}: ${code}`);
+
+        const emailSent = await sendMailInternal(cleanEmail, "Reset your password - OpenStudbook",
+            `<p>You requested a password reset. Use the code below to set a new password:</p><div style="padding: 20px; background: #f0fdf4; border: 2px dashed #059669; border-radius: 8px; text-align: center; font-family: monospace; font-size: 32px; font-weight: bold; color: #065f46;">{{code}}</div><p style="margin-top: 20px; font-size: 14px; color: #64748b;">This code expires in 30 minutes.</p>`,
+            { code }, 'password_reset', language || user.preferred_language || 'en-GB');
+
+        res.json({ success: true, message: "A reset code has been sent to your email.", ...(!emailSent ? { fallbackCode: code } : {}) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/reset-password', async (req: any, res: any) => {
+    const { email, code, newPassword } = req.body;
+    try {
+        const db = getDb();
+        const cleanEmail = email.toLowerCase().trim();
+        const [rows]: any = await db.execute(`SELECT * FROM users WHERE email = ?`, [cleanEmail]);
+        const user = rows[0];
+        if (!user) return res.status(400).json({ error: "Invalid request." });
+        if (!user.reset_code || user.reset_code !== code) return res.status(400).json({ error: "Invalid code." });
+        if (!user.reset_expires || user.reset_expires < Date.now()) return res.status(400).json({ error: "Code expired. Please request a new one." });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.execute(
+            `UPDATE users SET password = ?, reset_code = NULL, reset_expires = NULL WHERE id = ?`,
+            [hashedPassword, user.id]
+        );
+
+        res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 

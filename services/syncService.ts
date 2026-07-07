@@ -361,6 +361,9 @@ export const syncPushSettings = async (settings: SystemSettings) => apiRequest('
 /* Fixed property name is_deleted to deleted */
 export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
 
+export const upgradeTranslations = async (seedLanguages: LanguageConfig[]) =>
+    apiRequest('/api/upgrade-translations', 'POST', { seedLanguages });
+
 export const syncDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
 export const syncPermanentDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
 export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/languages?code=${code}`, 'DELETE');

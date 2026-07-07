@@ -1,7 +1,7 @@
-import React, { useContext, useState, useEffect, useMemo } from 'react';
-import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals } from '../services/storage';
+import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
+import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals, upgradeTranslations } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
-import { translateDictionary } from '../services/geminiService';
+import { translateDictionary, testAiConfig } from '../services/geminiService';
 import {
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2,
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette,
@@ -12,9 +12,9 @@ import {
 import { LanguageContext } from '../App';
 import { SystemSettings, LanguageConfig, EmailTemplate, UserRole, StaticPageConfig, Organization, OrganizationFocus, LandingFeature, LandingTranslation, ExternalPartner, Project, Individual, Species, Sex } from '../types';
 import RichTextEditor from '../components/RichTextEditor';
-import { BASE_TRANSLATIONS } from '../services/i18n';
+import { BASE_TRANSLATIONS, SEED_LANGUAGES } from '../services/i18n';
 
-type AdminTab = 'overview' | 'email' | 'settings' | 'security' | 'languages';
+type AdminTab = 'overview' | 'email' | 'settings' | 'security' | 'languages' | 'ai';
 type OverviewSubTab = 'organizations' | 'species_browser';
 
 const SuperAdmin: React.FC = () => {
@@ -51,11 +51,26 @@ const SuperAdmin: React.FC = () => {
   const [isSavingLang, setIsSavingLang] = useState(false);
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [aiFillSuccess, setAiFillSuccess] = useState(false);
+  const [showAiMenu, setShowAiMenu] = useState(false);
+  const aiMenuRef = useRef<HTMLDivElement>(null);
   const [translationSearch, setTranslationSearch] = useState('');
+  const [isUpgradingTranslations, setIsUpgradingTranslations] = useState(false);
+  const [upgradeResult, setUpgradeResult] = useState<{ code: string; name: string; addedKeys: string[] }[] | null>(null);
 
   const [isTranslatingLanding, setIsTranslatingLanding] = useState(false);
   const [landingTranslationProgress, setLandingTranslationProgress] = useState<{ done: number; total: number } | null>(null);
   const [landingTranslateSuccess, setLandingTranslateSuccess] = useState(false);
+
+  const [aiProviderText, setAiProviderText] = useState(settings.aiProviderText || 'google');
+  const [aiProviderImage, setAiProviderImage] = useState(settings.aiProviderImage || 'google');
+  const [aiResearchModel, setAiResearchModel] = useState(settings.aiResearchModel || 'gemini-3-flash-preview');
+  const [aiImageModel, setAiImageModel] = useState(settings.aiImageModel || 'gemini-2.5-flash-image');
+  const [openrouterKey, setOpenrouterKey] = useState('');
+  const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState(settings.openrouterBaseUrl || 'https://openrouter.ai/api/v1');
+  const [geminiKey, setGeminiKey] = useState('');
+  const [isTestingAi, setIsTestingAi] = useState<'text' | 'image' | null>(null);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; result?: string; error?: string } | null>(null);
+  const [aiConfigSaved, setAiConfigSaved] = useState(false);
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -72,6 +87,16 @@ const SuperAdmin: React.FC = () => {
        setEditingTemplate(initialTpl);
     }
   }, [selectedTemplate]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (aiMenuRef.current && !aiMenuRef.current.contains(e.target as Node)) {
+        setShowAiMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const allOrganizations = [myOrg, ...(partners || [])].filter(p => p && !p.deleted) as (Organization | ExternalPartner)[];
 
@@ -285,21 +310,49 @@ const SuperAdmin: React.FC = () => {
      setEditingLang(newLang);
   };
 
-  const handleAiTranslate = async () => {
-     if (!editingLang) return;
-     setIsAutoFilling(true);
-     setAiFillSuccess(false);
-     try {
-        const results = await translateDictionary(BASE_TRANSLATIONS, editingLang.name);
-        const newTranslations = { ...editingLang.translations };
-        results.forEach(({ k, v }) => { newTranslations[k] = v; });
-        setEditingLang({ ...editingLang, translations: newTranslations });
-        setAiFillSuccess(true);
-     } catch (e) { alert("AI Localisation failed: " + e); }
-     finally { setIsAutoFilling(false); }
-  };
+const handleAiTranslate = async (mode: 'all' | 'missing') => {
+      if (!editingLang) return;
+      setIsAutoFilling(true);
+      setAiFillSuccess(false);
+      setShowAiMenu(false);
+      try {
+         const results = await translateDictionary(BASE_TRANSLATIONS, editingLang.name);
+         const newTranslations = { ...editingLang.translations };
+         results.forEach(({ k, v }) => {
+            if (mode === 'all') {
+               newTranslations[k] = v;
+            } else if (!newTranslations[k]) {
+               newTranslations[k] = v;
+            }
+         });
+         setEditingLang({ ...editingLang, translations: newTranslations });
+         setAiFillSuccess(true);
+      } catch (e) { alert("AI Localisation failed: " + e); }
+finally { setIsAutoFilling(false); }
+   };
 
-  const filteredOrgs = allOrganizations.filter(o => 
+   const handleUpgradeTranslations = async () => {
+      setIsUpgradingTranslations(true);
+      setUpgradeResult(null);
+      try {
+         const res = await upgradeTranslations(SEED_LANGUAGES);
+         if (res.success && res.summary) {
+            setUpgradeResult(res.summary as { code: string; name: string; addedKeys: string[] }[]);
+            // Refresh local language cache
+            const updatedLangs = getLanguages();
+            setLanguages(updatedLangs);
+            refreshTranslations();
+         } else {
+            setUpgradeResult([]);
+         }
+      } catch (e: any) {
+         setUpgradeResult([]);
+      } finally {
+         setIsUpgradingTranslations(false);
+      }
+   };
+
+   const filteredOrgs = allOrganizations.filter(o =>
      o.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
      o.location.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -340,6 +393,7 @@ const SuperAdmin: React.FC = () => {
            <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> {t('email')}</button>
            <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> {t('landing')}</button>
            <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('localisation')}</button>
+           <button onClick={() => setActiveTab('ai')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${activeTab === 'ai' ? 'bg-white text-cyan-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><Sparkles size={14} className="inline mr-1" /> AI</button>
         </div>
       </div>
 
@@ -728,11 +782,31 @@ const SuperAdmin: React.FC = () => {
                            {lang.isDefault && (<span className={`text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${editingLang?.code === lang.code ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-600'}`}>DEFAULT</span>)}
                         </div>
                      ))}
-                  </div>
-                  <div className="pt-4 mt-2 border-t border-slate-50 space-y-3">
-                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('addLanguage')}</h4>
+</div>
+                   <div className="pt-4 mt-2 border-t border-slate-50 space-y-3">
+<button onClick={handleUpgradeTranslations} disabled={isUpgradingTranslations} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 shadow-sm">
+                          {isUpgradingTranslations ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
+                          {isUpgradingTranslations ? t('upgradingTranslations') : t('upgradeTranslationsBtn')}
+                       </button>
+                       {upgradeResult && (
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                             <p className="font-bold text-slate-700 mb-1">{t('upgradeResult')}</p>
+                             {upgradeResult.length === 0 ? (
+                                <p className="text-slate-500">{t('translationsUpToDate')}</p>
+                             ) : (
+                                upgradeResult.map(r => (
+                                   <div key={r.code} className="text-slate-600">
+                                      <span className="font-semibold">{r.name}</span>: +{r.addedKeys.length} {t('newKeys')}
+                                   </div>
+                                ))
+                             )}
+                          </div>
+                       )}
+                   </div>
+                   <div className="pt-4 mt-2 border-t border-slate-50 space-y-3">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('addLanguage')}</h4>
                      <div className="grid grid-cols-2 gap-2"><input className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono" placeholder="Code (fr-CA)" value={newLangCode} onChange={e => setNewLangCode(e.target.value)} /><input className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold" placeholder="Name (French)" value={newLangName} onChange={e => setNewLangName(e.target.value)} /></div>
-                     <button onClick={handleAddLanguage} disabled={!newLangCode || !newLangName} className="w-full bg-slate-900 hover:bg-black text-white py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50">+ Create Language Profile</button>
+                     <button onClick={handleAddLanguage} disabled={!newLangCode || !newLangName} className="w-full bg-slate-900 hover:bg-black text-white py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50">{t('createLanguageProfile')}</button>
                   </div>
                </div>
             </div>
@@ -743,23 +817,40 @@ const SuperAdmin: React.FC = () => {
                      <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center rounded-t-2xl">
                         <div className="flex items-center gap-4">
                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm border border-slate-200">🏳️</div>
-                           <div><h3 className="font-extrabold text-xl text-slate-900">{editingLang.name}</h3><p className="text-xs text-slate-500 font-medium">Localisation Dictionary for {editingLang.code}</p></div>
+                           <div><h3 className="font-extrabold text-xl text-slate-900">{editingLang.name}</h3><p className="text-xs text-slate-500 font-medium">{t('localisationDictionaryFor')} {editingLang.code}</p></div>
                         </div>
-                        <div className="flex gap-2">
-                           <button onClick={handleAiTranslate} disabled={isAutoFilling} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-purple-100 transition-all disabled:opacity-50">
-                              {isAutoFilling ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} {aiFillSuccess ? 'Dictionary Merged!' : 'Localise via Gemini AI'}
-                           </button>
+<div className="flex gap-2 relative">
+                            <div ref={aiMenuRef} className="relative">
+                               <div className="flex">
+                                  <button onClick={() => handleAiTranslate('missing')} disabled={isAutoFilling} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-l-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-purple-100 transition-all disabled:opacity-50">
+                                     {isAutoFilling ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} {aiFillSuccess ? t('dictionaryMerged') : t('localiseViaGeminiAI')}
+                                  </button>
+                                  <button onClick={() => setShowAiMenu(!showAiMenu)} disabled={isAutoFilling} className="bg-purple-600 hover:bg-purple-700 text-white px-2 py-2.5 rounded-r-xl text-xs font-bold border-l border-purple-500 shadow-lg shadow-purple-100 transition-all disabled:opacity-50">
+                                     <ChevronDown size={14} />
+                                  </button>
+                               </div>
+                               {showAiMenu && (
+                                  <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50 animate-in fade-in slide-in-from-top-1">
+                                     <button onClick={() => handleAiTranslate('missing')} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-700 hover:bg-purple-50 hover:text-purple-700 transition-colors flex items-center gap-3">
+                                        <Sparkles size={16} className="text-purple-500" /> {t('insertMissingTranslations')}
+                                     </button>
+                                     <button onClick={() => handleAiTranslate('all')} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-700 hover:bg-purple-50 hover:text-purple-700 transition-colors border-t border-slate-100 flex items-center gap-3">
+                                        <RefreshCw size={16} className="text-amber-500" /> {t('retranslateAll')}
+                                     </button>
+                                  </div>
+                               )}
+                            </div>
                            <button onClick={handleSaveLanguage} className="bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all">
-                              {isSavingLang ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Save Changes
+                              {isSavingLang ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} {t('saveChanges')}
                            </button>
                         </div>
                      </div>
                      <div className="p-4 bg-white border-b border-slate-50 flex gap-4 items-center">
                         <div className="relative flex-1">
                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                           <input className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs" placeholder="Search dictionary keys or English values..." value={translationSearch} onChange={e => setTranslationSearch(e.target.value)} />
+                           <input className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs" placeholder={t('searchDictionaryKeys')} value={translationSearch} onChange={e => setTranslationSearch(e.target.value)} />
                         </div>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase cursor-pointer"><input type="checkbox" className="rounded" checked={editingLang.isDefault} onChange={e => setEditingLang({...editingLang, isDefault: e.target.checked})} /> Set as System Default</label>
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase cursor-pointer"><input type="checkbox" className="rounded" checked={editingLang.isDefault} onChange={e => setEditingLang({...editingLang, isDefault: e.target.checked})} /> {t('setAsSystemDefault')}</label>
                      </div>
                      <div className="flex-1 overflow-y-auto p-6 space-y-4 max-h-[600px] scrollbar-hide">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
@@ -775,12 +866,125 @@ const SuperAdmin: React.FC = () => {
                ) : (
                   <div className="bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 h-full flex flex-col items-center justify-center p-12 text-center text-slate-400 min-h-[700px]">
                      <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-sm mb-6 border border-slate-100"><Globe size={40} className="opacity-20" /></div>
-                     <h3 className="font-bold text-slate-900 mb-2">Localisation Hub</h3>
-                     <p className="max-w-xs text-sm leading-relaxed">Select a language profile to start editing translations or use AI to generate a complete dictionary automatically.</p>
+<h3 className="font-bold text-slate-900 mb-2">{t('localisationHub')}</h3>
+                      <p className="max-w-xs text-sm leading-relaxed">{t('selectLanguageProfile')}</p>
                   </div>
                )}
             </div>
          </div>
+      )}
+
+      {activeTab === 'ai' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Sparkles size={20} className="text-cyan-600" />
+              <h3 className="text-lg font-bold text-slate-900">{t('aiGlobalDefaults')}</h3>
+            </div>
+            <p className="text-sm text-slate-500">{t('aiGlobalDefaultsDesc')}</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiProviderText')}</label>
+                <select value={aiProviderText} onChange={e => setAiProviderText(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900">
+                  <option value="google">{t('aiGoogle')}</option>
+                  <option value="openrouter">{t('aiOpenrouter')}</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiProviderImage')}</label>
+                <select value={aiProviderImage} onChange={e => setAiProviderImage(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900">
+                  <option value="google">{t('aiGoogle')}</option>
+                  <option value="openrouter">{t('aiOpenrouter')}</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiResearchModel')}</label>
+                <input type="text" value={aiResearchModel} onChange={e => setAiResearchModel(e.target.value)} placeholder={t('aiResearchModelPlaceholder')} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('aiImageModel')}</label>
+                <input type="text" value={aiImageModel} onChange={e => setAiImageModel(e.target.value)} placeholder={t('aiImageModelPlaceholder')} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <h4 className="text-sm font-bold text-slate-700">{t('openrouterApiKey')}</h4>
+              <p className="text-xs text-slate-500">{t('openrouterApiKeyDesc')}</p>
+              <input type="password" value={openrouterKey} onChange={e => setOpenrouterKey(e.target.value)} placeholder="sk-or-v1-..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('openrouterBaseUrl')}</label>
+                <input type="text" value={openrouterBaseUrl} onChange={e => setOpenrouterBaseUrl(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <h4 className="text-sm font-bold text-slate-700">{t('geminiApiKey')}</h4>
+              <p className="text-xs text-slate-500">{t('geminiApiKeyDesc')}</p>
+              <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza..." className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono bg-white text-slate-900" />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={async () => {
+                  const s = { ...settings, aiProviderText, aiProviderImage, aiResearchModel, aiImageModel, openrouterApiKey: openrouterKey || settings.openrouterApiKey, openrouterBaseUrl, geminiApiKey: geminiKey || settings.geminiApiKey };
+                  await saveSystemSettings(s);
+                  setSettings(s);
+                  setAiConfigSaved(true);
+                  setTimeout(() => setAiConfigSaved(false), 3000);
+                }}
+                className="flex items-center gap-2 px-5 py-2 bg-slate-900 text-white rounded-lg hover:bg-black font-bold text-sm transition-colors"
+              >
+                {aiConfigSaved ? <CheckCircle2 size={16} /> : <Save size={16} />}
+                {aiConfigSaved ? t('saved') : t('saveSettings')}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+            <h3 className="font-medium text-slate-900 flex items-center gap-2"><Zap size={18} className="text-amber-500"/> {t('aiTestBtn')}</h3>
+            <p className="text-sm text-slate-500">{t('aiTestDesc')}</p>
+            {aiTestResult && (
+              <div className={`p-3 rounded-lg text-sm ${aiTestResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {aiTestResult.success ? <CheckCircle2 size={16} className="inline mr-1" /> : <AlertCircle size={16} className="inline mr-1" />}
+                {aiTestResult.success ? t('aiTestSuccess') : (t('aiTestFail').replace('{{error}}', aiTestResult.error || ''))}
+                {aiTestResult.result && <pre className="mt-1 text-xs text-slate-600 bg-slate-50 p-2 rounded overflow-auto max-h-32">{aiTestResult.result}</pre>}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  setIsTestingAi('text');
+                  setAiTestResult(null);
+                  const testKey = aiProviderText === 'openrouter' ? (openrouterKey || undefined) : (geminiKey || undefined);
+                  const res = await testAiConfig({ provider: aiProviderText, model: aiResearchModel, apiKey: testKey, purpose: 'text' });
+                  setAiTestResult(res);
+                  setIsTestingAi(null);
+                }}
+                disabled={isTestingAi !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+              >
+                {isTestingAi === 'text' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {isTestingAi === 'text' ? t('aiTesting') : t('aiTestText')}
+              </button>
+              <button
+                onClick={async () => {
+                  setIsTestingAi('image');
+                  setAiTestResult(null);
+                  const testKey = aiProviderImage === 'openrouter' ? (openrouterKey || undefined) : (geminiKey || undefined);
+                  const res = await testAiConfig({ provider: aiProviderImage, model: aiImageModel, apiKey: testKey, purpose: 'image' });
+                  setAiTestResult(res);
+                  setIsTestingAi(null);
+                }}
+                disabled={isTestingAi !== null}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+              >
+                {isTestingAi === 'image' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                {isTestingAi === 'image' ? t('aiTesting') : t('aiTestImage')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Permanently Delete Organization Modal */}
