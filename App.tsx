@@ -6,7 +6,7 @@ import {
   PawPrint,
   Leaf,
   Settings,
-  Menu,
+  Menu as MenuIcon,
   X,
   Dna,
   HeartHandshake,
@@ -656,7 +656,17 @@ const App: React.FC = () => {
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
-              <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : (currentOrg?.focus === 'Flora' ? <Leaf size={24} /> : <PawPrint size={24} />)}<span>OpenStudbook</span></div>
+              <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="h-8 w-8">
+                    <rect width="512" height="512" rx="112" fill="#059669"/>
+                    <ellipse cx="256" cy="300" rx="90" ry="75" fill="white" opacity="0.95"/>
+                    <ellipse cx="170" cy="210" rx="38" ry="45" fill="white" opacity="0.95"/>
+                    <ellipse cx="240" cy="185" rx="38" ry="45" fill="white" opacity="0.95"/>
+                    <ellipse cx="312" cy="185" rx="38" ry="45" fill="white" opacity="0.95"/>
+                    <ellipse cx="382" cy="210" rx="38" ry="45" fill="white" opacity="0.95"/>
+                  </svg>
+                  <span>OpenStudbook</span>
+                </div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
                  {isSyncing && (
@@ -669,7 +679,6 @@ const App: React.FC = () => {
                    </div>
                  )}
                  <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
-                  <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1"><Menu size={24} /></button>
                </div>
             </header>
             <div className="flex-1 p-4 lg:p-8 overflow-y-auto pb-20 lg:pb-8">
