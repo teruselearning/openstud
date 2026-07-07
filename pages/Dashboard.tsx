@@ -209,28 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
           <StatCard title={t('activeUsers')}      value={userCount}    icon={Users}    color="bg-indigo-500"  />
         </div>
 
-        {/* Origin pie + Species list side by side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-          {/* Origin pie */}
-          {originData.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('origin')}</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={originData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                      {originData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number, _: string, p: any) => [v, t(p.payload.key) || p.payload.name]} />
-                    <Legend formatter={(v, e: any) => t(e.payload.key) || v} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Species list */}
+{/* Species list with search & sort */}
           {filteredSpecies.length > 0 && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col">
               <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
@@ -289,7 +268,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
               </div>
             </div>
           )}
-        </div>
 
         {/* Breeding pairs */}
         {showBreedingSection && (
@@ -305,7 +283,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                     <div className="flex items-center gap-4 mb-3 sm:mb-0">
                       <div className="flex items-center -space-x-3">
                         {rec.male.imageUrl   ? <img src={rec.male.imageUrl}   className="w-10 h-10 rounded-full border-2 border-white object-cover" alt={rec.male.name}   /> : <div className="w-10 h-10 rounded-full bg-blue-100  border-2 border-white flex items-center justify-center text-blue-600  text-xs">M</div>}
-                        {rec.female.imageUrl ? <img src={rec.female.imageUrl} className="w-10 h-10 rounded-full border-2 border-white object-cover" alt={rec.female.name} /> : <div className="w-10 h-10 rounded-full bg-pink-100  border-2 border-white flex items-center justify-center text-pink-600  text-xs">F</div>}
+                        {rec.female.imageUrl ? <img src={rec.female.imageUrl} className="w-10 h-10 rounded-full border-2 border-white object-cover" alt={rec.female.name} /> : <div className="w-10 h-10 rounded-full bg-pink-100 border-2 border-white flex items-center justify-center text-pink-600 text-xs">F</div>}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
@@ -334,6 +312,24 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                 <p>{t('noBreeding')}</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Origin pie */}
+        {originData.length > 0 && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('origin')}</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={originData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {originData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number, _: string, p: any) => [v, t(p.payload.key) || p.payload.name]} />
+                  <Legend formatter={(v, e: any) => t(e.payload.key) || v} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
 

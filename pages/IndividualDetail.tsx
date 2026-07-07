@@ -758,8 +758,8 @@ const IndividualDetail: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-300">
            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold text-slate-800">{isPlant ? 'Observations & History' : 'Medical & Health Logs'}</h3>
-                 <button onClick={() => { setShowHealthModal(true); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ {isPlant ? 'Add Observation' : 'New Log'}</button>
+                 <h3 className="font-bold text-slate-800">{isPlant ? 'Observations & History' : 'Records'}</h3>
+                 <button onClick={() => { setShowHealthModal(true); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ {isPlant ? 'Add Observation' : 'New Record'}</button>
               </div>
               <div className="divide-y divide-slate-100">
                  {(individual.healthHistory || []).length > 0 ? (
@@ -888,7 +888,7 @@ const IndividualDetail: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
            <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold">{isPlant ? 'New Observation' : 'New Medical Record'}</h3>
+                 <h3 className="font-bold">{isPlant ? 'New Observation' : 'New Record'}</h3>
                  <button onClick={() => { setShowHealthModal(false); setPendingLogImage(''); setUseAsCardImage(true); }} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
               </div>
               <form onSubmit={(e) => {
@@ -956,7 +956,7 @@ const IndividualDetail: React.FC = () => {
                  </div>
                  
                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">{isPlant ? 'Attach Photo' : 'Attach Medical Photo'}</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Attach Photo</label>
                     <div className="flex items-center gap-3">
                        <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
                           {pendingLogImage ? (
