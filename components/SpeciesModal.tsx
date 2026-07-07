@@ -7,8 +7,10 @@ import { generatePattern } from '../services/storage';
 const nativeStatusStyle = (status: string) => {
   switch (status) {
     case 'Native':     return 'bg-green-100 text-green-700 border-green-200';
+    case 'Non-Native':
     case 'Introduced': return 'bg-amber-100 text-amber-700 border-amber-200';
     case 'Invasive':   return 'bg-red-100 text-red-700 border-red-200';
+    case 'Endemic':    return 'bg-blue-100 text-blue-700 border-blue-200';
     default:           return 'bg-slate-100 text-slate-500 border-slate-200';
   }
 };
@@ -122,9 +124,9 @@ const SpeciesModal: React.FC<SpeciesModalProps> = ({ species, onClose }) => {
               return (
                 <div className="flex items-center gap-1.5 mb-4">
                   <MapPin size={11} className="text-slate-400 shrink-0" />
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${nativeStatusStyle(status)}`}>
-                    {status === 'Introduced' ? 'Non-Native' : status}
-                  </span>
+                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${nativeStatusStyle(status)}`}>
+                     {status === 'Introduced' ? 'Non-Native' : status}
+                   </span>
                 </div>
               );
             })()}

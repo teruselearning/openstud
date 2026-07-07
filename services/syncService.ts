@@ -127,8 +127,9 @@ const fromDbInd = (i: any): Individual => ({
   longitude: i.longitude, 
   isDeceased: !!i.is_deceased, 
   deathDate: i.death_date, 
-  loanStatus: i.loan_status, 
-  transferredToOrgId: i.transferred_to_org_id, 
+  loanStatus: i.loan_status,
+  microchipNumber: i.microchip_number || undefined,
+  transferredToOrgId: i.transferred_to_org_id,
   transferDate: i.transfer_date, 
   transferNote: i.transfer_note, 
   weightHistory: safeParse(i.weight_history, []), 
@@ -284,8 +285,9 @@ export const mapIndToDb = (i: Individual) => ({
   longitude: i.longitude ?? null, 
   is_deceased: i.isDeceased ?? false, 
   death_date: i.deathDate || null, 
-  loan_status: i.loanStatus || null, 
-  transferred_to_org_id: i.transferredToOrgId || null, 
+loan_status: i.loanStatus || null,
+  microchip_number: i.microchipNumber || null,
+  transferred_to_org_id: i.transferredToOrgId || null,
   /* Fixed property names from transfer_date to transferDate and transfer_note to transferNote */
   transfer_date: i.transferDate, 
   transfer_note: i.transferNote, 
@@ -311,20 +313,20 @@ export const uploadImageToServer = async (dataUrl: string): Promise<string> => {
   return data.url as string;
 };
 
-export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
-export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
-export const syncPushProjects = async (projects: Project[]) => apiRequest('/rest/v1/projects', 'POST', projects.map(mapProjectToDb));
+export const syncPushOrg = async (org: Organization) => apiRequest('/api/organizations', 'POST', mapOrgToDb(org));
+export const syncPushUsers = async (users: User[]) => apiRequest('/api/users', 'POST', users.map(mapUserToDb));
+export const syncPushProjects = async (projects: Project[]) => apiRequest('/api/projects', 'POST', projects.map(mapProjectToDb));
 export const syncPushSpecies = async (species: Species[]) => {
   // Push core data without images — images are large base64 blobs that can exceed
   // max_allowed_packet limits when batched, causing the entire push to silently fail.
   const coreData = species.map(s => { const { image_url, ...core } = mapSpeciesToDb(s); return core; });
-  await apiRequest('/rest/v1/species', 'POST', coreData);
+  await apiRequest('/api/species', 'POST', coreData);
   // Push images one at a time via PATCH (partial update), fire-and-forget.
   // PATCH avoids MySQL NOT NULL errors that occur with INSERT ... ON DUPLICATE KEY UPDATE
   // when only { id, image_url } is provided (MySQL validates NOT NULL cols before dedup).
   for (const s of species) {
     if (s.imageUrl) {
-      apiRequest('/rest/v1/species', 'PATCH', { id: s.id, image_url: s.imageUrl })
+      apiRequest('/api/species', 'PATCH', { id: s.id, image_url: s.imageUrl })
         .catch(e => console.error(`[Sync] Failed to save image for species ${s.id}:`, e?.message));
     }
   }
@@ -332,45 +334,45 @@ export const syncPushSpecies = async (species: Species[]) => {
 export const syncPushIndividuals = async (individuals: Individual[]) => {
   // Pass 1: core data without images or parent refs (avoid FK ordering issues)
   const pass1Data = individuals.map(i => { const { image_url, thumbnail_url, ...rest } = { ...mapIndToDb(i), sire_id: null, dam_id: null }; return rest; });
-  await apiRequest('/rest/v1/individuals', 'POST', pass1Data);
+  await apiRequest('/api/individuals', 'POST', pass1Data);
   // Pass 2: update parent refs (no images)
   const indWithParents = individuals.filter(i => i.sireId || i.damId);
   if (indWithParents.length > 0) {
     const pass2Data = indWithParents.map(i => { const { image_url, thumbnail_url, ...rest } = mapIndToDb(i); return rest; });
-    await apiRequest('/rest/v1/individuals', 'POST', pass2Data);
+    await apiRequest('/api/individuals', 'POST', pass2Data);
   }
   // Push images one at a time via PATCH (partial update), fire-and-forget.
   for (const i of individuals) {
     if (i.imageUrl) {
-      apiRequest('/rest/v1/individuals', 'PATCH', { id: i.id, image_url: i.imageUrl, thumbnail_url: i.thumbnailUrl || null }).catch(() => {});
+      apiRequest('/api/individuals', 'PATCH', { id: i.id, image_url: i.imageUrl, thumbnail_url: i.thumbnailUrl || null }).catch(() => {});
     }
   }
 };
-export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
+export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/api/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
 /* Fixed property names offspring_count to offspringCount and successful_births to successfulBirths */
-export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
+export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/api/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
 /* Fixed property names proposer_org_id to proposerOrgId, individual_ids to individualIds, notification_recipient_id to notificationRecipientId, change_request to changeRequest */
-export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
+export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/api/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
 /* Fixed property name established_date to establishedDate */
-export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
+export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/api/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
 
-export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });
+export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/api/app_config', 'POST', { id: 'global-settings', settings });
 /* Fixed property name is_deleted to deleted */
-export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
+export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/api/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
 
 export const upgradeTranslations = async (seedLanguages: LanguageConfig[]) =>
     apiRequest('/api/upgrade-translations', 'POST', { seedLanguages });
 
 export const syncDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
 export const syncPermanentDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
-export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/languages?code=${code}`, 'DELETE');
+export const syncDeleteLanguage = async (code: string) => apiRequest(`/api/languages?code=${code}`, 'DELETE');
 
 export const syncDeleteRecord = async (table: string, id: string) => {
   console.log(`[SYNC DELETE] Deleting ${id} from ${table}...`);
-  return apiRequest(`/rest/v1/${table}?id=${id}`, 'DELETE');
+  return apiRequest(`/api/${table}?id=${id}`, 'DELETE');
 };
 
 export const fetchPublicConfig = async () => {

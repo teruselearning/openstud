@@ -136,7 +136,8 @@ export const translateDictionary = async (sourceData: Record<string, string>, ta
       body: JSON.stringify({ sourceData, targetLanguage })
     });
     if (!response.ok) throw new Error("AI Translation Proxy Request Failed");
-    return await response.json();
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
   } catch (e) {
     return handleAiError(e);
   }

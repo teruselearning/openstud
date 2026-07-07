@@ -15,8 +15,10 @@ declare const L: any;
 const nativeStatusStyle = (status: string) => {
   switch (status) {
     case 'Native':     return 'bg-green-100 text-green-700';
+    case 'Non-Native':
     case 'Introduced': return 'bg-amber-100 text-amber-700';
     case 'Invasive':   return 'bg-red-100 text-red-600';
+    case 'Endemic':    return 'bg-blue-100 text-blue-700';
     default:           return 'bg-slate-100 text-slate-400';
   }
 };
@@ -171,9 +173,10 @@ const IndividualDetail: React.FC = () => {
     setIsSettingLocation(true);
 
     const ACCURACY_TARGET = 20; // metres — same quality threshold as the map tracker
-    const TIMEOUT_MS = 15000;
+    const TIMEOUT_MS = 10000;
     let watchId: number | null = null;
     let settled = false;
+    let bestPosition: GeolocationPosition | null = null;
 
     const accept = async (pos: GeolocationPosition) => {
       if (settled) return;
@@ -187,22 +190,25 @@ const IndividualDetail: React.FC = () => {
       setIsSettingLocation(false);
     };
 
-    // Safety fallback — accept whatever we have after TIMEOUT_MS
+    // Safety fallback — accept best available position after TIMEOUT_MS
     const fallback = setTimeout(() => {
       if (!settled) {
-        navigator.geolocation.getCurrentPosition(accept, (err) => {
-          if (!settled) {
-            settled = true;
-            if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-            setLocationError('Could not get location: ' + err.message);
-            setIsSettingLocation(false);
-          }
-        }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
+        settled = true;
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        if (bestPosition) {
+          accept(bestPosition);
+        } else {
+          setLocationError(t('locationErrorTimeout'));
+          setIsSettingLocation(false);
+        }
       }
     }, TIMEOUT_MS);
 
     watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        if (!bestPosition || pos.coords.accuracy < bestPosition.coords.accuracy) {
+          bestPosition = pos;
+        }
         if (pos.coords.accuracy <= ACCURACY_TARGET) {
           clearTimeout(fallback);
           accept(pos);
@@ -210,12 +216,13 @@ const IndividualDetail: React.FC = () => {
         // else keep watching — accuracy still improving
       },
       (err) => {
-        clearTimeout(fallback);
-        if (!settled) {
+        if (!settled && err.code !== err.TIMEOUT) {
+          clearTimeout(fallback);
           settled = true;
-          setLocationError('Could not get location: ' + err.message);
+          setLocationError(t('locationErrorPrefix') + err.message);
           setIsSettingLocation(false);
         }
+        // Ignore TIMEOUT errors from watchPosition — let the fallback handle it
       },
       { enableHighAccuracy: true, maximumAge: 0 }
     );
@@ -359,6 +366,12 @@ const IndividualDetail: React.FC = () => {
                     <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('studbookId')}</span>
                     <span className="text-sm font-mono font-bold text-slate-700">{individual.studbookId}</span>
                   </div>
+                  {individual.microchipNumber && (
+                    <div className="flex items-center justify-between py-2 border-b border-slate-50">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('microchipNumber')}</span>
+                      <span className="text-sm font-mono font-bold text-slate-700">{individual.microchipNumber}</span>
+                    </div>
+                  )}
                   {(!(isPlant && individual.sex === Sex.UNKNOWN)) && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-50">
                       <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('sex')}</span>
@@ -971,11 +984,9 @@ const IndividualDetail: React.FC = () => {
       )}
       {/* Image Gallery Lightbox */}
       {galleryIndex >= 0 && (() => {
-        const galleryImages = (individual.healthHistory || [])
-          .filter(h => h.imageUrl)
-          .map(h => ({ url: h.imageUrl!, label: h.type, date: h.date }));
         if (galleryImages.length === 0) return null;
         const current = galleryImages[galleryIndex] || galleryImages[0];
+        const isObs = galleryIndex < (allObsImages.length);
         return (
           <div className="fixed inset-0 z-[99999] bg-black/95 flex flex-col items-center justify-center" onClick={() => setGalleryIndex(-1)}>
             {/* Close */}
@@ -1002,14 +1013,13 @@ const IndividualDetail: React.FC = () => {
             )}
             {/* Image */}
             <img
-              src={current.url}
+              src={current}
               className="max-h-[80vh] max-w-[90vw] object-contain rounded-xl shadow-2xl"
               onClick={e => e.stopPropagation()}
             />
             {/* Caption */}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-center">
-              <p className="text-white font-bold text-sm">{current.label}</p>
-              <p className="text-white/50 text-xs mt-0.5">{current.date}</p>
+              <p className="text-white font-bold text-sm">{isObs ? 'Observation' : 'Profile photo'}</p>
             </div>
           </div>
         );

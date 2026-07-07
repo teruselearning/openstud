@@ -1,0 +1,85 @@
+<style>
+  .osb-section { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; }
+  .osb-badge { display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 20px; }
+  .osb-headline { font-size: clamp(24px, 4vw, 38px); font-weight: 900; line-height: 1.15; color: #0f172a; margin: 0 0 16px; }
+  .osb-headline span { background: linear-gradient(135deg, #059669, #0284c7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .osb-lead { font-size: 16px; line-height: 1.7; color: #475569; margin: 0 0 36px; max-width: 640px; }
+  .osb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 0 0 40px; }
+  .osb-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .osb-card-icon { font-size: 28px; margin-bottom: 10px; line-height: 1; }
+  .osb-card-title { font-size: 14px; font-weight: 800; color: #0f172a; margin: 0 0 6px; }
+  .osb-card-desc { font-size: 13px; color: #64748b; line-height: 1.55; margin: 0; }
+  .osb-divider { border: none; border-top: 1px solid #f1f5f9; margin: 32px 0; }
+  .osb-opensource { display: flex; align-items: flex-start; gap: 16px; background: linear-gradient(135deg, #f0fdf4, #eff6ff); border: 1px solid #d1fae5; border-radius: 14px; padding: 20px 24px; }
+  .osb-opensource-icon { font-size: 32px; flex-shrink: 0; margin-top: 2px; }
+  .osb-opensource-title { font-size: 15px; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
+  .osb-opensource-text { font-size: 13px; color: #475569; line-height: 1.6; margin: 0; }
+  .osb-opensource-text a { color: #059669; font-weight: 700; text-decoration: none; }
+  .osb-opensource-text a:hover { text-decoration: underline; }
+  .osb-tagline { font-size: 13px; color: #94a3b8; text-align: center; margin: 28px 0 0; letter-spacing: 0.03em; }
+</style>
+
+<div class="osb-section">
+
+  <div class="osb-badge">
+    🌿 Open Source &nbsp;·&nbsp; Free to use &nbsp;·&nbsp; Self-hosted
+  </div>
+
+  <h2 class="osb-headline">
+    Professional collection management<br>for <span>wildlife &amp; botanical</span> organisations
+  </h2>
+
+  <p class="osb-lead">
+    OpenStudbook is a self-hosted platform built for zoos, wildlife sanctuaries, aquariums, botanical gardens, and conservation programmes. Track individual animals and plants, manage breeding records, monitor genetics, and collaborate with partner organisations — all in one place.
+  </p>
+
+  <div class="osb-cards">
+    <div class="osb-card">
+      <div class="osb-card-icon">🐆</div>
+      <p class="osb-card-title">Fauna Management</p>
+      <p class="osb-card-desc">Register and track individual animals. Record sex, lineage, weight history, health logs, and GPS location. Generate breeding recommendations based on genetic diversity.</p>
+    </div>
+    <div class="osb-card">
+      <div class="osb-card-icon">🌳</div>
+      <p class="osb-card-title">Flora &amp; Botanical Records</p>
+      <p class="osb-card-desc">Document trees, shrubs, and plant specimens with studbook IDs, planting dates, location mapping, and observation history. Supports monoecious and dioecious classification.</p>
+    </div>
+    <div class="osb-card">
+      <div class="osb-card-icon">🧬</div>
+      <p class="osb-card-title">Genetics &amp; Studbooks</p>
+      <p class="osb-card-desc">Maintain official studbook records with sire and dam lineage. Track DNA sequences and assess inbreeding coefficients to guide conservation breeding decisions.</p>
+    </div>
+    <div class="osb-card">
+      <div class="osb-card-icon">🗺️</div>
+      <p class="osb-card-title">Live Location Mapping</p>
+      <p class="osb-card-desc">Pin individuals on an interactive map with high-accuracy GPS. View your entire collection spatially, with real-time location tracking on mobile devices.</p>
+    </div>
+    <div class="osb-card">
+      <div class="osb-card-icon">🤝</div>
+      <p class="osb-card-title">Partner Network</p>
+      <p class="osb-card-desc">Connect with other organisations running OpenStudbook. Propose and manage breeding loans, share species data, and coordinate conservation efforts globally.</p>
+    </div>
+    <div class="osb-card">
+      <div class="osb-card-icon">🔒</div>
+      <p class="osb-card-title">Private &amp; Secure</p>
+      <p class="osb-card-desc">Your data lives on your own server. Granular privacy controls let you decide exactly what to share publicly, what stays within your organisation, and what is visible to partners only.</p>
+    </div>
+  </div>
+
+  <hr class="osb-divider">
+
+  <div class="osb-opensource">
+    <div class="osb-opensource-icon">⚙️</div>
+    <div>
+      <p class="osb-opensource-title">This is a hosted instance of OpenStudbook</p>
+      <p class="osb-opensource-text">
+        OpenStudbook is free, open-source software released under the MIT licence. You are welcome to inspect the source code, self-host your own instance, or contribute to the project.
+        The source code is available on <a href="https://github.com" target="_blank">GitHub</a>.
+        This hosted instance is managed independently and may have custom configuration applied by the administrator.
+      </p>
+    </div>
+  </div>
+
+  <p class="osb-tagline">OpenStudbook — open-source captive breeding &amp; collection management</p>
+
+</div>

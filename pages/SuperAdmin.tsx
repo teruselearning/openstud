@@ -219,7 +219,8 @@ const SuperAdmin: React.FC = () => {
     for (let i = 0; i < targetLangs.length; i++) {
       const lang = targetLangs[i];
       try {
-        const results = await translateDictionary(sourceDict, lang.name);
+        const raw = await translateDictionary(sourceDict, lang.name);
+        const results = Array.isArray(raw) ? raw : [];
         const map: Record<string, string> = {};
         results.forEach(({ k, v }) => { map[k] = v; });
 
@@ -316,7 +317,8 @@ const handleAiTranslate = async (mode: 'all' | 'missing') => {
       setAiFillSuccess(false);
       setShowAiMenu(false);
       try {
-         const results = await translateDictionary(BASE_TRANSLATIONS, editingLang.name);
+         const raw = await translateDictionary(BASE_TRANSLATIONS, editingLang.name);
+         const results = Array.isArray(raw) ? raw : [];
          const newTranslations = { ...editingLang.translations };
          results.forEach(({ k, v }) => {
             if (mode === 'all') {

@@ -4,17 +4,21 @@ import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpeci
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
 import { compressImageFileDual, compressDataUrlDual } from '../services/imageUtils';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
-import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2, Maximize2, Minimize2, Tag, HelpCircle, Sprout } from 'lucide-react';
+import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2, Maximize2, Minimize2, Tag, HelpCircle, Sprout, ScanLine } from 'lucide-react';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
+import BarcodeScanner from '../components/BarcodeScanner';
+import LazyImage from '../components/LazyImage';
 
 declare const L: any;
 
 const nativeStatusStyle = (status: string) => {
   switch (status) {
     case 'Native':     return 'bg-green-100 text-green-700';
+    case 'Non-Native':
     case 'Introduced': return 'bg-amber-100 text-amber-700';
     case 'Invasive':   return 'bg-red-100 text-red-600';
+    case 'Endemic':    return 'bg-blue-100 text-blue-700';
     default:           return 'bg-slate-100 text-slate-400';
   }
 };
@@ -49,7 +53,9 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId,
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [speciesSearchQuery, setSpeciesSearchQuery] = useState('');
+  const [scanTarget, setScanTarget] = useState<'form' | 'search' | null>(null);
   const [isSpeciesDropdownOpen, setIsSpeciesDropdownOpen] = useState(false);
   const [addLocation, setAddLocation] = useState(false);
 
@@ -59,9 +65,6 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId,
   const [unknownType, setUnknownType] = useState<SpeciesType>('Animal');
   const [unknownName, setUnknownName] = useState('');
   const [unknownDesc, setUnknownDesc] = useState('');
-
-  // Presence-only mode (species generally present, no specific individual tracked)
-  const [presenceOnly, setPresenceOnly] = useState(false);
 
   // Delete confirmation modal
   const [bulkDeletePending, setBulkDeletePending] = useState(false);
@@ -471,7 +474,6 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
         const sp = allSpecies.find(s => s.id === indToEdit.speciesId);
         setSpeciesSearchQuery(sp?.commonName || '');
         setAddLocation(!!(indToEdit.latitude || indToEdit.longitude));
-        setPresenceOnly(!!indToEdit.isPresenceOnly);
         setShowForm(true);
         window.history.replaceState({}, document.title);
       }
@@ -504,12 +506,13 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
   }, [showForm, addLocation, org]);
 
   const [formData, setFormData] = useState<Partial<Individual>>({
-    speciesId: '', projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId, enclosureId: '', studbookId: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
+    speciesId: '', projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId, enclosureId: '', studbookId: '', microchipNumber: '', name: '', sex: Sex.UNKNOWN, birthDate: '', weightKg: 0, sireId: '', damId: '', notes: '', imageUrl: '', isDeceased: false, source: 'Bred in house', latitude: undefined, longitude: undefined
   });
 
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const filtered = (isAll ? allIndividuals : allIndividuals.filter(ind => ind.projectId === currentProjectId)).filter(ind => {
-    const matchesSearch = (ind.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (ind.studbookId || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = (ind.name || '').toLowerCase().includes(term) || (ind.studbookId || '').toLowerCase().includes(term) || (ind.microchipNumber || '').includes(term);
     const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
     const matchesDeceased = deceasedFilter === 'all' ? true : deceasedFilter === 'deceased' ? !!ind.isDeceased : !ind.isDeceased;
     return matchesSearch && matchesSpecies && matchesDeceased;
@@ -642,6 +645,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
       speciesId: '', 
       projectId: isAll ? (allProjects.length === 1 ? allProjects[0].id : '') : currentProjectId,
       enclosureId: '', 
+      microchipNumber: '',
       name: '', 
       sex: Sex.UNKNOWN, 
       weightKg: 0, 
@@ -658,8 +662,17 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     setUnknownType('Animal');
     setUnknownName('');
     setUnknownDesc('');
-    setPresenceOnly(false);
     setShowForm(true);
+  };
+
+  const handleScanResult = (value: string) => {
+    const digits = value.replace(/[^0-9]/g, '').slice(0, 15);
+    if (scanTarget === 'form') {
+      setFormData(prev => ({ ...prev, microchipNumber: digits }));
+    } else if (scanTarget === 'search') {
+      setSearchTerm(digits);
+    }
+    setScanTarget(null);
   };
 
   const handleQuickSpeciesSubmit = async (e: React.FormEvent) => {
@@ -789,18 +802,19 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     if (isPlant && !finalName) {
       finalName = formData.studbookId || `plant-${Date.now()}`;
     }
-    if (presenceOnly && !finalName) {
-      // Auto-name presence records based on species so they're identifiable
-      finalName = `${selectedSpecies?.commonName || 'Species'} – Presence Record`;
-    }
 
-    if (!finalName && !isPlant && !presenceOnly) {
+    if (!finalName && !isPlant) {
       alert("Name is required for Fauna records.");
       return;
     }
 
     const targetProjectId = isAll ? formData.projectId : currentProjectId;
     if (!targetProjectId) { alert("Please select a project."); return; }
+
+    if (formData.microchipNumber && formData.microchipNumber.length !== 15) {
+      alert(t('microchipInvalidLengthAlert'));
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -812,13 +826,14 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
             weightKg: Number(formData.weightKg || 0),
             latitude: addLocation ? formData.latitude : undefined,
             longitude: addLocation ? formData.longitude : undefined,
-            isPresenceOnly: presenceOnly || undefined,
         };
         const updated = editingId ? allIndividuals.map(i => i.id === editingId ? entry : i) : [...allIndividuals, entry];
         setAllIndividuals(updated);
         await saveIndividuals(updated); 
         setShowForm(false);
         setEditingId(null);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) { alert("Database Error: Could not save individual."); }
     finally { setIsSubmitting(false); }
   };
@@ -925,7 +940,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <input className="w-full pl-10 pr-12 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" placeholder={t('searchIndividuals')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <button type="button" onClick={() => setScanTarget('search')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title={t('scanBarcodeTooltip')}><ScanLine size={18}/></button>
         </div>
         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm shrink-0">
           {(['living', 'all', 'deceased'] as const).map(f => (
@@ -1007,7 +1023,13 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                     {selectedIds.has(ind.id) && <Check size={13} className="text-white" strokeWidth={3}/>}
                   </button>
                   <Link to={`/individuals/${ind.id}`} className="block w-full h-full">
-                    <img src={displayImg} className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${ind.isDeceased ? 'grayscale opacity-60' : ''}`} alt={displayName} />
+                    <LazyImage
+                      src={displayImg}
+                      alt={displayName}
+                      placeholder={generatePattern(ind.name)}
+                      className="w-full h-full"
+                      imgClassName={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${ind.isDeceased ? 'grayscale opacity-60' : ''}`}
+                    />
                   </Link>
                   {ind.isPresenceOnly
                     ? <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase bg-teal-600">Presence</div>
@@ -1041,9 +1063,14 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                       <span className={`inline-block mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${nativeStatusStyle(ns)}`}>{nativeStatusLabel(ns)}</span>
                     ) : null;
                   })()}
+                  {ind.microchipNumber && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[9px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{t('microchipPrefix')}{ind.microchipNumber}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-50">
                     <span className="text-[10px] font-mono text-slate-400">{ind.studbookId}</span>
-                    <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setPresenceOnly(!!ind.isPresenceOnly); setShowForm(true); }} className="ml-auto text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
+                    <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setShowForm(true); }} className="ml-auto text-slate-400 hover:text-blue-600"><Pencil size={14}/></button>
                   </div>
                 </div>
               </div>
@@ -1064,6 +1091,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Individual</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Species</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">ID</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">{t('microchipNumber')}</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-right">Actions</th>
                  </tr>
               </thead>
@@ -1088,8 +1116,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                             ) : (
                               <span className={`font-bold ${ind.isDeceased ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{ind.name}</span>
                             )}
-                            {ind.isPresenceOnly && <span className="ml-2 text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded uppercase">Presence</span>}
-                            {ind.isDeceased && <span className="ml-2 text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">Deceased</span>}
+                             {ind.isDeceased && <span className="ml-2 text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase">Deceased</span>}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-600">
                             {isPlantInd ? '' : sp?.commonName}
@@ -1105,10 +1132,11 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                             })()}
                           </td>
                           <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{ind.studbookId}</td>
+                          <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{ind.microchipNumber || ''}</td>
                           <td className="px-6 py-4 text-right">
                              <div className="flex justify-end gap-2">
                                 <Link to={`/individuals/${ind.id}`} className="p-1.5 text-slate-400 hover:text-emerald-600"><Plus size={16}/></Link>
-                                <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setPresenceOnly(!!ind.isPresenceOnly); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600"><Pencil size={16}/></button>
+                                <button onClick={() => { setEditingId(ind.id); setFormData({...ind}); setSpeciesSearchQuery(sp?.commonName || ''); setAddLocation(!!(ind.latitude != null || ind.longitude != null)); setShowForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-600"><Pencil size={16}/></button>
                              </div>
                           </td>
                        </tr>
@@ -1165,6 +1193,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                           <p className="font-bold text-slate-900">{selectedMapInd.name}</p>
                           <p className="text-xs text-slate-500">{panelSp?.commonName}</p>
                           <p className="text-[11px] font-mono text-slate-400 mt-0.5">{selectedMapInd.studbookId}</p>
+                          {selectedMapInd.microchipNumber && <p className="text-[11px] font-mono text-slate-400">{t('microchipPrefix')}{selectedMapInd.microchipNumber}</p>}
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1191,7 +1220,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                         <Link to={`/individuals/${selectedMapInd.id}`} className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors">
                           View Full Profile →
                         </Link>
-                        <button onClick={() => { setEditingId(selectedMapInd.id); setFormData({...selectedMapInd}); setSpeciesSearchQuery(panelSp?.commonName || ''); setAddLocation(!!(selectedMapInd.latitude != null || selectedMapInd.longitude != null)); setPresenceOnly(!!selectedMapInd.isPresenceOnly); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-bold px-4 py-2 rounded-lg transition-colors">
+                        <button onClick={() => { setEditingId(selectedMapInd.id); setFormData({...selectedMapInd}); setSpeciesSearchQuery(panelSp?.commonName || ''); setAddLocation(!!(selectedMapInd.latitude != null || selectedMapInd.longitude != null)); setShowForm(true); }} className="flex items-center justify-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-bold px-4 py-2 rounded-lg transition-colors">
                           <Pencil size={14}/> Edit
                         </button>
                       </div>
@@ -1441,7 +1470,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
              <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
                <div className="flex items-center gap-3">
                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">{editingId ? <Pencil size={20}/> : <Plus size={20}/>}</div>
-                 <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : 'Register Individual or Presence'}</h3>
+                 <h3 className="text-xl font-bold text-slate-900">{editingId ? t('updateIndividual') : 'Register Individual'}</h3>
                </div>
                <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-full transition-colors"><XIcon size={24}/></button>
              </div>
@@ -1532,8 +1561,20 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                               </div>
                             )}
                          </div>
-                         <div><label className="text-xs font-bold text-slate-500 uppercase">{t('studbookId')} <span className="text-red-500">*</span></label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-mono" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required /></div>
-                         <div>
+<div className="space-y-3">
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">{t('studbookId')} <span className="text-red-500">*</span></label><input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-mono" value={formData.studbookId} onChange={e => setFormData({...formData, studbookId: e.target.value})} required /></div>
+                            <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase">{t('microchipNumber')}</label>
+                              <div className="flex gap-2 mt-1">
+                                <input className="flex-1 px-4 py-2 border border-slate-300 rounded-lg outline-none font-mono" value={formData.microchipNumber || ''} onChange={e => { const v = e.target.value.replace(/[^0-9]/g, '').slice(0, 15); setFormData({...formData, microchipNumber: v}); }} placeholder={t('microchipNumberPlaceholder')} maxLength={15} />
+                                <button type="button" onClick={() => setScanTarget('form')} className="p-2 bg-slate-100 text-slate-600 rounded-lg border border-slate-200 hover:bg-slate-200 transition-colors shrink-0" title={t('scanBarcodeTooltip')}><ScanLine size={18}/></button>
+                              </div>
+                              {formData.microchipNumber && formData.microchipNumber.length > 0 && formData.microchipNumber.length !== 15 && (
+                                <p className="text-[10px] text-amber-600 mt-1">{t('microchipInvalidLengthHint')}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div>
                             <label className="text-xs font-bold text-slate-500 uppercase">{t('name')} {!isPlant && <span className="text-red-500">*</span>}</label>
                             <input className="w-full px-4 py-2 mt-1 border border-slate-300 rounded-lg outline-none font-bold placeholder:font-normal" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder={isPlant ? "(Optional for plants)" : "Full Name"} required={!isPlant} />
                          </div>
@@ -1584,14 +1625,12 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                          {/* Mapping mode selector */}
                          <div className="space-y-1.5">
                            {([
-                             { id: 'none',     label: 'No location data',               desc: null,                                      active: !addLocation && !presenceOnly },
-                             { id: 'presence', label: 'Generally present',              desc: 'No specific individual tracked',           active: presenceOnly },
+                             { id: 'none',     label: 'No location data',               desc: null,                                      active: !addLocation },
                              { id: 'pin',      label: 'Pin to specific location',       desc: null,                                      active: addLocation },
                            ] as { id: string; label: string; desc: string | null; active: boolean }[]).map(opt => (
                              <label key={opt.id} className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                                opt.active
-                                 ? opt.id === 'presence' ? 'bg-teal-50 border-teal-300'
-                                 : opt.id === 'pin'      ? 'bg-emerald-50 border-emerald-300'
+                                 ? opt.id === 'pin'      ? 'bg-emerald-50 border-emerald-300'
                                  :                         'bg-slate-100 border-slate-300'
                                  : 'bg-white border-slate-200 hover:bg-slate-50'
                              }`}>
@@ -1601,9 +1640,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                                  className="mt-0.5 accent-emerald-600 shrink-0"
                                  checked={opt.active}
                                  onChange={() => {
-                                   if (opt.id === 'none')     { setAddLocation(false); setPresenceOnly(false); }
-                                   else if (opt.id === 'presence') { setAddLocation(false); setPresenceOnly(true); }
-                                   else                        { setAddLocation(true);  setPresenceOnly(false); }
+                                   if (opt.id === 'none')     { setAddLocation(false); }
+                                   else                        { setAddLocation(true);  }
                                  }}
                                />
                                <div className="flex-1 min-w-0">
@@ -1634,14 +1672,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                             </div>
                          )}
 
-                         {presenceOnly && (
-                           <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 text-center">
-                             <p className="text-teal-700 font-semibold text-sm">Species Presence Record</p>
-                             <p className="text-xs text-teal-500 mt-1">Marks the species as generally present — no specific individual is tracked.</p>
-                           </div>
-                         )}
-
-                         {!addLocation && !presenceOnly && (
+                         {!addLocation && (
                             <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-6 text-center">
                                <MapIcon2 className="mx-auto mb-2 text-slate-300 opacity-50" size={32} />
                                <p className="text-xs text-slate-400 font-medium">Location data is disabled for this record.</p>
@@ -1653,8 +1684,9 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
 
                 <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 shrink-0">
                    <button type="button" onClick={() => setShowForm(false)} className="px-8 py-3 text-slate-600 font-bold hover:bg-slate-100 rounded-xl">Cancel</button>
-                   <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-10 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700">
-                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Save size={20}/>} {editingId ? "Update Record" : presenceOnly ? "Register Presence" : "Register Individual"}
+                   <button type="submit" disabled={isSubmitting} className="bg-emerald-600 text-white px-10 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : saveSuccess ? <CheckCircle2 size={20} className="text-white" /> : <Save size={20}/>}
+                      {isSubmitting ? t('saving') : saveSuccess ? t('saved') : editingId ? "Update Record" : "Register Individual"}
                    </button>
                 </div>
              </form>
@@ -1733,6 +1765,14 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
         onCancel={() => setBulkDeletePending(false)}
         isLoading={isDeleting}
       />
+
+      {scanTarget && (
+        <BarcodeScanner
+          onScan={handleScanResult}
+          onClose={() => setScanTarget(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 };
