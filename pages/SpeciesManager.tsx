@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals, getAiUsageInfo, deleteSpecies } from '../services/storage';
 import { Individual } from '../types';
@@ -7,6 +7,7 @@ import { Species, SpeciesType, PlantClassification, Organization, Project } from
 import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare, MapPin, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
+import LazyImage from '../components/LazyImage';
 
 interface SpeciesManagerProps {
   currentProjectId: string;
@@ -17,13 +18,15 @@ interface SpeciesManagerProps {
 const nativeStatusStyle = (status: string) => {
   switch (status) {
     case 'Native':     return 'bg-green-100 text-green-700 border-green-200';
+    case 'Non-Native':
     case 'Introduced': return 'bg-amber-100 text-amber-700 border-amber-200';
     case 'Invasive':   return 'bg-red-100 text-red-700 border-red-200';
+    case 'Endemic':    return 'bg-blue-100 text-blue-700 border-blue-200';
     default:           return 'bg-slate-100 text-slate-500 border-slate-200';
   }
 };
 
-/** Display label: "Introduced" becomes "Non-Native" for clarity */
+/** Display label: "Introduced" becomes "Non-Native" for backward compatibility */
 const nativeStatusLabel = (status: string) =>
   status === 'Introduced' ? 'Non-Native' : status;
 
@@ -54,6 +57,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
   const [aiLimitInfo, setAiLimitInfo] = useState(() => getAiUsageInfo());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const editIdConsumed = useRef(false);
 
   // Delete confirmation modal state
   type DeleteTarget = { ids: string[]; label: string } | null;
@@ -74,7 +79,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     breedingSeasonEnd: 12,
     imageUrl: '',
     nativeStatusCountry: 'Unknown',
-    nativeStatusLocal: 'Unknown'
+    nativeStatusLocal: 'Unknown',
+    isGenerallyPresent: false
   });
 
   useEffect(() => {
@@ -89,6 +95,17 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     if (location.state?.onboarding) {
        setShowOnboarding(true);
        window.history.replaceState({}, document.title);
+    }
+
+    if (!editIdConsumed.current && location.state?.editId && species.length > 0) {
+       const spToEdit = species.find(s => s.id === location.state.editId);
+       if (spToEdit) {
+          editIdConsumed.current = true;
+          setEditingId(spToEdit.id);
+          setFormData({ ...spToEdit });
+          setShowForm(true);
+          window.history.replaceState({}, document.title);
+       }
     }
 
     if (!editingId && projs.length === 1 && !formData.projectId) {
@@ -177,7 +194,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     setFormData({ 
       commonName: '', scientificName: '', type: 'Animal', conservationStatus: '', sexualMaturityAgeYears: 0, 
       averageAdultWeightKg: 0, lifeExpectancyYears: 0, breedingSeasonStart: 1, breedingSeasonEnd: 12, 
-      imageUrl: '', description: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
+      imageUrl: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
+      isGenerallyPresent: false,
       projectId: currentProjectId === 'ALL_PROJECTS' ? (allProjects.length === 1 ? allProjects[0].id : '') : currentProjectId
     });
   };
@@ -197,22 +215,33 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
        return;
     }
 
-    const primaryName = formData.commonName || formData.scientificName || 'Unknown';
-    const finalSpecies: Species = {
-       ...formData as Species,
-       id: editingId || `sp-${Date.now()}`,
-       projectId: targetProjectId,
-       commonName: primaryName,
-       scientificName: formData.scientificName || primaryName,
-       imageUrl: formData.imageUrl || generatePattern(primaryName),
-       sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
-       averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
-       lifeExpectancyYears: Number(formData.lifeExpectancyYears || 0)
-    };
-    const updated = editingId ? allSpecies.map(sp => sp.id === editingId ? finalSpecies : sp) : [...allSpecies, finalSpecies];
-    setAllSpecies(updated);
-    await saveSpecies(updated);
-    handleCloseForm();
+    setIsSaving(true);
+    try {
+      const primaryName = formData.commonName || formData.scientificName || 'Unknown';
+      const finalSpecies: Species = {
+         ...formData as Species,
+         id: editingId || `sp-${Date.now()}`,
+         projectId: targetProjectId,
+         commonName: primaryName,
+         scientificName: formData.scientificName || primaryName,
+         imageUrl: formData.imageUrl || generatePattern(primaryName),
+         sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
+         averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
+         lifeExpectancyYears: Number(formData.lifeExpectancyYears || 0)
+      };
+      const updated = editingId ? allSpecies.map(sp => sp.id === editingId ? finalSpecies : sp) : [...allSpecies, finalSpecies];
+      setAllSpecies(updated);
+      handleCloseForm();
+      // Fire-and-forget: upload images + sync to server in background
+      saveSpecies(updated).catch(e => {
+        console.error('Species save failed:', e);
+        window.dispatchEvent(new CustomEvent('os-sync-error', { detail: 'Species could not be saved to the server.' }));
+      });
+    } catch (err) {
+      alert("Database Error: Could not save species.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteSpecies = (id: string) => {
@@ -259,6 +288,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     const valB = (b[sortBy] || '').toString().toLowerCase();
     return sortOrder === 'asc' ? (valA < valB ? -1 : 1) : (valA > valB ? -1 : 1);
   });
+
+  const speciesImageCache: Record<string, string> = {};
+  for (const ind of allIndividuals) {
+    if (ind.imageUrl && !speciesImageCache[ind.speciesId]) {
+      speciesImageCache[ind.speciesId] = ind.imageUrl;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -360,7 +396,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                       <h4 className="font-bold text-slate-800 flex items-center gap-2"><MapPin size={18} className="text-green-500"/> Native Status</h4>
                       <p className="text-xs text-slate-500">Is this species native to your organisation's location? AI autofill determines this automatically — override it here if needed.</p>
                       <div className="flex flex-wrap gap-2">
-                        {(['Unknown', 'Native', 'Introduced', 'Invasive'] as const).map(status => {
+                        {(['Unknown', 'Native', 'Non-Native', 'Invasive', 'Endemic'] as const).map(status => {
                           const isActive = (formData.nativeStatusLocal || 'Unknown') === status;
                           return (
                             <button
@@ -375,11 +411,29 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                                   : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400 hover:text-slate-600'
                               }`}
                             >
-                              {status === 'Introduced' ? 'Non-Native' : status}
+                              {status}
                             </button>
                           );
                         })}
                       </div>
+                    </div>
+
+                    {/* Presence toggle */}
+                    <div className="space-y-3 pt-4 border-t border-slate-100">
+                      <h4 className="font-bold text-slate-800 flex items-center gap-2"><PawPrint size={18} className="text-teal-500"/> Presence</h4>
+                      <p className="text-xs text-slate-500">Mark this species as generally present in your collection or facility.</p>
+                      <label className="flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors bg-white border-slate-200 hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 accent-emerald-600 shrink-0"
+                          checked={!!formData.isGenerallyPresent}
+                          onChange={(e) => setFormData({ ...formData, isGenerallyPresent: e.target.checked })}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-semibold text-slate-700 block">Generally present</span>
+                          <span className="text-[11px] text-slate-400">Species is present at your facility (no specific individual tracked)</span>
+                        </div>
+                      </label>
                     </div>
 
                     {/* Image section moved to the bottom */}
@@ -403,7 +457,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
               </div>
               <div className="flex justify-end pt-6 border-t border-slate-100 space-x-3 shrink-0">
                 <button type="button" onClick={handleCloseForm} className="px-6 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">{t('cancel')}</button>
-                <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2.5 rounded-lg font-bold shadow-lg transition-all">{editingId ? t('updateSpecies') : t('saveSpecies')}</button>
+                <button type="submit" disabled={isSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-2.5 rounded-lg font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                  {isSaving ? <Loader2 size={18} className="animate-spin" /> : null}
+                  {isSaving ? (editingId ? t('updating') : t('saving')) : (editingId ? t('updateSpecies') : t('saveSpecies'))}
+                </button>
               </div>
             </form>
           </div>
@@ -433,10 +490,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
           const isSelected = selectedIds.has(species.id);
           const canDelete = indCount === 0;
           return (
-            <div key={species.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full ${isSelected ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200'}`}>
+            <div key={species.id} onClick={() => navigate(`/species/${species.id}`)} className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full cursor-pointer ${isSelected ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200'}`}>
               {/* Checkbox (top-left) */}
               <button
-                onClick={() => canDelete && toggleSelect(species.id)}
+                onClick={(e) => { e.stopPropagation(); canDelete && toggleSelect(species.id); }}
                 title={canDelete ? (isSelected ? 'Deselect' : 'Select for deletion') : 'Cannot delete: has individuals'}
                 className={`absolute top-3 left-3 z-10 p-1 rounded-full transition-all shadow ${canDelete ? 'cursor-pointer opacity-0 group-hover:opacity-100' : 'cursor-not-allowed opacity-0 group-hover:opacity-40'} ${isSelected ? '!opacity-100' : ''}`}
               >
@@ -447,13 +504,19 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
               </button>
               {/* Edit + Delete buttons (top-right) */}
               <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all flex gap-1.5">
-                <button onClick={() => handleEdit(species)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all" title="Edit species"><Pencil size={16} /></button>
+                <button onClick={(e) => { e.stopPropagation(); handleEdit(species); }} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-emerald-600 shadow-lg hover:scale-110 transition-all" title="Edit species"><Pencil size={16} /></button>
                 {canDelete && (
-                  <button onClick={() => handleDeleteSpecies(species.id)} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-red-600 shadow-lg hover:scale-110 transition-all" title="Delete species"><Trash2 size={16} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDeleteSpecies(species.id); }} className="bg-white/90 p-2.5 rounded-full text-slate-600 hover:text-red-600 shadow-lg hover:scale-110 transition-all" title="Delete species"><Trash2 size={16} /></button>
                 )}
               </div>
-              <div className="h-52 bg-slate-200 relative overflow-hidden">
-                 <img src={species.imageUrl || allIndividuals.find(i => i.speciesId === species.id && i.imageUrl)?.imageUrl || generatePattern(species.commonName)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={species.commonName} />
+<div className="h-52 bg-slate-200 relative overflow-hidden">
+                  <LazyImage
+                    src={species.imageUrl || speciesImageCache[species.id] || generatePattern(species.commonName)}
+                    alt={species.commonName}
+                    placeholder={generatePattern(species.commonName)}
+                    className="w-full h-full"
+                    imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  />
                  <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || 'Unknown'}</div>
                  <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
               </div>
@@ -487,12 +550,17 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                 })()}
                 {indCount > 0 ? (
                   <button
-                    onClick={() => navigate('/individuals', { state: { filterSpeciesId: species.id } })}
+                    onClick={(e) => { e.stopPropagation(); navigate('/individuals', { state: { filterSpeciesId: species.id } }); }}
                     className="mt-4 w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-sm px-4 py-2.5 rounded-xl border border-emerald-100 transition-colors"
                   >
                     <Users size={15} />
                     {`View ${indCount} individual${indCount === 1 ? '' : 's'}`}
                   </button>
+                ) : species.isGenerallyPresent ? (
+                  <div className="mt-4 w-full flex items-center justify-center gap-2 bg-teal-50 text-teal-700 font-bold text-sm px-4 py-2.5 rounded-xl border border-teal-100">
+                    <PawPrint size={15} />
+                    Generally present
+                  </div>
                 ) : (
                   <div className="mt-4 w-full flex items-center justify-center gap-2 bg-slate-50 text-slate-400 font-medium text-sm px-4 py-2.5 rounded-xl border border-slate-100">
                     <Users size={15} />

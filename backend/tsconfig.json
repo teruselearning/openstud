@@ -11,6 +11,6 @@
     "moduleResolution": "node",
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "../../services/i18n.ts", "../../types.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules"]
 }
