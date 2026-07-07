@@ -182,12 +182,18 @@ const IndividualDetail: React.FC = () => {
       if (settled) return;
       settled = true;
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      const { latitude, longitude } = pos.coords;
-      const updated = { ...individual, latitude, longitude };
-      setIndividual(updated);
-      const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
-      await saveIndividuals(all);
-      setIsSettingLocation(false);
+      try {
+        const { latitude, longitude } = pos.coords;
+        const updated = { ...individual, latitude, longitude };
+        setIndividual(updated);
+        const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
+        await saveIndividuals(all, true);
+      } catch (e) {
+        console.error('Failed to save location:', e);
+        setLocationError('Failed to save location. Please try again.');
+      } finally {
+        setIsSettingLocation(false);
+      }
     };
 
     // Safety fallback — accept best available position after TIMEOUT_MS
@@ -230,12 +236,18 @@ const IndividualDetail: React.FC = () => {
 
   const handleSaveLocation = async () => {
     if (!individual || !pendingLatLng) return;
-    const { lat: latitude, lng: longitude } = pendingLatLng;
-    const updated = { ...individual, latitude, longitude };
-    setIndividual(updated);
-    const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
-    await saveIndividuals(all);
-    setIsUpdatingLocation(false);
+    try {
+      const { lat: latitude, lng: longitude } = pendingLatLng;
+      const updated = { ...individual, latitude, longitude };
+      setIndividual(updated);
+      const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
+      await saveIndividuals(all, true);
+    } catch (e) {
+      console.error('Failed to save location:', e);
+      setLocationError('Failed to save location. Please try again.');
+    } finally {
+      setIsUpdatingLocation(false);
+    }
   };
 
   const handleCancelUpdate = () => {

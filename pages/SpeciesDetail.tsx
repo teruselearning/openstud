@@ -254,6 +254,11 @@ const SpeciesDetail: React.FC = () => {
                   )}
                 </div>
               </>
+            ) : species.isGenerallyPresent ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <PawPrint size={32} className="text-teal-400 mb-2 opacity-70"/>
+                <p className="text-sm text-teal-600 font-medium">Generally present</p>
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Users size={32} className="text-slate-300 mb-2 opacity-50"/>
