@@ -1032,7 +1032,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                     />
                   </Link>
                   {ind.isPresenceOnly
-                    ? <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase bg-teal-600">Presence</div>
+                    ? <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase bg-teal-600">Generally present</div>
                     : (!isPlantInd && <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>)
                   }
                   {ind.isDeceased && <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide">Deceased</div>}

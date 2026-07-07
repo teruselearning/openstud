@@ -260,7 +260,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide ${sp.type === 'Plant' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{sp.type}</span>
-                      <span className="text-sm font-bold text-slate-600 w-6 text-right">{count}</span>
+                      <span className="text-sm font-bold text-slate-600 w-6 text-right">{count > 0 ? count : '-'}</span>
                       <ArrowRight size={14} className="text-slate-300 group-hover:text-emerald-500 transition-colors" />
                     </div>
                   </Link>

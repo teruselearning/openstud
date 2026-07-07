@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals, getAiUsageInfo, deleteSpecies } from '../services/storage';
+import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals, getAiUsageInfo, deleteSpecies, saveIndividuals } from '../services/storage';
 import { Individual } from '../types';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
-import { Species, SpeciesType, PlantClassification, Organization, Project } from '../types';
+import { Species, SpeciesType, PlantClassification, Organization, Project, Sex } from '../types';
 import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare, MapPin, Info } from 'lucide-react';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
@@ -218,9 +218,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     setIsSaving(true);
     try {
       const primaryName = formData.commonName || formData.scientificName || 'Unknown';
+      const speciesId = editingId || `sp-${Date.now()}`;
       const finalSpecies: Species = {
          ...formData as Species,
-         id: editingId || `sp-${Date.now()}`,
+         id: speciesId,
          projectId: targetProjectId,
          commonName: primaryName,
          scientificName: formData.scientificName || primaryName,
@@ -232,6 +233,36 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
       const updated = editingId ? allSpecies.map(sp => sp.id === editingId ? finalSpecies : sp) : [...allSpecies, finalSpecies];
       setAllSpecies(updated);
       handleCloseForm();
+
+      // Create a presence individual if generally present is set
+      if (formData.isGenerallyPresent) {
+        const allInds = getIndividuals();
+        const existingPresence = allInds.find(i => i.speciesId === speciesId && i.isPresenceOnly);
+        if (!existingPresence) {
+          const presenceInd: Individual = {
+            id: `ind-${Date.now()}`,
+            projectId: targetProjectId,
+            speciesId: speciesId,
+            studbookId: `SB-${speciesId.slice(-6).toUpperCase()}`,
+            name: primaryName,
+            sex: Sex.UNKNOWN,
+            birthDate: '',
+            weightKg: 0,
+            notes: '',
+            isPresenceOnly: true,
+            weightHistory: [],
+            growthHistory: [],
+            healthHistory: []
+          };
+          const updatedInds = [...allInds, presenceInd];
+          setAllIndividuals(updatedInds);
+          saveIndividuals(updatedInds).catch(e => {
+            console.error('Presence individual save failed:', e);
+            window.dispatchEvent(new CustomEvent('os-sync-error', { detail: 'Presence individual could not be saved.' }));
+          });
+        }
+      }
+
       // Fire-and-forget: upload images + sync to server in background
       saveSpecies(updated).catch(e => {
         console.error('Species save failed:', e);
@@ -434,6 +465,11 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                           <span className="text-[11px] text-slate-400">Species is present at your facility (no specific individual tracked)</span>
                         </div>
                       </label>
+                      {formData.isGenerallyPresent && (
+                        <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 text-xs text-teal-800 leading-relaxed">
+                          An individual record will be created to represent this species, so observations, notes etc can be added.
+                        </div>
+                      )}
                     </div>
 
                     {/* Image section moved to the bottom */}

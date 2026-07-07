@@ -355,6 +355,14 @@ const IndividualDetail: React.FC = () => {
         </button>
       </div>
 
+      {/* Presence banner */}
+      {individual.isPresenceOnly && (
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-sm text-teal-800 leading-relaxed flex items-start gap-3">
+          <Info size={18} className="shrink-0 mt-0.5 text-teal-500" />
+          <span>An individual record is created to represent this species, so observations, notes etc can be added.</span>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-slate-200 space-x-8">
         <button onClick={() => setActiveTab('overview')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'overview' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t('overview')}</button>
