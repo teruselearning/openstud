@@ -112,7 +112,9 @@ const fromDbSpecies = (s: any): Species => ({
   breedingSeasonEnd: s.breeding_season_end, 
   imageUrl: s.image_url, 
   nativeStatusCountry: s.native_status_country, 
-  nativeStatusLocal: s.native_status_local 
+  nativeStatusLocal: s.native_status_local,
+  description: s.description,
+  isGenerallyPresent: !!s.is_generally_present
 });
 
 const fromDbInd = (i: any): Individual => ({ 
@@ -260,7 +262,9 @@ export const mapSpeciesToDb = (s: Species) => ({
   breeding_season_end: sanitizeNum(s.breedingSeasonEnd, null), 
   image_url: s.imageUrl || null, 
   native_status_country: s.nativeStatusCountry || null, 
-  native_status_local: s.nativeStatusLocal || null 
+  native_status_local: s.nativeStatusLocal || null,
+  description: s.description || null,
+  is_generally_present: s.isGenerallyPresent ? 1 : null
 });
 
 export const mapIndToDb = (i: Individual) => ({ 
@@ -303,34 +307,34 @@ export const mapEnclosureToDb = (e: Enclosure) => ({
   individual_ids: e.individualIds || [] 
 });
 
-export const syncPushOrg = async (org: Organization) => apiRequest('/rest/v1/organizations', 'POST', mapOrgToDb(org));
-export const syncPushUsers = async (users: User[]) => apiRequest('/rest/v1/users', 'POST', users.map(mapUserToDb));
-export const syncPushProjects = async (projects: Project[]) => apiRequest('/rest/v1/projects', 'POST', projects.map(mapProjectToDb));
-export const syncPushSpecies = async (species: Species[]) => apiRequest('/rest/v1/species', 'POST', species.map(mapSpeciesToDb));
+export const syncPushOrg = async (org: Organization) => apiRequest('/api/organizations', 'POST', mapOrgToDb(org));
+export const syncPushUsers = async (users: User[]) => apiRequest('/api/users', 'POST', users.map(mapUserToDb));
+export const syncPushProjects = async (projects: Project[]) => apiRequest('/api/projects', 'POST', projects.map(mapProjectToDb));
+export const syncPushSpecies = async (species: Species[]) => apiRequest('/api/species', 'POST', species.map(mapSpeciesToDb));
 export const syncPushIndividuals = async (individuals: Individual[]) => {
   const pass1Data = individuals.map(i => ({ ...mapIndToDb(i), sire_id: null, dam_id: null }));
-  await apiRequest('/rest/v1/individuals', 'POST', pass1Data);
+  await apiRequest('/api/individuals', 'POST', pass1Data);
   const indWithParents = individuals.filter(i => i.sireId || i.damId);
-  if (indWithParents.length > 0) await apiRequest('/rest/v1/individuals', 'POST', indWithParents.map(mapIndToDb));
+  if (indWithParents.length > 0) await apiRequest('/api/individuals', 'POST', indWithParents.map(mapIndToDb));
 };
-export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/rest/v1/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
+export const syncPushEnclosures = async (enclosures: Enclosure[]) => apiRequest('/api/enclosures', 'POST', enclosures.map(mapEnclosureToDb));
 
-export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/rest/v1/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
+export const syncPushBreedingEvents = async (events: BreedingEvent[]) => apiRequest('/api/breeding_events', 'POST', events.map(e => ({ id: e.id, species_id: e.speciesId, sire_id: e.sireId, dam_id: e.damId, date: e.date, offspring_count: e.offspringCount, successful_births: e.successfulBirths, losses: e.losses, notes: e.notes, offspring_ids: e.offspringIds })));
 
-export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/rest/v1/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
+export const syncPushBreedingLoans = async (loans: BreedingLoan[]) => apiRequest('/api/breeding_loans', 'POST', loans.map(l => ({ id: l.id, partner_org_id: l.partnerOrgId, proposer_org_id: l.proposerOrgId, role: l.role, start_date: l.startDate, end_date: l.endDate, status: l.status, individual_ids: l.individualIds, terms: l.terms, notification_recipient_id: l.notificationRecipientId, change_request: l.changeRequest })));
 
-export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/rest/v1/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
+export const syncPushPartnerships = async (partnerships: Partnership[]) => apiRequest('/api/partnerships', 'POST', partnerships.map(p => ({ id: p.id, org_id_1: p.orgId1, org_id_2: p.orgId2, status: p.status, established_date: p.establishedDate })));
 
-export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/rest/v1/app_config', 'POST', { id: 'global-settings', settings });
-export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/rest/v1/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
+export const syncPushSettings = async (settings: SystemSettings) => apiRequest('/api/app_config', 'POST', { id: 'global-settings', settings });
+export const syncPushLanguages = async (languages: LanguageConfig[]) => apiRequest('/api/languages', 'POST', languages.map(l => ({ code: l.code, name: l.name, translations: l.translations, is_default: !!l.isDefault, manual_overrides: l.manualOverrides, is_deleted: !!l.deleted })));
 
 export const syncDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
 export const syncPermanentDeleteOrganization = async (id: string) => syncDeleteRecord('organizations', id);
-export const syncDeleteLanguage = async (code: string) => apiRequest(`/rest/v1/languages?code=${code}`, 'DELETE');
+export const syncDeleteLanguage = async (code: string) => apiRequest(`/api/languages?code=${code}`, 'DELETE');
 
 export const syncDeleteRecord = async (table: string, id: string) => {
   console.log(`[SYNC DELETE] Deleting ${id} from ${table}...`);
-  return apiRequest(`/rest/v1/${table}?id=${id}`, 'DELETE');
+  return apiRequest(`/api/${table}?id=${id}`, 'DELETE');
 };
 
 export const fetchPublicConfig = async () => {

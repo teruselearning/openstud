@@ -555,10 +555,10 @@ export const exportFullData = () => {
 export const exportDataAsCSV = (): string => {
   const individuals = getIndividuals();
   const species = getSpecies();
-  let csv = 'Type,Name,Studbook ID,Common Name,Scientific Name,Sex,Birth Date,Weight(kg)\n';
+  let csv = 'Type,Name,Studbook ID,Microchip Number,Common Name,Scientific Name,Sex,Birth Date,Weight(kg)\n';
   individuals.forEach(ind => {
     const sp = species.find(s => s.id === ind.speciesId);
-    csv += `Individual,"${ind.name}","${ind.studbookId}","${sp?.commonName || ''}","${sp?.scientificName || ''}",${ind.sex},${ind.birthDate || ''},${ind.weightKg}\n`;
+    csv += `Individual,"${ind.name}","${ind.studbookId}","${ind.microchipNumber || ''}","${sp?.commonName || ''}","${sp?.scientificName || ''}",${ind.sex},${ind.birthDate || ''},${ind.weightKg}\n`;
   });
   return csv;
 };

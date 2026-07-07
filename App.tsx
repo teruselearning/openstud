@@ -44,6 +44,7 @@ import IndividualManager from './pages/IndividualManager';
 import OrgSettings from './pages/OrgSettings';
 import BreedingManager from './pages/BreedingManager';
 import IndividualDetail from './pages/IndividualDetail';
+import SpeciesDetail from './pages/SpeciesDetail';
 import Network from './pages/Network';
 import Landing, { ViewMode } from './pages/Landing';
 import AcceptInvite from './pages/AcceptInvite';
@@ -656,6 +657,7 @@ const App: React.FC = () => {
                   <Route path="/" element={<Dashboard currentProjectId={currentProjectId} syncVersion={syncVersion} />} />
                   <Route path="/network" element={<Network />} />
                   <Route path="/species" element={<SpeciesManager currentProjectId={currentProjectId} syncVersion={syncVersion} />} />
+                  <Route path="/species/:id" element={<SpeciesDetail />} />
                   <Route path="/individuals" element={<IndividualManager currentProjectId={currentProjectId} syncVersion={syncVersion} />} />
                   <Route path="/individuals/:id" element={<IndividualDetail />} />
                   <Route path="/enclosures" element={<EnclosureManager currentProjectId={currentProjectId} />} />

@@ -223,7 +223,7 @@ export interface LanguageConfig {
 
 export type SpeciesType = 'Animal' | 'Plant';
 export type PlantClassification = 'Dioecious' | 'Monoecious';
-export type NativeStatus = 'Native' | 'Introduced' | 'Invasive' | 'Unknown';
+export type NativeStatus = 'Native' | 'Non-Native' | 'Invasive' | 'Endemic' | 'Unknown';
 
 export interface Species {
   id: string;
@@ -246,6 +246,8 @@ export interface Species {
   description?: string;
   /** True for unidentified-species placeholders created from the individual registration form */
   isUnknown?: boolean;
+  /** Species-level presence flag: when true, the species card shows "Generally present" */
+  isGenerallyPresent?: boolean;
 }
 
 export enum Sex {
@@ -309,6 +311,7 @@ export interface Individual {
   /** True for records that represent species presence rather than a tracked individual */
   isPresenceOnly?: boolean;
   loanStatus?: LoanStatus;
+  microchipNumber?: string;
   transferredToOrgId?: string;
   transferDate?: string;
   transferNote?: string;

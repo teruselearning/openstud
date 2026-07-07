@@ -17,12 +17,39 @@ declare const __dirname: string;
 
 dotenv.config();
 
+const DB_CONFIG_PATH = path.join(__dirname, '..', 'db-config.json');
+
+const loadPersistedDbConfig = () => {
+  try {
+    if (fs.existsSync(DB_CONFIG_PATH)) {
+      const raw = fs.readFileSync(DB_CONFIG_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      console.log('[DATABASE] Loaded persisted DB config from db-config.json');
+      return parsed;
+    }
+  } catch (e: any) {
+    console.warn('[DATABASE] Could not read db-config.json:', e.message);
+  }
+  return null;
+};
+
+const persistDbConfig = (config: { host: string; user: string; password: string; database: string; port: number }) => {
+  try {
+    fs.writeFileSync(DB_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    console.log('[DATABASE] Persisted DB config to db-config.json');
+  } catch (e: any) {
+    console.error('[DATABASE] Could not write db-config.json:', e.message);
+  }
+};
+
+const persistedConfig = loadPersistedDbConfig();
+
 let dbConfig = {
-  host: process.env.DATABASE_HOST || 'localhost',
-  user: process.env.DATABASE_USER || 'root',
-  password: process.env.DATABASE_PASSWORD || '',
-  database: process.env.DATABASE_NAME || 'openstudbook',
-  port: Number(process.env.DATABASE_PORT) || 3306,
+  host: persistedConfig?.host || process.env.DATABASE_HOST || 'localhost',
+  user: persistedConfig?.user || process.env.DATABASE_USER || 'root',
+  password: persistedConfig?.password || process.env.DATABASE_PASSWORD || '',
+  database: persistedConfig?.database || process.env.DATABASE_NAME || 'openstudbook',
+  port: persistedConfig?.port || Number(process.env.DATABASE_PORT) || 3306,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -62,7 +89,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan('dev'));
 
-const UPLOADS_DIR = path.join(__dirname, '../../uploads');
+const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(PROJECT_ROOT, 'uploads');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -129,7 +157,7 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country TEXT, native_status_local TEXT, description LONGTEXT)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, thumbnail_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, thumbnail_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), microchip_number VARCHAR(15) UNIQUE, transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
   // Migration: add thumbnail_url to existing installs
   try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS thumbnail_url LONGTEXT`); } catch (_) {}
   // Migration: widen native_status columns from VARCHAR(50) to TEXT for existing installs
@@ -137,6 +165,8 @@ const runMigrations = async (db: mysql.Pool) => {
   try { await db.execute(`ALTER TABLE species MODIFY COLUMN native_status_local TEXT`); } catch (_) {}
   // Migration: add description column to existing species tables
   try { await db.execute(`ALTER TABLE species ADD COLUMN IF NOT EXISTS description LONGTEXT`); } catch (_) {}
+  // Migration: add is_generally_present column to existing species tables
+  try { await db.execute(`ALTER TABLE species ADD COLUMN IF NOT EXISTS is_generally_present TINYINT(1) DEFAULT NULL`); } catch (_) {}
   // Migration: orgs that still have the old hard-coded default limit of 100 get reset to 0 (unlimited).
   // 0 means no cap (superadmin / owner org behaviour). Also clear any stale monthly counter so the
   // org isn't stuck in a "limit reached" state caused by the low default.
@@ -146,6 +176,8 @@ const runMigrations = async (db: mysql.Pool) => {
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS gemini_api_key TEXT NULL`); } catch (_) {}
   // Migration: add per-org OpenRouter API key and AI provider/model config
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS openrouter_api_key TEXT NULL`); } catch (_) {}
+  // Migration: add microchip_number to existing individuals tables
+  try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS microchip_number VARCHAR(15) UNIQUE`); } catch (_) {}
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_text VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_image VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_research_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
@@ -242,6 +274,7 @@ app.post('/api/install/setup', async (req: any, res: any) => {
     await testConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\`;`);
     await testConn.end();
     resetPool({ host, user, password, database, port: Number(port) || 3306 });
+    persistDbConfig({ host, user, password, database, port: Number(port) || 3306 });
     const db = getDb();
     await runMigrations(db);
     await seedDatabase(db, orgName, adminPassword, adminEmail);
@@ -444,7 +477,7 @@ app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
   try {
     const config = await getAiConfig(req.user.orgId);
     if (reqModel) config.researchModel = reqModel;
-    const prompt = `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Introduced (non-native), or Invasive specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. Return ONLY JSON.`;
+    const prompt = `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Non-Native, Invasive, or Endemic specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. Return ONLY JSON.`;
     const text = await callAiProvider(config, 'text', prompt, true);
     if (text) {
       const sanitized = sanitizeJsonResponse(text);
@@ -940,7 +973,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users`);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, image_url, native_status_country, native_status_local, description FROM species`);
+            const [s]: any = await db.execute(`SELECT id, project_id, common_name, scientific_name, type, plant_classification, conservation_status, sexual_maturity_age_years, average_adult_weight_kg, life_expectancy_years, breeding_season_start, breeding_season_end, image_url, native_status_country, native_status_local, description, is_generally_present FROM species`);
             speciesRows = s;
             const [i]: any = await db.execute(`SELECT id, project_id, species_id, enclosure_id, studbook_id, name, sex, birth_date, weight_kg, sire_id, dam_id, thumbnail_url, dna_sequence, notes, source, source_details, latitude, longitude, is_deceased, death_date, loan_status, transferred_to_org_id, transfer_date, transfer_note, weight_history, growth_history, health_history FROM individuals`);
             individualsRows = i;
@@ -955,7 +988,7 @@ app.get('/api/sync', authenticate, async (req: any, res: any) => {
             projectsRows = pj;
             const [u]: any = await db.execute(`SELECT id, org_id, name, email, role, status, avatar_url, allowed_project_ids FROM users WHERE org_id = ?`, [orgId]);
             usersRows = u;
-            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.image_url, s.native_status_country, s.native_status_local, s.description FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
+            const [s]: any = await db.execute(`SELECT s.id, s.project_id, s.common_name, s.scientific_name, s.type, s.plant_classification, s.conservation_status, s.sexual_maturity_age_years, s.average_adult_weight_kg, s.life_expectancy_years, s.breeding_season_start, s.breeding_season_end, s.image_url, s.native_status_country, s.native_status_local, s.description, s.is_generally_present FROM species s JOIN projects p ON s.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             speciesRows = s;
             const [i]: any = await db.execute(`SELECT i.id, i.project_id, i.species_id, i.enclosure_id, i.studbook_id, i.name, i.sex, i.birth_date, i.weight_kg, i.sire_id, i.dam_id, i.thumbnail_url, i.dna_sequence, i.notes, i.source, i.source_details, i.latitude, i.longitude, i.is_deceased, i.death_date, i.loan_status, i.transferred_to_org_id, i.transfer_date, i.transfer_note, i.weight_history, i.growth_history, i.health_history FROM individuals i JOIN projects p ON i.project_id = p.id WHERE p.org_id = ?`, [orgId]);
             individualsRows = i;
@@ -1091,8 +1124,24 @@ app.post('/api/email/test', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+app.post('/api/upload', authenticate, async (req: any, res: any) => {
+    try {
+        const { data } = req.body;
+        if (!data || typeof data !== 'string') return res.status(400).json({ error: 'Missing data' });
+        const match = data.match(/^data:([^;]+);base64,(.+)$/s);
+        if (!match) return res.status(400).json({ error: 'Invalid base64 data URL' });
+        const ext = (match[1].split('/')[1] || 'bin').replace(/[^a-zA-Z0-9]/g, '');
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], 'base64'));
+        res.json({ success: true, url: `/uploads/${filename}` });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
+    // Guard: /api/upload has its own dedicated handler registered above.
+    // If this generic route matches it (e.g. stale deployment), skip gracefully.
+    if (table === 'upload') return res.status(404).json({ error: 'Use POST /api/upload for file uploads' });
     const body = req.body;
     const data = Array.isArray(body) ? body : [body];
 
@@ -1121,7 +1170,7 @@ app.post('/rest/v1/:table', authenticate, async (req: any, res: any) => {
 // Used for image-only updates where only { id, image_url, ... } is provided.
 // Unlike POST which uses INSERT ... ON DUPLICATE KEY UPDATE and requires all NOT NULL
 // columns, PATCH only updates the specified columns in an already-existing row.
-app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+app.patch('/api/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const body = req.body;
     const { id, ...fields } = body;
@@ -1141,7 +1190,7 @@ app.patch('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     }
 });
 
-app.get('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+app.get('/api/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const { id } = req.query;
     try {
@@ -1157,7 +1206,7 @@ app.get('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
+app.delete('/api/:table', authenticate, async (req: any, res: any) => {
     const { table } = req.params;
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: "Missing id" });
@@ -1188,23 +1237,11 @@ app.delete('/rest/v1/:table', authenticate, async (req: any, res: any) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/upload', authenticate, async (req: any, res: any) => {
-    try {
-        const { data } = req.body;
-        if (!data || typeof data !== 'string') return res.status(400).json({ error: 'Missing data' });
-        const match = data.match(/^data:([^;]+);base64,(.+)$/s);
-        if (!match) return res.status(400).json({ error: 'Invalid base64 data URL' });
-        const ext = (match[1].split('/')[1] || 'bin').replace(/[^a-zA-Z0-9]/g, '');
-        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], 'base64'));
-        res.json({ success: true, url: `/uploads/${filename}` });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-});
-
-app.use(express.static(path.join(__dirname, '../../dist')));
+const FRONTEND_DIR = process.env.FRONTEND_DIR || path.join(PROJECT_ROOT, 'dist');
+app.use(express.static(FRONTEND_DIR));
 app.get(/(.*)/, (req: any, res: any) => {
    if (req.path.startsWith('/api/')) return res.status(404).json({ error: "404" });
-   res.sendFile(path.join(__dirname, '../../dist/index.html'));
+   res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
 });
 
 (async () => { await initDatabase(); app.listen(PORT, () => console.log(`Backend listening on ${PORT}`)); })();

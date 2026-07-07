@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS public.individuals (
   is_deceased boolean,
   death_date text,
   loan_status text,
+  microchip_number text unique,
   transferred_to_org_id text,
   transfer_date text,
   transfer_note text,
