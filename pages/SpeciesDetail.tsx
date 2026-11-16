@@ -101,6 +101,12 @@ const SpeciesDetail: React.FC = () => {
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Type</span>
                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${species.type === 'Plant' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{species.type}</span>
               </div>
+              {species.category && (
+                <div className="flex items-center justify-between py-2 border-b border-slate-50">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('category')}</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{species.category}</span>
+                </div>
+              )}
               {project && (
                 <div className="flex items-center justify-between py-2 border-b border-slate-50">
                   <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Project</span>
@@ -254,6 +260,11 @@ const SpeciesDetail: React.FC = () => {
                   )}
                 </div>
               </>
+            ) : species.isGenerallyPresent ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <PawPrint size={32} className="text-teal-400 mb-2 opacity-70"/>
+                <p className="text-sm text-teal-600 font-medium">Generally present</p>
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Users size={32} className="text-slate-300 mb-2 opacity-50"/>

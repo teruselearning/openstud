@@ -6,7 +6,7 @@ import {
   PawPrint,
   Leaf,
   Settings,
-  Menu,
+  Menu as MenuIcon,
   X,
   Dna,
   HeartHandshake,
@@ -55,7 +55,8 @@ import EnclosureManager from './pages/EnclosureManager';
 import Installer from './components/Installer';
 import SetupWizard from './components/SetupWizard';
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
-import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fetchSpeciesImage, fetchIndividualImage } from './services/syncService';
+import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fromDbSpecies, fromDbInd } from './services/syncService';
+import { queueSpeciesImage, queueIndividualImage, createBatcher } from './services/imageQueue';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig, Species, Individual } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 
@@ -154,7 +155,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} />}
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-200 z-30 transform transition-transform duration-300 lg:translate-x-0 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-200 z-[100] transform transition-transform duration-300 lg:translate-x-0 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex flex-col gap-4 flex-shrink-0">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-2 text-emerald-700">{logoUrl ? <img src={logoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : (org.focus === 'Flora' ? <Leaf size={32} /> : <PawPrint size={32} />)}<h1 className="text-xl font-bold tracking-tight">OpenStudbook</h1></div>
@@ -217,6 +218,27 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
         </div>
       </aside>
     </>
+  );
+};
+
+const MobileBottomNav = ({ currentOrg }: { currentOrg: Organization | null }) => {
+  const location = useLocation();
+  const path = location.pathname;
+  return (
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-1 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+      <Link to="/" className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${path === '/' ? 'text-emerald-600' : 'text-slate-400'}`}>
+        <LayoutDashboard size={20} />
+        <span className="text-[9px] font-bold uppercase tracking-wider">Dashboard</span>
+      </Link>
+      <Link to="/species" className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${path.startsWith('/species') ? 'text-emerald-600' : 'text-slate-400'}`}>
+        <Dna size={20} />
+        <span className="text-[9px] font-bold uppercase tracking-wider">Species</span>
+      </Link>
+      <Link to="/individuals" className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${path.startsWith('/individuals') ? 'text-emerald-600' : 'text-slate-400'}`}>
+        {currentOrg?.focus === 'Flora' ? <Leaf size={20} /> : <PawPrint size={20} />}
+        <span className="text-[9px] font-bold uppercase tracking-wider">Individuals</span>
+      </Link>
+    </nav>
   );
 };
 
@@ -410,17 +432,17 @@ const App: React.FC = () => {
            if (data.users) saveUsers(data.users, true);
            console.log(`[Sync] Fetched ${data.species?.length ?? 0} species, ${data.individuals?.length ?? 0} individuals from server.`);
            try {
-             if (data.species) {
-               const localSpecies = getSpecies();
-               const localSpeciesMap = new Map(localSpecies.map(s => [s.id, s]));
-               const serverSpeciesIds = new Set(data.species.map((s: any) => s.id as string));
-               const localOnlySpecies = localSpecies.filter(s => !serverSpeciesIds.has(s.id));
-               // Server is authoritative — only merge server records (plus cached imageUrls).
-               // Local-only items are pushed at creation/edit time; this is a safety fallback.
-               const mergedSpecies = data.species.map((s: any) => ({
-                 ...s,
-                 imageUrl: s.imageUrl || localSpeciesMap.get(s.id)?.imageUrl || undefined,
-               }));
+              if (data.species) {
+                const localSpecies = getSpecies();
+                const localSpeciesMap = new Map(localSpecies.map(s => [s.id, s]));
+                const serverSpeciesIds = new Set(data.species.map((s: any) => s.id as string));
+                const localOnlySpecies = localSpecies.filter(s => !serverSpeciesIds.has(s.id));
+                // Server is authoritative — only merge server records (plus cached imageUrls).
+                // Local-only items are pushed at creation/edit time; this is a safety fallback.
+                const mergedSpecies = data.species.map((s: any) => ({
+                  ...s,
+                  imageUrl: s.imageUrl || localSpeciesMap.get(s.id)?.imageUrl || undefined,
+                }));
                console.log(`[Sync] Saving ${mergedSpecies.length} species to cache...`);
                await saveSpecies(mergedSpecies, true);
                console.log(`[Sync] Species saved. Cache now: ${getSpecies().length}`);
@@ -428,30 +450,27 @@ const App: React.FC = () => {
                // Restore images for species that have none locally (e.g. after cache clear)
                const speciesMissingImages = mergedSpecies.filter(s => !s.imageUrl);
                if (speciesMissingImages.length > 0) {
-                 Promise.all(speciesMissingImages.map(async s => {
-                   const imageUrl = await fetchSpeciesImage(s.id);
-                   return imageUrl ? { ...s, imageUrl } : null;
-                 })).then(async results => {
-                   const restored = results.filter(Boolean) as Species[];
-                   if (restored.length > 0) {
-                     const restoredMap = new Map(restored.map(s => [s.id, s]));
-                     const patched = getSpecies().map(s => restoredMap.get(s.id) || s);
-                     await saveSpecies(patched, true);
-                     setSyncVersion(v => v + 1);
-                   }
-                 }).catch(() => {});
+                 // Low priority + throttled: pages request what is on screen first (see imageQueue).
+                 const batcher = createBatcher<[string, string]>(async restored => {
+                   const urls = new Map(restored);
+                   await saveSpecies(getSpecies().map(s => urls.has(s.id) ? { ...s, imageUrl: urls.get(s.id) } : s), true);
+                   setSyncVersion(v => v + 1);
+                 }, 1500);
+                 speciesMissingImages.forEach(s => {
+                   queueSpeciesImage(s.id, { priority: 'low' }).then(url => { if (url) batcher.add([s.id, url]); });
+                 });
                }
              }
-             if (data.individuals) {
-               const localInds = getIndividuals();
-               const localIndMap = new Map(localInds.map(i => [i.id, i]));
-               const serverIndIds = new Set(data.individuals.map((i: any) => i.id as string));
-               const localOnlyInds = localInds.filter(i => !serverIndIds.has(i.id));
-               // Server is authoritative — only merge server records (plus cached imageUrls).
-               const mergedInds = data.individuals.map((i: any) => ({
-                 ...i,
-                 imageUrl: i.imageUrl || localIndMap.get(i.id)?.imageUrl || undefined,
-               }));
+              if (data.individuals) {
+                const localInds = getIndividuals();
+                const localIndMap = new Map(localInds.map(i => [i.id, i]));
+                const serverIndIds = new Set(data.individuals.map((i: any) => i.id as string));
+                const localOnlyInds = localInds.filter(i => !serverIndIds.has(i.id));
+                // Server is authoritative — only merge server records (plus cached imageUrls).
+                const mergedInds = data.individuals.map((i: any) => ({
+                  ...i,
+                  imageUrl: i.imageUrl || localIndMap.get(i.id)?.imageUrl || undefined,
+                }));
                console.log(`[Sync] Saving ${mergedInds.length} individuals to cache...`);
                await saveIndividuals(mergedInds, true);
                console.log(`[Sync] Individuals saved. Cache now: ${getIndividuals().length}`);
@@ -459,18 +478,14 @@ const App: React.FC = () => {
                // Restore images for individuals that have none locally (e.g. after cache clear)
                const indsMissingImages = mergedInds.filter(i => !i.imageUrl);
                if (indsMissingImages.length > 0) {
-                 Promise.all(indsMissingImages.map(async i => {
-                   const imageUrl = await fetchIndividualImage(i.id);
-                   return imageUrl ? { ...i, imageUrl } : null;
-                 })).then(async results => {
-                   const restored = results.filter(Boolean) as Individual[];
-                   if (restored.length > 0) {
-                     const restoredMap = new Map(restored.map(i => [i.id, i]));
-                     const patched = getIndividuals().map(i => restoredMap.get(i.id) || i);
-                     await saveIndividuals(patched, true);
-                     setSyncVersion(v => v + 1);
-                   }
-                 }).catch(() => {});
+                 const batcher = createBatcher<[string, string]>(async restored => {
+                   const urls = new Map(restored);
+                   await saveIndividuals(getIndividuals().map(i => urls.has(i.id) ? { ...i, imageUrl: urls.get(i.id) } : i), true);
+                   setSyncVersion(v => v + 1);
+                 }, 1500);
+                 indsMissingImages.forEach(i => {
+                   queueIndividualImage(i.id, { priority: 'low' }).then(url => { if (url) batcher.add([i.id, url]); });
+                 });
                }
              }
              if (data.enclosures) saveEnclosures(data.enclosures, true);
@@ -635,7 +650,20 @@ const App: React.FC = () => {
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
-              <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">{systemSettings.appLogoUrl ? <img src={systemSettings.appLogoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : (currentOrg?.focus === 'Flora' ? <Leaf size={24} /> : <PawPrint size={24} />)}<span>OpenStudbook</span></div>
+              <div className="lg:hidden flex items-center gap-2">
+                  <button onClick={() => setSidebarOpen(true)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors" aria-label="Open menu">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                  </button>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="h-8 w-8">
+                    <rect width="512" height="512" rx="112" fill="#059669"/>
+                    <ellipse cx="256" cy="300" rx="90" ry="75" fill="white" opacity="0.95"/>
+                    <ellipse cx="170" cy="210" rx="38" ry="45" fill="white" opacity="0.95"/>
+                    <ellipse cx="240" cy="185" rx="38" ry="45" fill="white" opacity="0.95"/>
+                    <ellipse cx="312" cy="185" rx="38" ry="45" fill="white" opacity="0.95"/>
+                    <ellipse cx="382" cy="210" rx="38" ry="45" fill="white" opacity="0.95"/>
+                  </svg>
+                  <span className="font-bold text-emerald-700">OpenStudbook</span>
+                </div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
                  {isSyncing && (
@@ -648,10 +676,9 @@ const App: React.FC = () => {
                    </div>
                  )}
                  <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
-                 <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-slate-600 p-1"><Menu size={24} /></button>
-              </div>
+               </div>
             </header>
-            <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
+            <div className="flex-1 p-4 lg:p-8 overflow-x-hidden overflow-y-auto pb-20 lg:pb-8">
               <ErrorBoundary>
                 <Routes>
                   <Route path="/" element={<Dashboard currentProjectId={currentProjectId} syncVersion={syncVersion} />} />
@@ -676,6 +703,7 @@ const App: React.FC = () => {
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         {showAddProjectModal && isAdmin && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl max-sm w-full p-6"><h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Briefcase size={20}/> New Project</h3><div className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Project Name</label><input placeholder="e.g. Highland Conservation" className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} autoFocus /></div><div><label className="text-sm font-medium text-slate-700">Description (Optional)</label><textarea placeholder="Brief description..." className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 mt-1" value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} rows={3} /></div><div className="flex justify-end gap-2 pt-2"><button onClick={() => setShowAddProjectModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button><button onClick={handleCreateProject} disabled={!newProjectName} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium disabled:opacity-50">Create Project</button></div></div></div></div>}
         {showProfileModal && user && <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl w-full max-md p-6 animate-in zoom-in duration-200"><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><UserIcon size={20} className="text-emerald-600"/> Edit Profile</h3><button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button></div><form onSubmit={handleSaveProfile} className="space-y-4"><div><label className="text-sm font-medium text-slate-700">Full Name</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900 mt-1" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} required /></div><div><label className="text-sm font-medium text-slate-700">Email Address</label><div className="mt-1 space-y-2"><input className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none bg-slate-100 text-slate-500" value={profileForm.email} readOnly /></div></div><div className="pt-2 border-t border-slate-100 mt-2"><label className="text-sm font-bold text-slate-700 flex items-center gap-1 mb-2"><Lock size={14}/> Change Password</label><div className="grid grid-cols-2 gap-3"><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="New Password" value={profileForm.newPassword} onChange={e => setProfileForm({...profileForm, newPassword: e.target.value})} /><input type="password" className="px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900" placeholder="Confirm" value={profileForm.confirmPassword} onChange={e => setProfileForm({...profileForm, confirmPassword: e.target.value})} /></div></div><div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-sm flex items-center gap-2"><Save size={18}/> Save Changes</button></div></form></div></div>}
+      <MobileBottomNav currentOrg={currentOrg} />
       </HashRouter>
     </LanguageContext.Provider>
   );

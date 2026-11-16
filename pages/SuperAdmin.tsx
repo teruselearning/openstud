@@ -1,7 +1,8 @@
 import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals, upgradeTranslations } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
-import { translateDictionary, testAiConfig } from '../services/geminiService';
+import { translateDictionary, testAiConfig, autofillMissingSpeciesData } from '../services/geminiService';
+import { saveSpecies } from '../services/storage';
 import {
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2,
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette,
@@ -71,6 +72,9 @@ const SuperAdmin: React.FC = () => {
   const [isTestingAi, setIsTestingAi] = useState<'text' | 'image' | null>(null);
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; result?: string; error?: string } | null>(null);
   const [aiConfigSaved, setAiConfigSaved] = useState(false);
+
+  const [isAutoFillingSpecies, setIsAutoFillingSpecies] = useState(false);
+  const [autoFillSpeciesProgress, setAutoFillSpeciesProgress] = useState<{ done: number; total: number; current: string } | null>(null);
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -354,14 +358,53 @@ finally { setIsAutoFilling(false); }
       }
    };
 
+   const handleAutofillMissingSpecies = async () => {
+     if (isAutoFillingSpecies) return;
+     const missing = allSpecies.filter(s => !s.category || !s.description);
+     if (missing.length === 0) {
+       alert('All species already have category and description data.');
+       return;
+     }
+     if (!confirm(`Auto-fill category and description for ${missing.length} species? This will use AI calls for each species.`)) return;
+     setIsAutoFillingSpecies(true);
+     setAutoFillSpeciesProgress({ done: 0, total: missing.length, current: '' });
+     let lastFailures = 0;
+     try {
+       const updated = await autofillMissingSpeciesData(allSpecies, (done, total, current, failures) => {
+         setAutoFillSpeciesProgress({ done, total, current });
+         lastFailures = failures;
+       });
+       const enrichedCount = missing.length - lastFailures;
+       if (enrichedCount > 0) {
+         await saveSpecies(updated);
+         setAllSpecies(updated);
+       }
+       if (lastFailures > 0) {
+         alert(`${enrichedCount} species enriched successfully. ${lastFailures} AI calls failed. Check the browser console for details.`);
+       } else {
+         alert(`${missing.length} species enriched successfully.`);
+       }
+     } catch (e: any) {
+       if (String(e.message).startsWith('INTERNAL_LIMIT')) {
+         alert('AI usage limit reached. Some species were updated. Check Organisation Settings → AI Integration to add your own API key.');
+       } else {
+         alert('Autofill failed: ' + e.message);
+       }
+     } finally {
+       setIsAutoFillingSpecies(false);
+       setAutoFillSpeciesProgress(null);
+     }
+   };
+
    const filteredOrgs = allOrganizations.filter(o =>
-     o.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-     o.location.toLowerCase().includes(searchQuery.toLowerCase())
+     (o.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+     (o.location || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredSpecies = allSpecies.filter(s => 
-     s.commonName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-     s.scientificName.toLowerCase().includes(searchQuery.toLowerCase())
+     (s.commonName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+     (s.scientificName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+     (s.localName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredTranslationKeys = useMemo(() => {
@@ -383,19 +426,19 @@ finally { setIsAutoFilling(false); }
   const isRegEnabled = settings.enableRegistration !== false;
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8 pb-12 max-w-full overflow-x-hidden">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
+        <div className="w-full md:w-auto">
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Shield className="text-purple-600" /> {t('superAdmin')}</h2>
           <p className="text-slate-500">{t('saSubtitle')}</p>
         </div>
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
-           <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>{t('network')}</button>
-           <button onClick={() => setActiveTab('security')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'security' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Lock size={16} /> {t('security')}</button>
-           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> {t('email')}</button>
-           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> {t('landing')}</button>
-           <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('localisation')}</button>
-           <button onClick={() => setActiveTab('ai')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${activeTab === 'ai' ? 'bg-white text-cyan-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}><Sparkles size={14} className="inline mr-1" /> AI</button>
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide w-full md:w-auto sticky md:static top-0 z-10">
+           <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all shrink-0 ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>{t('network')}</button>
+           <button onClick={() => setActiveTab('security')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'security' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Lock size={16} /> {t('security')}</button>
+           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> {t('email')}</button>
+           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> {t('landing')}</button>
+           <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('localisation')}</button>
+           <button onClick={() => setActiveTab('ai')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'ai' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Sparkles size={16} /> AI</button>
         </div>
       </div>
 
@@ -424,30 +467,36 @@ finally { setIsAutoFilling(false); }
                         <div key={org.id} className={`bg-white rounded-2xl border transition-all duration-300 ${isExpanded ? 'border-purple-300 ring-4 ring-purple-50 shadow-xl' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
                            <div className="p-6 flex flex-col md:flex-row justify-between items-center gap-6">
                               <div className="flex items-center gap-5 flex-1 w-full">
-                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${org.id === myOrg?.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
+                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${org.id === myOrg?.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400'}`}>
                                     {org.id === myOrg?.id ? <Star size={28} /> : <Building2 size={28} />}
                                  </div>
                                  <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                        <h3 className="text-lg font-extrabold text-slate-900 truncate">{org.name}</h3>
-                                       {org.id === myOrg?.id && <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">{t('hostTag')}</span>}
-                                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest ${org.focus === 'Flora' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{org.focus}</span>
+                                       {org.id === myOrg?.id && <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest shrink-0">{t('hostTag')}</span>}
+                                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest shrink-0 ${org.focus === 'Flora' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{org.focus}</span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 font-medium">
                                        <span className="flex items-center gap-1.5"><MapPin size={14} className="text-slate-400" /> {org.location || 'No Location Set'}</span>
                                        <span className="flex items-center gap-1.5"><Users size={14} className="text-slate-400" /> Member of Network</span>
                                     </div>
+                                    {/* Mobile stats row */}
+                                    <div className="flex items-center gap-4 mt-2 lg:hidden">
+                                       <div className="text-center"><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Projects</p><p className="text-sm font-black text-slate-800">{stats.projectCount}</p></div>
+                                       <div className="text-center"><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Species</p><p className="text-sm font-black text-slate-800">{stats.speciesCount}</p></div>
+                                       <div className="text-center"><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Indivs</p><p className="text-sm font-black text-slate-800">{stats.indCount}</p></div>
+                                    </div>
                                  </div>
-                                 <div className="hidden lg:grid grid-cols-3 gap-6 px-6 border-x border-slate-100">
+                                 <div className="hidden lg:grid grid-cols-3 gap-6 px-6 border-x border-slate-100 shrink-0">
                                     <div className="text-center"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">Projects</p><p className="text-lg font-black text-slate-800">{stats.projectCount}</p></div>
                                     <div className="text-center"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">Species</p><p className="text-lg font-black text-slate-800">{stats.speciesCount}</p></div>
                                     <div className="text-center"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">Indivs</p><p className="text-lg font-black text-slate-800">{stats.indCount}</p></div>
                                  </div>
                               </div>
-                              <div className="flex gap-2 w-full md:w-auto">
-                                 <button onClick={() => setExpandedOrgId(isExpanded ? null : org.id)} className="flex-1 md:flex-none p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all" title="View Details"><Info size={20} /></button>
-                                 <button onClick={() => handleImpersonate(org.id)} className="flex-[2] md:flex-none flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all"><LogIn size={18} /> {t('loginAs')}</button>
-                                 {org.id !== myOrg?.id && (<button onClick={() => setOrgToDelete(org as Organization)} className="flex-1 md:flex-none p-2.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={20} /></button>)}
+                              <div className="flex gap-2 w-full md:w-auto md:shrink-0">
+                                 <button onClick={() => setExpandedOrgId(isExpanded ? null : org.id)} className="p-2.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-all" title="View Details"><Info size={20} /></button>
+                                 <button onClick={() => handleImpersonate(org.id)} className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all whitespace-nowrap"><LogIn size={18} /> {t('loginAs')}</button>
+                                 {org.id !== myOrg?.id && (<button onClick={() => setOrgToDelete(org as Organization)} className="p-2.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={20} /></button>)}
                               </div>
                            </div>
                            {isExpanded && (
@@ -460,7 +509,7 @@ finally { setIsAutoFilling(false); }
                                        <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Coordinates</p><p className="text-xs font-medium text-slate-600">{org.latitude ? `${org.latitude.toFixed(4)}, ${org.longitude?.toFixed(4)}` : 'N/A'}</p></div>
                                        <div className="lg:col-span-1 flex items-end justify-end"><button onClick={() => clearLocalCache()} className="text-xs font-bold text-slate-400 hover:text-red-600 transition-colors flex items-center gap-1.5 uppercase tracking-widest"><RefreshCw size={12}/> Refresh Sync</button></div>
                                     </div>
-                                 </div>
+</div>
                               </div>
                            )}
                         </div>
@@ -470,61 +519,66 @@ finally { setIsAutoFilling(false); }
             )}
 
             {overviewSubTab === 'species_browser' && (
-               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                  <table className="w-full text-left">
-                     <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Species Info</th>
-                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
-                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Managed By</th>
-                           <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Global Population</th>
-                        </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-100">
-                        {filteredSpecies.map(sp => {
-                           const project = allProjects.find(p => p.id === sp.projectId);
-                           const org = allOrganizations.find(o => o.id === (project as any)?.org_id || (project as any)?.orgId);
-                           const indCount = allIndividuals.filter(i => i.speciesId === sp.id).length;
-                           
-                           return (
-                              <tr key={sp.id} className="hover:bg-slate-50 transition-colors group">
-                                 <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                       <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
-                                          {sp.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover" /> : <Dna className="w-full h-full p-2 text-slate-300" />}
-                                       </div>
-                                       <div>
-                                          <p className="font-bold text-slate-900">{sp.commonName}</p>
-                                          <p className="text-[10px] text-slate-500 italic font-serif">{sp.scientificName}</p>
-                                       </div>
-                                    </div>
-                                 </td>
-                                 <td className="px-6 py-4">
-                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${sp.type === 'Animal' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{sp.type}</span>
-                                 </td>
-                                 <td className="px-6 py-4">
-                                    <div className="flex flex-col">
-                                       <p className="text-xs font-bold text-slate-700">{org?.name || 'Unknown Org'}</p>
-                                       <p className="text-[10px] text-slate-400 flex items-center gap-1"><Briefcase size={10}/> {project?.name}</p>
-                                    </div>
-                                 </td>
-                                 <td className="px-6 py-4 text-center">
-                                    <div className="inline-flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-lg">
-                                       <Activity size={14} className="text-slate-400"/>
-                                       <span className="text-sm font-black text-slate-700">{indCount}</span>
-                                    </div>
-                                 </td>
-                              </tr>
-                           );
-                        })}
-                        {filteredSpecies.length === 0 && (
-                           <tr>
-                              <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">No global species records found.</td>
-                           </tr>
-                        )}
-                     </tbody>
-                  </table>
-               </div>
+               <>
+                 <div className="flex items-center justify-between gap-4">
+<p className="text-sm text-slate-500">{allSpecies.length} {t('species')} total · {allSpecies.filter(s => !s.category).length} missing {t('category').toLowerCase()} · {allSpecies.filter(s => !s.description).length} missing description</p>
+                    <button
+                      onClick={handleAutofillMissingSpecies}
+                      disabled={isAutoFillingSpecies}
+                      className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {isAutoFillingSpecies ? (
+                        <><Loader2 size={16} className="animate-spin" /> {t('enrichingProgress').replace('{current}', autoFillSpeciesProgress?.current || '').replace('{done}', String(autoFillSpeciesProgress?.done || 0)).replace('{total}', String(autoFillSpeciesProgress?.total || 0))}</>
+                      ) : (
+                        <><Sparkles size={16} /> {t('autofillMissingData')}</>
+                      )}
+                    </button>
+                  </div>
+                  {autoFillSpeciesProgress && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-sm text-purple-800 flex items-center gap-3">
+                      <Loader2 size={16} className="animate-spin shrink-0" />
+                      <span>{t('enrichingProgress').replace('{current}', autoFillSpeciesProgress.current).replace('{done}', String(autoFillSpeciesProgress.done)).replace('{total}', String(autoFillSpeciesProgress.total))}</span>
+                   </div>
+                 )}
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredSpecies.map(sp => {
+                     const project = allProjects.find(p => p.id === sp.projectId);
+                     const org = allOrganizations.find(o => o.id === (project as any)?.org_id || (project as any)?.orgId);
+                     const indCount = allIndividuals.filter(i => i.speciesId === sp.id).length;
+
+                     return (
+                        <div key={sp.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-4 flex flex-col gap-3">
+                           <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 shrink-0">
+                                 {sp.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover" /> : <Dna className="w-full h-full p-2.5 text-slate-300" />}
+                              </div>
+                              <div className="min-w-0 flex-1">
+<p className="font-bold text-slate-900 truncate text-sm">{sp.commonName}</p>
+                                  <p className="text-[10px] text-slate-500 italic font-serif truncate">{sp.scientificName}</p>
+                                  {sp.localName && <p className="text-[10px] text-slate-400 truncate">{sp.localName}</p>}
+                              </div>
+                           </div>
+<div className="flex items-center gap-2 flex-wrap">
+                               <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${sp.type === 'Animal' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{sp.type}</span>
+                               {sp.category && <span className="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest bg-purple-50 text-purple-600 border border-purple-100">{sp.category}</span>}
+                               <span className="inline-flex items-center gap-1.5 bg-slate-100 px-2.5 py-0.5 rounded-lg text-xs font-bold text-slate-600">
+                                 <Activity size={12} className="text-slate-400"/>
+                                 {indCount}
+                              </span>
+                           </div>
+                           <div className="border-t border-slate-100 pt-2 flex items-center gap-2 text-[11px] text-slate-500">
+                              <Briefcase size={12} className="shrink-0 text-slate-400"/>
+                              <span className="truncate">{org?.name || 'Unknown Org'}</span>
+                              {project?.name && <><span className="text-slate-300">·</span><span className="truncate">{project.name}</span></>}
+                           </div>
+                        </div>
+                     );
+                  })}
+                  {filteredSpecies.length === 0 && (
+                     <div className="col-span-full p-12 text-center text-slate-400 italic bg-white rounded-2xl border border-slate-200">No global species records found.</div>
+)}
+                </div>
+               </>
             )}
          </div>
       )}
@@ -570,9 +624,9 @@ finally { setIsAutoFilling(false); }
                   <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><PenTool size={20}/></div>
                   <h3 className="font-extrabold text-lg text-slate-900">Email Templates</h3>
                </div>
-               <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl">
+               <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl overflow-x-auto scrollbar-hide">
                   {['registration', 'mfa', 'invite', 'notification'].map(tKey => (
-                     <button key={tKey} onClick={() => handleTemplateChange(tKey)} className={`flex-1 py-1 text-[10px] font-extrabold rounded-lg uppercase tracking-wider transition-all ${selectedTemplate === tKey ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}>
+                     <button key={tKey} onClick={() => handleTemplateChange(tKey)} className={`whitespace-nowrap px-3 py-1 text-[10px] font-extrabold rounded-lg uppercase tracking-wider transition-all ${selectedTemplate === tKey ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}>
                         {t(tKey as any) || tKey}
                      </button>
                   ))}
@@ -664,7 +718,7 @@ finally { setIsAutoFilling(false); }
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-               <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+               <div className="flex items-center justify-between border-b border-slate-50 pb-4 flex-wrap gap-2">
                   <div className="flex items-center gap-3">
                      <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
                      <h3 className="font-extrabold text-lg text-slate-900">Landing Page Editor</h3>
@@ -816,12 +870,12 @@ finally { setIsAutoFilling(false); }
             <div className="lg:col-span-8">
                {editingLang ? (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full min-h-[700px]">
-                     <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center rounded-t-2xl">
-                        <div className="flex items-center gap-4">
-                           <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm border border-slate-200">🏳️</div>
-                           <div><h3 className="font-extrabold text-xl text-slate-900">{editingLang.name}</h3><p className="text-xs text-slate-500 font-medium">{t('localisationDictionaryFor')} {editingLang.code}</p></div>
-                        </div>
-<div className="flex gap-2 relative">
+<div className="p-6 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 rounded-t-2xl">
+                         <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm border border-slate-200 shrink-0">🏳️</div>
+                            <div><h3 className="font-extrabold text-xl text-slate-900">{editingLang.name}</h3><p className="text-xs text-slate-500 font-medium">{t('localisationDictionaryFor')} {editingLang.code}</p></div>
+                         </div>
+<div className="flex gap-2 w-full sm:w-auto">
                             <div ref={aiMenuRef} className="relative">
                                <div className="flex">
                                   <button onClick={() => handleAiTranslate('missing')} disabled={isAutoFilling} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-l-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-purple-100 transition-all disabled:opacity-50">
@@ -847,12 +901,12 @@ finally { setIsAutoFilling(false); }
                            </button>
                         </div>
                      </div>
-                     <div className="p-4 bg-white border-b border-slate-50 flex gap-4 items-center">
-                        <div className="relative flex-1">
-                           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                           <input className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs" placeholder={t('searchDictionaryKeys')} value={translationSearch} onChange={e => setTranslationSearch(e.target.value)} />
-                        </div>
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase cursor-pointer"><input type="checkbox" className="rounded" checked={editingLang.isDefault} onChange={e => setEditingLang({...editingLang, isDefault: e.target.checked})} /> {t('setAsSystemDefault')}</label>
+<div className="p-4 bg-white border-b border-slate-50 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                         <div className="relative flex-1 w-full">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs" placeholder={t('searchDictionaryKeys')} value={translationSearch} onChange={e => setTranslationSearch(e.target.value)} />
+                         </div>
+                         <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase cursor-pointer shrink-0"><input type="checkbox" className="rounded" checked={editingLang.isDefault} onChange={e => setEditingLang({...editingLang, isDefault: e.target.checked})} /> {t('setAsSystemDefault')}</label>
                      </div>
                      <div className="flex-1 overflow-y-auto p-6 space-y-4 max-h-[600px] scrollbar-hide">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
@@ -992,11 +1046,11 @@ finally { setIsAutoFilling(false); }
       {/* Permanently Delete Organization Modal */}
       {orgToDelete && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={48}/></div>
                <h3 className="text-2xl font-black text-slate-900 mb-2">Permanent Removal</h3>
                <p className="text-slate-500 mb-8 leading-relaxed">This action will permanently destroy <strong>{orgToDelete.name}</strong> and all its associated species, individuals, and user accounts. This cannot be undone.</p>
-               <div className="flex gap-3">
+<div className="flex gap-3 flex-wrap">
                   <button onClick={() => setOrgToDelete(null)} className="flex-1 py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition-all">Cancel</button>
                   <button onClick={handlePermanentlyDelete} disabled={isDeleting} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-100 transition-all flex items-center justify-center gap-2">
                      {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />} Confirm Destruction

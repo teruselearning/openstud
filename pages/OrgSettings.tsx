@@ -45,8 +45,8 @@ const OrgSettings: React.FC = () => {
   const [showOpenrouterKey, setShowOpenrouterKey] = useState(false);
   const [isSavingOpenrouterKey, setIsSavingOpenrouterKey] = useState(false);
   const [openrouterKeySaved, setOpenrouterKeySaved] = useState(false);
-  const [aiProviderText, setAiProviderText] = useState(org?.aiProviderText || 'google');
-  const [aiProviderImage, setAiProviderImage] = useState(org?.aiProviderImage || 'google');
+  const [aiProviderText, setAiProviderText] = useState(org?.aiProviderText || '');
+  const [aiProviderImage, setAiProviderImage] = useState(org?.aiProviderImage || '');
   const [aiResearchModel, setAiResearchModel] = useState(org?.aiResearchModel || '');
   const [aiImageModel, setAiImageModel] = useState(org?.aiImageModel || '');
   const [isSavingAiConfig, setIsSavingAiConfig] = useState(false);
@@ -64,8 +64,8 @@ const OrgSettings: React.FC = () => {
   useEffect(() => {
     const currentOrg = getOrg();
     setOrg(currentOrg);
-    setAiProviderText(currentOrg?.aiProviderText || 'google');
-    setAiProviderImage(currentOrg?.aiProviderImage || 'google');
+    setAiProviderText(currentOrg?.aiProviderText || '');
+    setAiProviderImage(currentOrg?.aiProviderImage || '');
     setAiResearchModel(currentOrg?.aiResearchModel || '');
     setAiImageModel(currentOrg?.aiImageModel || '');
     setUsers(getUsers());
@@ -644,7 +644,7 @@ const OrgSettings: React.FC = () => {
               onClick={async () => {
                 setIsTestingAi('text');
                 setAiTestResult(null);
-                const res = await testAiConfig({ provider: aiProviderText || 'google', model: aiResearchModel || 'gemini-3-flash-preview', purpose: 'text' });
+                const res = await testAiConfig({ provider: aiProviderText, model: aiResearchModel, purpose: 'text' });
                 setAiTestResult(res);
                 setIsTestingAi(null);
               }}
@@ -661,7 +661,7 @@ const OrgSettings: React.FC = () => {
               onClick={async () => {
                 setIsTestingAi('image');
                 setAiTestResult(null);
-                const res = await testAiConfig({ provider: aiProviderImage || 'google', model: aiImageModel || 'gemini-2.5-flash-image', purpose: 'image' });
+                const res = await testAiConfig({ provider: aiProviderImage, model: aiImageModel, purpose: 'image' });
                 setAiTestResult(res);
                 setIsTestingAi(null);
               }}

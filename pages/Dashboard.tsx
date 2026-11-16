@@ -147,23 +147,23 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
   const isEmpty = speciesCount === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-1">
+          <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h2 className="text-2xl font-bold text-slate-900">{t('overview')}</h2>
-            <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-200">
+            <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-200 truncate max-w-[200px] shrink-0">
               {currentProjectId === 'ALL_PROJECTS' ? <Layers size={14}/> : <FolderOpen size={14}/>}
               {currentProjectId === 'ALL_PROJECTS' ? 'All Managed Projects' : (currentProject?.name || 'Loading...')}
             </span>
           </div>
           <p className="text-slate-500">{t('welcomeBack')}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {currentProjectId === 'ALL_PROJECTS' && (
-            <div className="bg-indigo-50 border border-indigo-100 p-2 px-4 rounded-xl text-indigo-700 text-sm font-medium flex items-center gap-2">
-              <Info size={18}/> Consolidated enterprise view enabled.
+            <div className="bg-indigo-50 border border-indigo-100 p-2 px-4 rounded-xl text-indigo-700 text-sm font-medium flex items-center gap-2 truncate max-w-full">
+              <Info size={18} className="shrink-0"/> <span className="truncate">Consolidated enterprise view enabled.</span>
             </div>
           )}
           <InstallPromptButton variant="compact" />
@@ -209,28 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
           <StatCard title={t('activeUsers')}      value={userCount}    icon={Users}    color="bg-indigo-500"  />
         </div>
 
-        {/* Origin pie + Species list side by side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-          {/* Origin pie */}
-          {originData.length > 0 && (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('origin')}</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={originData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                      {originData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number, _: string, p: any) => [v, t(p.payload.key) || p.payload.name]} />
-                    <Legend formatter={(v, e: any) => t(e.payload.key) || v} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Species list */}
+{/* Species list with search & sort */}
           {filteredSpecies.length > 0 && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col">
               <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
@@ -239,7 +218,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                   <div className="relative">
                     <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
-                      className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-400 bg-slate-50 w-36"
+                      className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-400 bg-slate-50 w-full sm:w-36"
                       placeholder="Search…"
                       value={speciesSearch}
                       onChange={e => setSpeciesSearch(e.target.value)}
@@ -265,7 +244,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                     key={sp.id}
                     to="/individuals"
                     state={{ filterSpeciesId: sp.id }}
-                    className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-emerald-50 transition-colors group cursor-pointer"
+                    className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-emerald-50 transition-colors group cursor-pointer flex-wrap"
                   >
                     <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-100 shrink-0">
                       {sp.imageUrl
@@ -281,7 +260,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide ${sp.type === 'Plant' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{sp.type}</span>
-                      <span className="text-sm font-bold text-slate-600 w-6 text-right">{count}</span>
+                      <span className="text-sm font-bold text-slate-600 w-6 text-right">{count > 0 ? count : '-'}</span>
                       <ArrowRight size={14} className="text-slate-300 group-hover:text-emerald-500 transition-colors" />
                     </div>
                   </Link>
@@ -289,7 +268,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
               </div>
             </div>
           )}
-        </div>
 
         {/* Breeding pairs */}
         {showBreedingSection && (
@@ -305,11 +283,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                     <div className="flex items-center gap-4 mb-3 sm:mb-0">
                       <div className="flex items-center -space-x-3">
                         {rec.male.imageUrl   ? <img src={rec.male.imageUrl}   className="w-10 h-10 rounded-full border-2 border-white object-cover" alt={rec.male.name}   /> : <div className="w-10 h-10 rounded-full bg-blue-100  border-2 border-white flex items-center justify-center text-blue-600  text-xs">M</div>}
-                        {rec.female.imageUrl ? <img src={rec.female.imageUrl} className="w-10 h-10 rounded-full border-2 border-white object-cover" alt={rec.female.name} /> : <div className="w-10 h-10 rounded-full bg-pink-100  border-2 border-white flex items-center justify-center text-pink-600  text-xs">F</div>}
+                        {rec.female.imageUrl ? <img src={rec.female.imageUrl} className="w-10 h-10 rounded-full border-2 border-white object-cover" alt={rec.female.name} /> : <div className="w-10 h-10 rounded-full bg-pink-100 border-2 border-white flex items-center justify-center text-pink-600 text-xs">F</div>}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">{rec.male.name} & {rec.female.name}</span>
+                          <span className="font-bold text-slate-900 truncate">{rec.male.name} & {rec.female.name}</span>
                           <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">{rec.score} {t('match')}</span>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
@@ -334,6 +312,24 @@ const Dashboard: React.FC<DashboardProps> = ({ currentProjectId, syncVersion = 0
                 <p>{t('noBreeding')}</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Origin pie */}
+        {originData.length > 0 && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">{t('origin')}</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={originData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {originData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number, _: string, p: any) => [v, t(p.payload.key) || p.payload.name]} />
+                  <Legend formatter={(v, e: any) => t(e.payload.key) || v} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
 

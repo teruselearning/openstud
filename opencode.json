@@ -26,7 +26,7 @@
     "plan": {
       "mode": "primary",
       "description": "Planning agent — analyses code and creates plans without making changes",
-      "model": "openrouter/google/gemini-2.5-flash",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
       "temperature": 0.1,
       "permission": {
         "edit": "deny",
@@ -43,7 +43,7 @@
     "reviewer": {
       "mode": "subagent",
       "description": "Code reviewer — called automatically when code changes are made. Reviews for security, performance, and correctness.",
-      "model": "openrouter/google/gemini-2.5-flash",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
       "temperature": 0.1,
       "permission": {
         "edit": "deny",
@@ -53,7 +53,7 @@
     "researcher": {
       "mode": "subagent",
       "description": "Research agent — searches documentation, external repos, and the web for answers to technical questions.",
-      "model": "openrouter/openai/o3-mini",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
       "temperature": 0.3,
       "permission": {
         "edit": "deny",
@@ -63,7 +63,7 @@
     "wiki-writer": {
       "mode": "subagent",
       "description": "Wiki maintenance agent — updates the LLM wiki after significant changes. Called after major code changes or decisions.",
-      "model": "openrouter/google/gemini-2.5-flash",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
       "temperature": 0.2,
       "permission": {
         "edit": "allow",
@@ -73,7 +73,7 @@
     "translation-checker": {
       "mode": "subagent",
       "description": "Translation checker — invoked after feature development to ensure all frontend strings are added to the translation system (BASE_TRANSLATIONS, SEED_LANGUAGES, and backend seed file).",
-      "model": "openrouter/google/gemini-2.5-pro",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
       "temperature": 0.1,
       "permission": {
         "edit": "allow",
