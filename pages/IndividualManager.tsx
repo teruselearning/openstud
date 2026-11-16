@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual, getAiUsageInfo } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
-import { fetchIndividualImage } from '../services/syncService';
+import { queueIndividualImage, cancelImageGroup, createBatcher } from '../services/imageQueue';
 import { compressImageFileDual, compressDataUrlDual } from '../services/imageUtils';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
 import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2, Maximize2, Minimize2, Tag, HelpCircle, Sprout, ScanLine } from 'lucide-react';
@@ -460,23 +460,8 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
 
-// Fetch profile images for individuals that don't have one cached yet
-    const needImage = individuals.filter(i => !i.imageUrl && !i.thumbnailUrl);
-    if (needImage.length > 0) {
-      let cancelled = false;
-      (async () => {
-        for (const ind of needImage) {
-          if (cancelled) break;
-          const imgUrl = await fetchIndividualImage(ind.id);
-          if (cancelled || !imgUrl) continue;
-          const updated = { ...ind, imageUrl: imgUrl };
-          setAllIndividuals(prev => prev.map(i => i.id === ind.id ? updated : i));
-          const all = getIndividuals().map(i => i.id === ind.id ? updated : i);
-          saveIndividuals(all);
-        }
-      })();
-      return () => { cancelled = true; };
-    }
+    // Missing profile images are fetched for the individuals actually on screen by the
+    // effect that follows `filtered` below (so search/filter changes are handled too).
   }, [currentProjectId, editingId, syncVersion]);
 
   // Reload data whenever a background sync completes.
@@ -489,23 +474,6 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
       setAllEnclosures(getEnclosures());
       setOrg(getOrg());
       setAiLimitInfo(getAiUsageInfo());
-
-      const needImage = individuals.filter(i => !i.imageUrl && !i.thumbnailUrl);
-      if (needImage.length > 0) {
-        let cancelled = false;
-        (async () => {
-          for (const ind of needImage) {
-            if (cancelled) break;
-            const imageUrl = await fetchIndividualImage(ind.id);
-            if (cancelled || !imageUrl) continue;
-            const updated = { ...ind, imageUrl };
-            setAllIndividuals(prev => prev.map(i => i.id === ind.id ? updated : i));
-            const all = getIndividuals().map(i => i.id === ind.id ? updated : i);
-            saveIndividuals(all);
-          }
-        })();
-        return () => { cancelled = true; };
-      }
     };
     window.addEventListener('os-data-refreshed', onDataRefreshed);
     return () => window.removeEventListener('os-data-refreshed', onDataRefreshed);
@@ -576,6 +544,24 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     const bTs = parseInt(b.id.split('-')[1] || '0', 10);
     return bTs - aTs;
   });
+
+  // Fetch missing profile images for what is on screen, in display order and ahead of the
+  // background restore. Re-runs when the search/filters change the visible set.
+  const missingImageIds = filtered.filter(i => !i.imageUrl && !i.thumbnailUrl).map(i => i.id).join(',');
+  useEffect(() => {
+    if (!missingImageIds) return;
+    const group = 'individuals-page';
+    const batcher = createBatcher<[string, string]>(items => {
+      const urls = new Map(items);
+      setAllIndividuals(prev => prev.map(i => urls.has(i.id) ? { ...i, imageUrl: urls.get(i.id) } : i));
+      // skipSync: these images came from the server, so don't push everything back to it.
+      saveIndividuals(getIndividuals().map(i => urls.has(i.id) ? { ...i, imageUrl: urls.get(i.id) } : i), true);
+    }, 300);
+    missingImageIds.split(',').forEach(id => {
+      queueIndividualImage(id, { priority: 'high', group }).then(url => { if (url) batcher.add([id, url]); });
+    });
+    return () => { cancelImageGroup(group); batcher.flushNow(); };
+  }, [missingImageIds]);
 
   // Build the SVG html for the "you are here" marker at a given heading
   const buildUserMarkerIcon = (heading: number) => L.divIcon({

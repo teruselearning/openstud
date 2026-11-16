@@ -8,6 +8,7 @@ import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Se
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
 import LazyImage from '../components/LazyImage';
+import { queueSpeciesImage, queueIndividualImage, cancelImageGroup, createBatcher } from '../services/imageQueue';
 
 interface SpeciesManagerProps {
   currentProjectId: string;
@@ -357,12 +358,52 @@ const finalSpecies: Species = {
     return sortOrder === 'asc' ? (valA < valB ? -1 : 1) : (valA > valB ? -1 : 1);
   });
 
+  // Fallback card image for species with no image of their own: an individual's photo.
+  // The small thumbnail is part of the sync payload, so this works before full images load.
   const speciesImageCache: Record<string, string> = {};
   for (const ind of allIndividuals) {
-    if (ind.imageUrl && !speciesImageCache[ind.speciesId]) {
-      speciesImageCache[ind.speciesId] = ind.imageUrl;
+    const img = ind.imageUrl || ind.thumbnailUrl;
+    if (img && !speciesImageCache[ind.speciesId]) {
+      speciesImageCache[ind.speciesId] = img;
     }
   }
+
+  // Fetch missing images for the species currently shown (in display order), ahead of the
+  // background restore. Re-runs when search / category / sort change the visible set.
+  const missingSpeciesIds: string[] = [];
+  const missingIndividualIds: string[] = [];
+  for (const sp of sortedSpecies) {
+    if (sp.imageUrl) continue;
+    missingSpeciesIds.push(sp.id);
+    if (!speciesImageCache[sp.id]) {
+      const donor = allIndividuals.find(i => i.speciesId === sp.id && !i.imageUrl && !i.thumbnailUrl);
+      if (donor) missingIndividualIds.push(donor.id);
+    }
+  }
+  const missingSpeciesKey = missingSpeciesIds.join(',');
+  const missingIndividualKey = missingIndividualIds.join(',');
+  useEffect(() => {
+    if (!missingSpeciesKey && !missingIndividualKey) return;
+    const group = 'species-page';
+    const spBatcher = createBatcher<[string, string]>(items => {
+      const urls = new Map(items);
+      setAllSpecies(prev => prev.map(s => urls.has(s.id) ? { ...s, imageUrl: urls.get(s.id) } : s));
+      // skipSync: these images came from the server already.
+      saveSpecies(getSpecies().map(s => urls.has(s.id) ? { ...s, imageUrl: urls.get(s.id) } : s), true);
+    }, 300);
+    const indBatcher = createBatcher<[string, string]>(items => {
+      const urls = new Map(items);
+      setAllIndividuals(prev => prev.map(i => urls.has(i.id) ? { ...i, imageUrl: urls.get(i.id) } : i));
+      saveIndividuals(getIndividuals().map(i => urls.has(i.id) ? { ...i, imageUrl: urls.get(i.id) } : i), true);
+    }, 300);
+    if (missingSpeciesKey) missingSpeciesKey.split(',').forEach(id => {
+      queueSpeciesImage(id, { priority: 'high', group }).then(url => { if (url) spBatcher.add([id, url]); });
+    });
+    if (missingIndividualKey) missingIndividualKey.split(',').forEach(id => {
+      queueIndividualImage(id, { priority: 'high', group }).then(url => { if (url) indBatcher.add([id, url]); });
+    });
+    return () => { cancelImageGroup(group); spBatcher.flushNow(); indBatcher.flushNow(); };
+  }, [missingSpeciesKey, missingIndividualKey]);
 
   return (
     <div className="space-y-6">

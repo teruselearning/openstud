@@ -55,7 +55,8 @@ import EnclosureManager from './pages/EnclosureManager';
 import Installer from './components/Installer';
 import SetupWizard from './components/SetupWizard';
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
-import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fetchSpeciesImage, fetchIndividualImage, fromDbSpecies, fromDbInd } from './services/syncService';
+import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fromDbSpecies, fromDbInd } from './services/syncService';
+import { queueSpeciesImage, queueIndividualImage, createBatcher } from './services/imageQueue';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig, Species, Individual } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 
@@ -449,18 +450,15 @@ const App: React.FC = () => {
                // Restore images for species that have none locally (e.g. after cache clear)
                const speciesMissingImages = mergedSpecies.filter(s => !s.imageUrl);
                if (speciesMissingImages.length > 0) {
-                 Promise.all(speciesMissingImages.map(async s => {
-                   const imageUrl = await fetchSpeciesImage(s.id);
-                   return imageUrl ? { ...s, imageUrl } : null;
-                 })).then(async results => {
-                   const restored = results.filter(Boolean) as Species[];
-                   if (restored.length > 0) {
-                     const restoredMap = new Map(restored.map(s => [s.id, s]));
-                     const patched = getSpecies().map(s => restoredMap.get(s.id) || s);
-                     await saveSpecies(patched, true);
-                     setSyncVersion(v => v + 1);
-                   }
-                 }).catch(() => {});
+                 // Low priority + throttled: pages request what is on screen first (see imageQueue).
+                 const batcher = createBatcher<[string, string]>(async restored => {
+                   const urls = new Map(restored);
+                   await saveSpecies(getSpecies().map(s => urls.has(s.id) ? { ...s, imageUrl: urls.get(s.id) } : s), true);
+                   setSyncVersion(v => v + 1);
+                 }, 1500);
+                 speciesMissingImages.forEach(s => {
+                   queueSpeciesImage(s.id, { priority: 'low' }).then(url => { if (url) batcher.add([s.id, url]); });
+                 });
                }
              }
               if (data.individuals) {
@@ -480,18 +478,14 @@ const App: React.FC = () => {
                // Restore images for individuals that have none locally (e.g. after cache clear)
                const indsMissingImages = mergedInds.filter(i => !i.imageUrl);
                if (indsMissingImages.length > 0) {
-                 Promise.all(indsMissingImages.map(async i => {
-                   const imageUrl = await fetchIndividualImage(i.id);
-                   return imageUrl ? { ...i, imageUrl } : null;
-                 })).then(async results => {
-                   const restored = results.filter(Boolean) as Individual[];
-                   if (restored.length > 0) {
-                     const restoredMap = new Map(restored.map(i => [i.id, i]));
-                     const patched = getIndividuals().map(i => restoredMap.get(i.id) || i);
-                     await saveIndividuals(patched, true);
-                     setSyncVersion(v => v + 1);
-                   }
-                 }).catch(() => {});
+                 const batcher = createBatcher<[string, string]>(async restored => {
+                   const urls = new Map(restored);
+                   await saveIndividuals(getIndividuals().map(i => urls.has(i.id) ? { ...i, imageUrl: urls.get(i.id) } : i), true);
+                   setSyncVersion(v => v + 1);
+                 }, 1500);
+                 indsMissingImages.forEach(i => {
+                   queueIndividualImage(i.id, { priority: 'low' }).then(url => { if (url) batcher.add([i.id, url]); });
+                 });
                }
              }
              if (data.enclosures) saveEnclosures(data.enclosures, true);

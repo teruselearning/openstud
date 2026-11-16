@@ -97,7 +97,7 @@ const IndividualDetail: React.FC = () => {
           setIndividual(updated);
           // Cache back to localStorage so subsequent visits are instant
           const all = getIndividuals().map(i => i.id === id ? { ...i, imageUrl } : i);
-          saveIndividuals(all);
+          saveIndividuals(all, true); // already on the server: don't push it all back
         }
       });
     }
@@ -108,7 +108,7 @@ const IndividualDetail: React.FC = () => {
           setSpecies(prev => prev ? { ...prev, imageUrl } : prev);
           // Cache back to localStorage
           const all = getSpecies().map(s => s.id === species.id ? { ...s, imageUrl } : s);
-          saveSpecies(all);
+          saveSpecies(all, true);
         }
       });
     }
