@@ -1,7 +1,8 @@
 import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { getNetworkPartners, getUsers, switchOrganization, getSystemSettings, saveSystemSettings, getOrg, getLanguages, saveLanguages, permanentDeleteOrganization, clearLocalCache, getSpecies, getProjects, getIndividuals, upgradeTranslations } from '../services/storage';
 import { testSmtpConnection } from '../services/emailService';
-import { translateDictionary, testAiConfig } from '../services/geminiService';
+import { translateDictionary, testAiConfig, autofillMissingSpeciesData } from '../services/geminiService';
+import { saveSpecies } from '../services/storage';
 import {
   Shield, Save, Loader2, Globe, Star, Mail, PenTool, LogIn, CheckCircle2,
   Send, AlertCircle, Trash2, X, RefreshCw, Plus, Layout, Palette,
@@ -71,6 +72,9 @@ const SuperAdmin: React.FC = () => {
   const [isTestingAi, setIsTestingAi] = useState<'text' | 'image' | null>(null);
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; result?: string; error?: string } | null>(null);
   const [aiConfigSaved, setAiConfigSaved] = useState(false);
+
+  const [isAutoFillingSpecies, setIsAutoFillingSpecies] = useState(false);
+  const [autoFillSpeciesProgress, setAutoFillSpeciesProgress] = useState<{ done: number; total: number; current: string } | null>(null);
 
   useEffect(() => {
     const current = getSystemSettings();
@@ -354,14 +358,53 @@ finally { setIsAutoFilling(false); }
       }
    };
 
+   const handleAutofillMissingSpecies = async () => {
+     if (isAutoFillingSpecies) return;
+     const missing = allSpecies.filter(s => !s.category || !s.description);
+     if (missing.length === 0) {
+       alert('All species already have category and description data.');
+       return;
+     }
+     if (!confirm(`Auto-fill category and description for ${missing.length} species? This will use AI calls for each species.`)) return;
+     setIsAutoFillingSpecies(true);
+     setAutoFillSpeciesProgress({ done: 0, total: missing.length, current: '' });
+     let lastFailures = 0;
+     try {
+       const updated = await autofillMissingSpeciesData(allSpecies, (done, total, current, failures) => {
+         setAutoFillSpeciesProgress({ done, total, current });
+         lastFailures = failures;
+       });
+       const enrichedCount = missing.length - lastFailures;
+       if (enrichedCount > 0) {
+         await saveSpecies(updated);
+         setAllSpecies(updated);
+       }
+       if (lastFailures > 0) {
+         alert(`${enrichedCount} species enriched successfully. ${lastFailures} AI calls failed. Check the browser console for details.`);
+       } else {
+         alert(`${missing.length} species enriched successfully.`);
+       }
+     } catch (e: any) {
+       if (String(e.message).startsWith('INTERNAL_LIMIT')) {
+         alert('AI usage limit reached. Some species were updated. Check Organisation Settings → AI Integration to add your own API key.');
+       } else {
+         alert('Autofill failed: ' + e.message);
+       }
+     } finally {
+       setIsAutoFillingSpecies(false);
+       setAutoFillSpeciesProgress(null);
+     }
+   };
+
    const filteredOrgs = allOrganizations.filter(o =>
-     o.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-     o.location.toLowerCase().includes(searchQuery.toLowerCase())
+     (o.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+     (o.location || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredSpecies = allSpecies.filter(s => 
-     s.commonName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-     s.scientificName.toLowerCase().includes(searchQuery.toLowerCase())
+     (s.commonName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+     (s.scientificName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+     (s.localName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredTranslationKeys = useMemo(() => {
@@ -383,19 +426,19 @@ finally { setIsAutoFilling(false); }
   const isRegEnabled = settings.enableRegistration !== false;
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8 pb-12 max-w-full overflow-x-hidden">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
+        <div className="w-full md:w-auto">
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Shield className="text-purple-600" /> {t('superAdmin')}</h2>
           <p className="text-slate-500">{t('saSubtitle')}</p>
         </div>
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
-           <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>{t('network')}</button>
-           <button onClick={() => setActiveTab('security')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'security' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Lock size={16} /> {t('security')}</button>
-           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> {t('email')}</button>
-           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> {t('landing')}</button>
-           <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('localisation')}</button>
-           <button onClick={() => setActiveTab('ai')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'ai' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Sparkles size={16} /> AI</button>
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-x-auto whitespace-nowrap scrollbar-hide w-full md:w-auto sticky md:static top-0 z-10">
+           <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all shrink-0 ${activeTab === 'overview' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}>{t('network')}</button>
+           <button onClick={() => setActiveTab('security')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'security' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Lock size={16} /> {t('security')}</button>
+           <button onClick={() => setActiveTab('email')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'email' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Mail size={16} /> {t('email')}</button>
+           <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'settings' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Layout size={16} /> {t('landing')}</button>
+           <button onClick={() => setActiveTab('languages')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'languages' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Globe size={16} /> {t('localisation')}</button>
+           <button onClick={() => setActiveTab('ai')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shrink-0 ${activeTab === 'ai' ? 'bg-purple-100 text-purple-700' : 'text-slate-600 hover:bg-slate-50'}`}><Sparkles size={16} /> AI</button>
         </div>
       </div>
 
@@ -466,7 +509,7 @@ finally { setIsAutoFilling(false); }
                                        <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Coordinates</p><p className="text-xs font-medium text-slate-600">{org.latitude ? `${org.latitude.toFixed(4)}, ${org.longitude?.toFixed(4)}` : 'N/A'}</p></div>
                                        <div className="lg:col-span-1 flex items-end justify-end"><button onClick={() => clearLocalCache()} className="text-xs font-bold text-slate-400 hover:text-red-600 transition-colors flex items-center gap-1.5 uppercase tracking-widest"><RefreshCw size={12}/> Refresh Sync</button></div>
                                     </div>
-                                 </div>
+</div>
                               </div>
                            )}
                         </div>
@@ -476,7 +519,28 @@ finally { setIsAutoFilling(false); }
             )}
 
             {overviewSubTab === 'species_browser' && (
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+               <>
+                 <div className="flex items-center justify-between gap-4">
+<p className="text-sm text-slate-500">{allSpecies.length} {t('species')} total · {allSpecies.filter(s => !s.category).length} missing {t('category').toLowerCase()} · {allSpecies.filter(s => !s.description).length} missing description</p>
+                    <button
+                      onClick={handleAutofillMissingSpecies}
+                      disabled={isAutoFillingSpecies}
+                      className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {isAutoFillingSpecies ? (
+                        <><Loader2 size={16} className="animate-spin" /> {t('enrichingProgress').replace('{current}', autoFillSpeciesProgress?.current || '').replace('{done}', String(autoFillSpeciesProgress?.done || 0)).replace('{total}', String(autoFillSpeciesProgress?.total || 0))}</>
+                      ) : (
+                        <><Sparkles size={16} /> {t('autofillMissingData')}</>
+                      )}
+                    </button>
+                  </div>
+                  {autoFillSpeciesProgress && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-sm text-purple-800 flex items-center gap-3">
+                      <Loader2 size={16} className="animate-spin shrink-0" />
+                      <span>{t('enrichingProgress').replace('{current}', autoFillSpeciesProgress.current).replace('{done}', String(autoFillSpeciesProgress.done)).replace('{total}', String(autoFillSpeciesProgress.total))}</span>
+                   </div>
+                 )}
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredSpecies.map(sp => {
                      const project = allProjects.find(p => p.id === sp.projectId);
                      const org = allOrganizations.find(o => o.id === (project as any)?.org_id || (project as any)?.orgId);
@@ -489,13 +553,15 @@ finally { setIsAutoFilling(false); }
                                  {sp.imageUrl ? <img src={sp.imageUrl} className="w-full h-full object-cover" /> : <Dna className="w-full h-full p-2.5 text-slate-300" />}
                               </div>
                               <div className="min-w-0 flex-1">
-                                 <p className="font-bold text-slate-900 truncate text-sm">{sp.commonName}</p>
-                                 <p className="text-[10px] text-slate-500 italic font-serif truncate">{sp.scientificName}</p>
+<p className="font-bold text-slate-900 truncate text-sm">{sp.commonName}</p>
+                                  <p className="text-[10px] text-slate-500 italic font-serif truncate">{sp.scientificName}</p>
+                                  {sp.localName && <p className="text-[10px] text-slate-400 truncate">{sp.localName}</p>}
                               </div>
                            </div>
-                           <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${sp.type === 'Animal' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{sp.type}</span>
-                              <span className="inline-flex items-center gap-1.5 bg-slate-100 px-2.5 py-0.5 rounded-lg text-xs font-bold text-slate-600">
+<div className="flex items-center gap-2 flex-wrap">
+                               <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border ${sp.type === 'Animal' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>{sp.type}</span>
+                               {sp.category && <span className="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest bg-purple-50 text-purple-600 border border-purple-100">{sp.category}</span>}
+                               <span className="inline-flex items-center gap-1.5 bg-slate-100 px-2.5 py-0.5 rounded-lg text-xs font-bold text-slate-600">
                                  <Activity size={12} className="text-slate-400"/>
                                  {indCount}
                               </span>
@@ -510,8 +576,9 @@ finally { setIsAutoFilling(false); }
                   })}
                   {filteredSpecies.length === 0 && (
                      <div className="col-span-full p-12 text-center text-slate-400 italic bg-white rounded-2xl border border-slate-200">No global species records found.</div>
-                  )}
-               </div>
+)}
+                </div>
+               </>
             )}
          </div>
       )}
@@ -651,7 +718,7 @@ finally { setIsAutoFilling(false); }
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
-               <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+               <div className="flex items-center justify-between border-b border-slate-50 pb-4 flex-wrap gap-2">
                   <div className="flex items-center gap-3">
                      <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Layout size={20}/></div>
                      <h3 className="font-extrabold text-lg text-slate-900">Landing Page Editor</h3>
@@ -979,11 +1046,11 @@ finally { setIsAutoFilling(false); }
       {/* Permanently Delete Organization Modal */}
       {orgToDelete && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[3000] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center animate-in zoom-in duration-200 border-2 border-red-500">
                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={48}/></div>
                <h3 className="text-2xl font-black text-slate-900 mb-2">Permanent Removal</h3>
                <p className="text-slate-500 mb-8 leading-relaxed">This action will permanently destroy <strong>{orgToDelete.name}</strong> and all its associated species, individuals, and user accounts. This cannot be undone.</p>
-               <div className="flex gap-3">
+<div className="flex gap-3 flex-wrap">
                   <button onClick={() => setOrgToDelete(null)} className="flex-1 py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition-all">Cancel</button>
                   <button onClick={handlePermanentlyDelete} disabled={isDeleting} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-100 transition-all flex items-center justify-center gap-2">
                      {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />} Confirm Destruction

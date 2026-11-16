@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getIndividuals, saveIndividuals, getSpecies, saveSpecies, generatePattern, getBreedingLoans, sendMockNotification, getBreedingEvents, getNetworkPartners, getPartnerships, getOrg, getEnclosures, getSession } from '../services/storage';
 import { fetchIndividualImage, fetchSpeciesImage } from '../services/syncService';
-import { compressImageFileDual, compressImageFile } from '../services/imageUtils';
+import { compressImageFileDual, compressImageFile, compressDataUrl } from '../services/imageUtils';
 import { Individual, Species, WeightRecord, HealthRecord, GrowthRecord, BreedingEvent, ExternalPartner, Partnership, Enclosure, Sex } from '../types';
-import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode, Box, Trash2, Loader2, Upload, ImageIcon, Info } from 'lucide-react';
+import { ArrowLeft, Scale, Activity, Syringe, Calendar, Plus, Stethoscope, Sprout, Camera, MapPin, Navigation, X, ChevronLeft, ChevronRight, Maximize2, Briefcase, Archive, Edit, Baby, Heart, ArrowRightLeft, ExternalLink, Fingerprint, Download, FileCode, Box, Trash2, Loader2, Upload, ImageIcon, Info, Pencil } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
@@ -53,6 +53,9 @@ const IndividualDetail: React.FC = () => {
   // Modals
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
+  const [editingHealthId, setEditingHealthId] = useState<string | null>(null);
+  const [editingWeightId, setEditingWeightId] = useState<string | null>(null);
+  const [deleteRecordTarget, setDeleteRecordTarget] = useState<{ id: string; type: 'health' | 'weight' } | null>(null);
   const [galleryIndex, setGalleryIndex] = useState<number>(-1);
   const [showDnaDeleteConfirm, setShowDnaDeleteConfirm] = useState(false);
   const [showSpeciesModal, setShowSpeciesModal] = useState(false);
@@ -114,14 +117,21 @@ const IndividualDetail: React.FC = () => {
 
   // Map Initialization
   useEffect(() => {
-    if (activeTab === 'overview' && individual?.latitude && mapRef.current && !leafletMap.current) {
+    if (activeTab !== 'overview' || !mapRef.current || leafletMap.current) return;
+    if (individual?.latitude) {
       const map = L.map(mapRef.current, { zoomControl: false, maxZoom: 22 }).setView([individual.latitude, individual.longitude], 16);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, maxNativeZoom: 19 }).addTo(map);
       locationMarkerRef.current = L.marker([individual.latitude, individual.longitude]).addTo(map);
       leafletMap.current = map;
       setTimeout(() => map.invalidateSize(), 200);
+    } else if (isUpdatingLocation) {
+      const map = L.map(mapRef.current, { zoomControl: false, maxZoom: 22 }).setView([0, 0], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, maxNativeZoom: 19 }).addTo(map);
+      leafletMap.current = map;
+      locationMarkerRef.current = L.marker([0, 0]).addTo(map);
+      setTimeout(() => map.invalidateSize(), 200);
     }
-  }, [activeTab, individual?.latitude]);
+  }, [activeTab, individual?.latitude, isUpdatingLocation]);
 
   // Live "you are here" dot + map click to place pin while update mode is active
   useEffect(() => {
@@ -170,78 +180,20 @@ const IndividualDetail: React.FC = () => {
   const handleSetLocation = () => {
     if (!individual) return;
     setLocationError(null);
-    setIsSettingLocation(true);
-
-    const ACCURACY_TARGET = 20; // metres — same quality threshold as the map tracker
-    const TIMEOUT_MS = 10000;
-    let watchId: number | null = null;
-    let settled = false;
-    let bestPosition: GeolocationPosition | null = null;
-
-    const accept = async (pos: GeolocationPosition) => {
-      if (settled) return;
-      settled = true;
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      try {
-        const { latitude, longitude } = pos.coords;
-        const updated = { ...individual, latitude, longitude };
-        setIndividual(updated);
-        const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
-        await saveIndividuals(all, true);
-      } catch (e) {
-        console.error('Failed to save location:', e);
-        setLocationError('Failed to save location. Please try again.');
-      } finally {
-        setIsSettingLocation(false);
-      }
-    };
-
-    // Safety fallback — accept best available position after TIMEOUT_MS
-    const fallback = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        if (bestPosition) {
-          accept(bestPosition);
-        } else {
-          setLocationError(t('locationErrorTimeout'));
-          setIsSettingLocation(false);
-        }
-      }
-    }, TIMEOUT_MS);
-
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (!bestPosition || pos.coords.accuracy < bestPosition.coords.accuracy) {
-          bestPosition = pos;
-        }
-        if (pos.coords.accuracy <= ACCURACY_TARGET) {
-          clearTimeout(fallback);
-          accept(pos);
-        }
-        // else keep watching — accuracy still improving
-      },
-      (err) => {
-        if (!settled && err.code !== err.TIMEOUT) {
-          clearTimeout(fallback);
-          settled = true;
-          setLocationError(t('locationErrorPrefix') + err.message);
-          setIsSettingLocation(false);
-        }
-        // Ignore TIMEOUT errors from watchPosition — let the fallback handle it
-      },
-      { enableHighAccuracy: true, maximumAge: 0 }
-    );
+    setIsUpdatingLocation(true);
   };
 
   const handleSaveLocation = async () => {
     if (!individual || !pendingLatLng) return;
     try {
       const { lat: latitude, lng: longitude } = pendingLatLng;
-      const updated = { ...individual, latitude, longitude };
+      const updated = { ...individual, latitude, longitude, lastModified: new Date().toISOString() };
       setIndividual(updated);
       const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
       await saveIndividuals(all, true);
+      if (leafletMap.current) {
+        leafletMap.current.setView([latitude, longitude], 16);
+      }
     } catch (e) {
       console.error('Failed to save location:', e);
       setLocationError('Failed to save location. Please try again.');
@@ -296,7 +248,8 @@ const IndividualDetail: React.FC = () => {
     const updatedInd = {
       ...individual,
       weightHistory: [newRecord, ...(individual.weightHistory || [])],
-      ...(newHealthEntry ? { healthHistory: [newHealthEntry, ...(individual.healthHistory || [])] } : {})
+      ...(newHealthEntry ? { healthHistory: [newHealthEntry, ...(individual.healthHistory || [])] } : {}),
+      lastModified: new Date().toISOString()
     };
 
     const allInds = getIndividuals().map(i => i.id === individual.id ? updatedInd : i);
@@ -306,13 +259,30 @@ const IndividualDetail: React.FC = () => {
     setPendingLogImage('');
   };
 
-  const getDisplayImage = () => {
-    const latestObs = individual?.healthHistory?.find(h => h.imageUrl)?.imageUrl
-      || individual?.weightHistory?.find(w => w.imageUrl)?.imageUrl;
-    if (latestObs) return latestObs;
-    if (individual?.imageUrl && !individual.imageUrl.startsWith('data:image/svg+xml')) return individual.imageUrl;
-    if (species?.imageUrl && !species.imageUrl.startsWith('data:image/svg+xml')) return species.imageUrl;
-    return generatePattern(individual?.name || 'Individual');
+  const handleEditHealth = (record: HealthRecord) => {
+    setEditingHealthId(record.id);
+    setPendingLogImage(record.imageUrl || '');
+    setShowHealthModal(true);
+  };
+
+  const handleEditWeight = (record: WeightRecord) => {
+    setEditingWeightId(record.id);
+    setPendingLogImage(record.imageUrl || '');
+    setShowWeightModal(true);
+  };
+
+  const handleDeleteRecord = () => {
+    if (!individual || !deleteRecordTarget) return;
+    let updated = { ...individual, lastModified: new Date().toISOString() };
+    if (deleteRecordTarget.type === 'health') {
+      updated.healthHistory = (individual.healthHistory || []).filter(h => h.id !== deleteRecordTarget.id);
+    } else {
+      updated.weightHistory = (individual.weightHistory || []).filter(w => w.id !== deleteRecordTarget.id);
+    }
+    const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
+    saveIndividuals(all);
+    setIndividual(updated);
+    setDeleteRecordTarget(null);
   };
 
   if (!individual) return <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-emerald-600" /></div>;
@@ -320,16 +290,69 @@ const IndividualDetail: React.FC = () => {
   const isPlant = species?.type === 'Plant';
   const weightData = (individual.weightHistory || []).map(w => ({ date: w.date, value: w.weightKg })).reverse();
 
+  // Newest first. Records are ordered by date, then by creation time (the id embeds a
+  // Date.now() timestamp) so same-day entries keep a stable newest-first order.
+  // "Previous profile photo" entries are archived copies, so they always sort last.
+  const recordTime = (id: string) => { const m = id.match(/(\d{10,})$/); return m ? Number(m[1]) : 0; };
+  const isArchivedPhoto = (id: string) => id.startsWith('h-pfp-');
+  const newestFirst = (a: { date: string; id: string }, b: { date: string; id: string }) => {
+    const aOld = isArchivedPhoto(a.id), bOld = isArchivedPhoto(b.id);
+    if (aOld !== bOld) return aOld ? 1 : -1;
+    const byDate = new Date(b.date).getTime() - new Date(a.date).getTime();
+    return byDate || recordTime(b.id) - recordTime(a.id);
+  };
+  const sortedHealth = [...(individual.healthHistory || [])].sort(newestFirst);
+  const sortedWeight = [...(individual.weightHistory || [])].sort(newestFirst);
+
+  const realImage = (url?: string | null) => (url && !url.startsWith('data:image/svg+xml') ? url : null);
+
+  // The profile/card image is the individual's own imageUrl (set by "use as card image").
+  const getDisplayImage = () => {
+    const newestObs = allObsImages.find(i => !i.archived);
+    return realImage(individual?.imageUrl)
+      || newestObs?.url
+      || realImage(species?.imageUrl)
+      || generatePattern(individual?.name || 'Individual');
+  };
+
+  // For plants, saving a height measurement writes the same photo to both a weight record and
+  // a "Growth Measurement" health entry. Only list the photo once in the gallery.
+  const growthPhotoDates = new Set(
+    sortedHealth.filter(h => h.imageUrl && (h.type as any) === 'Growth Measurement').map(h => h.date)
+  );
   const allObsImages = [
-    ...(individual.healthHistory || []).filter(h => h.imageUrl).map(h => h.imageUrl!),
-    ...(individual.weightHistory || []).filter(w => w.imageUrl).map(w => w.imageUrl!),
-  ];
-  const originalProfileImg = (individual.imageUrl && !individual.imageUrl.startsWith('data:image/svg+xml'))
-    ? individual.imageUrl
-    : (species?.imageUrl && !species.imageUrl.startsWith('data:image/svg+xml'))
-      ? species.imageUrl
-      : null;
-  const galleryImages = [...allObsImages, ...(originalProfileImg ? [originalProfileImg] : [])];
+    ...sortedHealth.filter(h => h.imageUrl).map(h => ({ url: h.imageUrl!, date: h.date, id: h.id, archived: isArchivedPhoto(h.id) })),
+    ...sortedWeight
+      .filter(w => w.imageUrl && !(isPlant && growthPhotoDates.has(w.date)))
+      .map(w => ({ url: w.imageUrl!, date: w.date, id: w.id, archived: false })),
+  ].sort(newestFirst);
+  const originalProfileImg = realImage(individual.imageUrl) || realImage(species?.imageUrl);
+  const galleryImages = [...new Set([...allObsImages.map(i => i.url), ...(originalProfileImg ? [originalProfileImg] : [])])];
+
+  const galleryIndexFor = (url: string, date: string) => {
+    let idx = galleryImages.indexOf(url);
+    if (idx < 0) {
+      // weight photo hidden because the matching growth-measurement entry carries it
+      const twin = sortedHealth.find(h => h.imageUrl && h.date === date && (h.type as any) === 'Growth Measurement');
+      if (twin) idx = galleryImages.indexOf(twin.imageUrl!);
+    }
+    return Math.max(idx, 0);
+  };
+
+  // Profile image fields to apply when a photo is chosen as the card image. The thumbnail must
+  // be refreshed too: cards and the map prefer thumbnailUrl over imageUrl.
+  const buildProfileImage = async (photo: string): Promise<{ imageUrl: string; thumbnailUrl?: string }> => {
+    try {
+      return { imageUrl: photo, thumbnailUrl: await compressDataUrl(photo, 320, 0.72) };
+    } catch {
+      return { imageUrl: photo, thumbnailUrl: undefined };
+    }
+  };
+
+  // Keep the old profile photo in the history only if it isn't already shown somewhere else.
+  const isPhotoAlreadyListed = (url: string) =>
+    (individual.healthHistory || []).some(h => h.imageUrl === url) ||
+    (individual.weightHistory || []).some(w => w.imageUrl === url);
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500">
@@ -713,49 +736,45 @@ const IndividualDetail: React.FC = () => {
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><MapPin size={20} className="text-red-500" /> {t('location')}</h3>
                 <div className="h-64 w-full rounded-lg bg-slate-100 overflow-hidden relative border border-slate-200">
-                   {individual.latitude
-                     ? (
-                       <>
-                         <div ref={mapRef} className="h-full w-full" />
-                         {/* Controls overlaid on map */}
-                         {!isUpdatingLocation ? (
-                           <button
-                             onClick={() => setIsUpdatingLocation(true)}
-                             className="absolute bottom-3 right-3 z-[1000] flex items-center gap-1.5 bg-white/90 hover:bg-white shadow-md text-slate-700 hover:text-emerald-700 text-xs font-bold px-3 py-2 rounded-lg transition-all"
-                           >
-                             <Navigation size={13}/> Update Location
-                           </button>
-                         ) : (
-                           <div className="absolute bottom-3 left-3 right-3 z-[1000] flex items-center gap-2">
-                             <div className="flex-1 bg-white/95 rounded-lg shadow-md px-3 py-2 text-xs font-medium text-slate-600 flex items-center gap-2">
-                               {pendingLatLng
-                                 ? <><MapPin size={12} className="text-emerald-600"/>{pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}</>
-                                 : <><Loader2 size={12} className="animate-spin text-blue-500"/> Acquiring GPS fix… or tap map to place pin</>
-                               }
-                             </div>
-                             <button onClick={handleCancelUpdate} className="bg-white/95 hover:bg-white shadow-md text-slate-600 text-xs font-bold px-3 py-2 rounded-lg transition-all">Cancel</button>
-                             <button onClick={handleSaveLocation} disabled={!pendingLatLng} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-md transition-all">Save</button>
-                           </div>
-                         )}
-                       </>
-                     )
-                     : (
-                       <div className="h-full flex flex-col items-center justify-center gap-3">
-                         <p className="text-slate-400 italic text-xs">{t('noCoordinatesAssigned')}</p>
-                         <button
-                           onClick={handleSetLocation}
-                           disabled={isSettingLocation}
-                           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
-                         >
-                           {isSettingLocation
-                             ? <><Loader2 size={13} className="animate-spin"/> Detecting…</>
-                             : <><Navigation size={13}/> {t('setLocation')}</>
-                           }
-                         </button>
-                         {locationError && <p className="text-[10px] text-red-500 text-center px-2">{locationError}</p>}
-                       </div>
-                     )
-                   }
+{individual.latitude || isUpdatingLocation
+                      ? (
+                        <>
+                          <div ref={mapRef} className="h-full w-full" />
+                          {/* Controls overlaid on map */}
+                          {!isUpdatingLocation ? (
+                            <button
+                              onClick={() => setIsUpdatingLocation(true)}
+                              className="absolute bottom-3 right-3 z-[1000] flex items-center gap-1.5 bg-white/90 hover:bg-white shadow-md text-slate-700 hover:text-emerald-700 text-xs font-bold px-3 py-2 rounded-lg transition-all"
+                            >
+                              <Navigation size={13}/> Update Location
+                            </button>
+                          ) : (
+                            <div className="absolute bottom-3 left-3 right-3 z-[1000] flex items-center gap-2">
+                              <div className="flex-1 bg-white/95 rounded-lg shadow-md px-3 py-2 text-xs font-medium text-slate-600 flex items-center gap-2">
+                                {pendingLatLng
+                                  ? <><MapPin size={12} className="text-emerald-600"/>{pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}</>
+                                  : <><Loader2 size={12} className="animate-spin text-blue-500"/> Acquiring GPS fix… or tap map to place pin</>
+                                }
+                              </div>
+                              <button onClick={handleCancelUpdate} className="bg-white/95 hover:bg-white shadow-md text-slate-600 text-xs font-bold px-3 py-2 rounded-lg transition-all">Cancel</button>
+                              <button onClick={handleSaveLocation} disabled={!pendingLatLng} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-md transition-all">Save</button>
+                            </div>
+                          )}
+                        </>
+                      )
+                      : (
+                        <div className="h-full flex flex-col items-center justify-center gap-3">
+                          <p className="text-slate-400 italic text-xs">{t('noCoordinatesAssigned')}</p>
+                          <button
+                            onClick={handleSetLocation}
+                            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
+                          >
+                            <Navigation size={13}/> {t('setLocation')}
+                          </button>
+                          {locationError && <p className="text-[10px] text-red-500 text-center px-2">{locationError}</p>}
+                        </div>
+                      )
+                    }
                 </div>
              </div>
           </div>
@@ -766,12 +785,12 @@ const IndividualDetail: React.FC = () => {
         <div className="space-y-6 animate-in fade-in duration-300">
            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold text-slate-800">{isPlant ? 'Observations & History' : 'Records'}</h3>
-                 <button onClick={() => { setShowHealthModal(true); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ {isPlant ? 'Add Observation' : 'New Record'}</button>
+                 <h3 className="font-bold text-slate-800">{isPlant ? 'Observations & History' : 'Health Records'}</h3>
+                 <button onClick={() => { setShowHealthModal(true); setEditingHealthId(null); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ {isPlant ? 'Add Observation' : 'New Record'}</button>
               </div>
-              <div className="divide-y divide-slate-100">
-                 {(individual.healthHistory || []).length > 0 ? (
-                    individual.healthHistory?.map(log => (
+<div className="divide-y divide-slate-100">
+                  {sortedHealth.length > 0 ? (
+                     sortedHealth.map(log => (
                        <div key={log.id} className="p-6 hover:bg-slate-50 transition-colors flex gap-6">
                           <div className={`p-2 rounded-lg h-fit flex-shrink-0 ${log.type === 'Growth Measurement' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
                             {log.type === 'Growth Measurement' ? <Activity size={20}/> : <Stethoscope size={20}/>}
@@ -785,13 +804,14 @@ const IndividualDetail: React.FC = () => {
                              {log.performedBy && <p className="text-[10px] text-slate-400 font-bold uppercase mb-3">{t('performedBy')}: {log.performedBy}</p>}
                              
                              {log.imageUrl && (
-                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => {
-                                 const imgs = (individual.healthHistory || []).filter(h => h.imageUrl);
-                                 setGalleryIndex(imgs.findIndex(h => h.id === log.id));
-                               }}>
+                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setGalleryIndex(galleryIndexFor(log.imageUrl!, log.date))}>
                                   <img src={log.imageUrl} className="w-full h-full object-cover" />
                                </div>
                              )}
+                          </div>
+                          <div className="flex flex-col gap-1.5 shrink-0">
+                             <button onClick={() => handleEditHealth(log)} className="p-1.5 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="Edit record"><Pencil size={16}/></button>
+                             <button onClick={() => setDeleteRecordTarget({ id: log.id, type: 'health' })} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete record"><Trash2 size={16}/></button>
                           </div>
                        </div>
                     ))
@@ -799,6 +819,46 @@ const IndividualDetail: React.FC = () => {
                     <div className="p-12 text-center text-slate-400 opacity-50 flex flex-col items-center">
                        <Archive size={48} strokeWidth={1} className="mb-2" />
                        <p>{isPlant ? 'No observations recorded yet.' : 'No health records found.'}</p>
+                    </div>
+                 )}
+              </div>
+           </div>
+
+           {/* Weight Records section */}
+           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                 <h3 className="font-bold text-slate-800">{isPlant ? 'Height Measurements' : 'Weight Records'}</h3>
+                 <button onClick={() => { setShowWeightModal(true); setEditingWeightId(null); setPendingLogImage(''); }} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">+ {isPlant ? 'Log Height' : 'Log Weight'}</button>
+              </div>
+<div className="divide-y divide-slate-100">
+                  {sortedWeight.length > 0 ? (
+                     sortedWeight.map(w => (
+                       <div key={w.id} className="p-6 hover:bg-slate-50 transition-colors flex gap-6">
+                          <div className="p-2 rounded-lg h-fit flex-shrink-0 bg-emerald-50 text-emerald-600">
+                            <Scale size={20}/>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                             <div className="flex justify-between items-start mb-1">
+                                <h4 className="font-bold text-slate-900">{isPlant ? 'Height' : 'Weight'}: <span className="text-emerald-600">{w.weightKg} {isPlant ? 'cm' : 'kg'}</span></h4>
+                                <span className="text-xs font-bold text-slate-400">{w.date}</span>
+                             </div>
+                             {w.note && <p className="text-sm text-slate-600 leading-relaxed mb-3">{w.note}</p>}
+                             {w.imageUrl && (
+                               <div className="w-32 h-32 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setGalleryIndex(galleryIndexFor(w.imageUrl!, w.date))}>
+                                  <img src={w.imageUrl} className="w-full h-full object-cover" />
+                               </div>
+                             )}
+                          </div>
+                          <div className="flex flex-col gap-1.5 shrink-0">
+                             <button onClick={() => handleEditWeight(w)} className="p-1.5 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="Edit record"><Pencil size={16}/></button>
+                             <button onClick={() => setDeleteRecordTarget({ id: w.id, type: 'weight' })} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Delete record"><Trash2 size={16}/></button>
+                          </div>
+                       </div>
+                    ))
+                 ) : (
+                    <div className="p-12 text-center text-slate-400 opacity-50 flex flex-col items-center">
+                       <Archive size={48} strokeWidth={1} className="mb-2" />
+                       <p>{isPlant ? 'No height measurements recorded yet.' : 'No weight records found.'}</p>
                     </div>
                  )}
               </div>
@@ -841,70 +901,152 @@ const IndividualDetail: React.FC = () => {
       )}
 
       {/* Weight Modal */}
-      {showWeightModal && (
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+      {showWeightModal && (() => {
+        const editingWeightRecord = editingWeightId ? (individual?.weightHistory || []).find(w => w.id === editingWeightId) : null;
+        return (
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" key={editingWeightId || 'new-weight'}>
            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold">Log {isPlant ? 'Measurement' : 'Weight'}</h3>
-                 <button onClick={() => setShowWeightModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                 <h3 className="font-bold">{editingWeightId ? 'Edit Measurement' : `Log ${isPlant ? 'Measurement' : 'Weight'}`}</h3>
+                 <button onClick={() => { setShowWeightModal(false); setEditingWeightId(null); setPendingLogImage(''); setUseAsCardImage(true); }} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
               </div>
-              <form onSubmit={handleAddWeight} className="p-6 space-y-4">
+              <form onSubmit={async (e) => {
+                 e.preventDefault();
+                 if (!individual) return;
+                 const fd = new FormData(e.currentTarget);
+                 const date = fd.get('date') as string;
+                 const value = Number(fd.get('weight'));
+                 const note = fd.get('note') as string;
+
+                 const newRecord: WeightRecord = {
+                    id: editingWeightId || `w-${Date.now()}`,
+                    date,
+                    weightKg: value,
+                    note,
+                    imageUrl: pendingLogImage || undefined
+                 };
+
+                 const newHealthEntry: HealthRecord | null = isPlant && !editingWeightId ? {
+                    id: `h-${Date.now()}`,
+                    date,
+                    type: 'Growth Measurement' as any,
+                    description: `Height recorded: ${value} cm${note ? ` — ${note}` : ''}`,
+                    performedBy: '',
+                    imageUrl: pendingLogImage || undefined
+                 } : null;
+
+                 const existingWeight = editingWeightId ? (individual.weightHistory || []).find(w => w.id === editingWeightId) : null;
+
+                 // When a weight record has an image, preserve any old profile picture
+                 // so it stays visible in the gallery
+                 const oldProfileImgWeight = individual.imageUrl;
+                 const shouldPreserveOldWeight = pendingLogImage && useAsCardImage && oldProfileImgWeight && !oldProfileImgWeight.startsWith('data:image/svg+xml') && oldProfileImgWeight !== pendingLogImage && !isPhotoAlreadyListed(oldProfileImgWeight);
+                 const newProfileImage = pendingLogImage && useAsCardImage ? await buildProfileImage(pendingLogImage) : null;
+                 const preservationEntry: HealthRecord | null = shouldPreserveOldWeight ? { id: `h-pfp-${Date.now()}`, date: individual.lastModified ? individual.lastModified.split('T')[0] : (individual.birthDate || new Date().toISOString().split('T')[0]), type: 'Other' as any, description: 'Previous profile photo', imageUrl: oldProfileImgWeight, performedBy: '' } : null;
+
+const updatedInd = {
+                      ...individual,
+                      ...(newProfileImage ?? {}),
+                      weightHistory: existingWeight
+                        ? (individual.weightHistory || []).map(w => w.id === editingWeightId ? newRecord : w)
+                        : [newRecord, ...(individual.weightHistory || [])],
+                      ...(newHealthEntry || preservationEntry
+                        ? {
+                            healthHistory: [
+                              ...(newHealthEntry ? [newHealthEntry] : []),
+                              ...(preservationEntry ? [preservationEntry] : []),
+                              ...(individual.healthHistory || [])
+                            ]
+                          }
+                        : {}),
+                      lastModified: new Date().toISOString()
+                   };
+
+                 const allInds = getIndividuals().map(i => i.id === individual.id ? updatedInd : i);
+                 saveIndividuals(allInds);
+                 setIndividual(updatedInd);
+setShowWeightModal(false);
+                  setEditingWeightId(null);
+                  setPendingLogImage('');
+                  setUseAsCardImage(true);
+              }} className="p-6 space-y-4">
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">Date</label>
-                    <input type="date" name="date" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" defaultValue={new Date().toISOString().split('T')[0]} required />
+                    <input type="date" name="date" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" defaultValue={editingWeightRecord?.date || new Date().toISOString().split('T')[0]} required />
                  </div>
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">{isPlant ? 'Height (cm)' : 'Weight (kg)'}</label>
-                    <input type="number" step="0.01" name="weight" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" autoFocus />
+                    <input type="number" step="0.01" name="weight" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" defaultValue={editingWeightRecord?.weightKg ?? ''} autoFocus />
                  </div>
                  <div>
                     <label className="text-xs font-bold text-slate-500 uppercase">Note</label>
-                    <input type="text" name="note" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" placeholder="e.g. Regular checkup" />
-                 </div>
-                 
-                 <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase">Attach Observation Photo</label>
-                    <div className="flex items-center gap-3">
-                       <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
-                          {pendingLogImage ? (
-                             <img src={pendingLogImage} className="h-16 w-16 object-cover rounded shadow-sm" />
-                          ) : (
-                             <>
-                                <Camera size={24} className="text-slate-300 mb-1" />
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Click to Upload</span>
-                             </>
-                          )}
-                          <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
-                       </label>
-                       {pendingLogImage && (
-                          <button type="button" onClick={() => setPendingLogImage('')} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
-                       )}
-                    </div>
+                    <input type="text" name="note" className="w-full mt-1 px-4 py-2 border border-slate-300 rounded-lg outline-none" placeholder="e.g. Regular checkup" defaultValue={editingWeightRecord?.note || ''} />
                  </div>
 
+<div className="space-y-2">
+                     <label className="text-xs font-bold text-slate-500 uppercase">Attach Observation Photo</label>
+                     {pendingLogImage ? (
+                       <div className="flex items-center gap-3">
+                         <div className="flex-1 flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                           <img src={pendingLogImage} className="h-16 w-16 object-cover rounded shadow-sm shrink-0" />
+                           <div className="flex gap-2">
+                             <button type="button" onClick={() => { setPendingLogImage(''); setUseAsCardImage(true); }} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
+                           </div>
+                         </div>
+                       </div>
+                     ) : (
+                       <div className="grid grid-cols-2 gap-3">
+                         <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
+                           <Camera size={24} className="text-slate-300 mb-1" />
+                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Take Photo</span>
+                           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleLogPhotoUpload} />
+                         </label>
+                         <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
+                           <ImageIcon size={24} className="text-slate-300 mb-1" />
+                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload</span>
+                           <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
+                         </label>
+                       </div>
+                     )}
+                     {pendingLogImage && (
+                        <label className="flex items-center gap-2.5 cursor-pointer mt-1 select-none">
+                           <input
+                              type="checkbox"
+                              checked={useAsCardImage}
+                              onChange={e => setUseAsCardImage(e.target.checked)}
+                              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                           />
+                           <span className="text-sm text-slate-600">{t('useAsCardImage')}</span>
+                        </label>
+                     )}
+                  </div>
+
                  <div className="pt-4 flex gap-2">
-                    <button type="button" onClick={() => setShowWeightModal(false)} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
-                    <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">Save Log</button>
+                    <button type="button" onClick={() => { setShowWeightModal(false); setEditingWeightId(null); setPendingLogImage(''); setUseAsCardImage(true); }} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
+                    <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">{editingWeightId ? 'Update Log' : 'Save Log'}</button>
                  </div>
               </form>
            </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Health Modal */}
-      {showHealthModal && (
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+      {showHealthModal && (() => {
+        const editingHealthRecord = editingHealthId ? (individual?.healthHistory || []).find(h => h.id === editingHealthId) : null;
+        return (
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" key={editingHealthId || 'new-health'}>
            <div className="bg-white rounded-xl shadow-xl w-full max-md overflow-hidden animate-in zoom-in duration-200">
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold">{isPlant ? 'New Observation' : 'New Record'}</h3>
-                 <button onClick={() => { setShowHealthModal(false); setPendingLogImage(''); setUseAsCardImage(true); }} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                 <h3 className="font-bold">{editingHealthId ? 'Edit Record' : (isPlant ? 'New Observation' : 'New Record')}</h3>
+                 <button onClick={() => { setShowHealthModal(false); setEditingHealthId(null); setPendingLogImage(''); setUseAsCardImage(true); }} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
               </div>
-              <form onSubmit={(e) => {
+              <form onSubmit={async (e) => {
                  e.preventDefault();
                  if(!individual) return;
                  const fd = new FormData(e.currentTarget);
                  const log: HealthRecord = {
-                    id: `h-${Date.now()}`,
+                    id: editingHealthId || `h-${Date.now()}`,
                     date: fd.get('date') as string,
                     type: fd.get('type') as any,
                     description: fd.get('desc') as string,
@@ -912,27 +1054,43 @@ const IndividualDetail: React.FC = () => {
                     imageUrl: pendingLogImage || undefined
                  };
 
-                 const updated = {
-                    ...individual,
-                    ...(pendingLogImage && useAsCardImage ? { imageUrl: pendingLogImage } : {}),
-                    healthHistory: [log, ...(individual.healthHistory || [])]
-                 };
+                 const existing = editingHealthId ? (individual.healthHistory || []).find(h => h.id === editingHealthId) : null;
+
+                 // When useAsCardImage overwrites imageUrl, preserve the old profile
+                 // picture so it stays visible in the gallery
+                 const oldProfileImg = individual.imageUrl;
+                 const shouldPreserveOld = pendingLogImage && useAsCardImage && oldProfileImg && !oldProfileImg.startsWith('data:image/svg+xml') && oldProfileImg !== pendingLogImage && !isPhotoAlreadyListed(oldProfileImg);
+                 const newProfileImage = pendingLogImage && useAsCardImage ? await buildProfileImage(pendingLogImage) : null;
+
+const updated = {
+                      ...individual,
+                      ...(newProfileImage ?? {}),
+                      healthHistory: existing
+                        ? (individual.healthHistory || []).map(h => h.id === editingHealthId ? log : h)
+                        : [
+                            log,
+                            ...(shouldPreserveOld ? [{ id: `h-pfp-${Date.now()}`, date: individual.lastModified ? individual.lastModified.split('T')[0] : (individual.birthDate || new Date().toISOString().split('T')[0]), type: 'Other' as any, description: 'Previous profile photo', imageUrl: oldProfileImg, performedBy: '' }] : []),
+                            ...(individual.healthHistory || [])
+                          ],
+                      lastModified: new Date().toISOString()
+                   };
 
                  const all = getIndividuals().map(i => i.id === individual.id ? updated : i);
                  saveIndividuals(all);
                  setIndividual(updated);
                  setShowHealthModal(false);
+                 setEditingHealthId(null);
                  setPendingLogImage('');
                  setUseAsCardImage(true);
               }} className="p-6 space-y-4">
                  <div className="grid grid-cols-2 gap-4">
                     <div>
                        <label className="text-[10px] font-bold text-slate-400 uppercase">Date</label>
-                       <input type="date" name="date" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" defaultValue={new Date().toISOString().split('T')[0]} required />
+                       <input type="date" name="date" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" defaultValue={editingHealthRecord?.date || new Date().toISOString().split('T')[0]} required />
                     </div>
                     <div>
                        <label className="text-[10px] font-bold text-slate-400 uppercase">Type</label>
-                       <select name="type" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" required>
+                       <select name="type" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" defaultValue={editingHealthRecord?.type || ''} required>
                           {isPlant ? <>
                             <option value="Observation">Observation</option>
                             <option value="Flowering">Flowering</option>
@@ -956,59 +1114,67 @@ const IndividualDetail: React.FC = () => {
                  </div>
                  <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase">{isPlant ? 'Recorded By' : 'Performed By'}</label>
-                    <input type="text" name="who" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder={isPlant ? 'Your name' : 'Veterinarian Name'} defaultValue={getSession()?.name || ''} />
-                 </div>
-                 <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
-                    <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." />
+                     <input type="text" name="who" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder={isPlant ? 'Your name' : 'Veterinarian Name'} defaultValue={editingHealthRecord?.performedBy || getSession()?.name || ''} />
+                  </div>
+                  <div>
+                     <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
+                     <textarea name="desc" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" rows={4} placeholder="Detailed notes..." defaultValue={editingHealthRecord?.description || ''} />
                  </div>
                  
                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Attach Photo</label>
-                    <div className="flex items-center gap-3">
-                       <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
-                          {pendingLogImage ? (
-                             <img src={pendingLogImage} className="h-20 w-20 object-cover rounded shadow-sm" />
-                          ) : (
-                             <>
-                                <ImageIcon size={24} className="text-slate-300 mb-1" />
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Capture Observation</span>
-                             </>
-                          )}
-                          <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
-                       </label>
-                       {pendingLogImage && (
-                          <button type="button" onClick={() => { setPendingLogImage(''); setUseAsCardImage(true); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
-                       )}
-                    </div>
-                    {pendingLogImage && (
-                       <label className="flex items-center gap-2.5 cursor-pointer mt-1 select-none">
-                          <input
-                             type="checkbox"
-                             checked={useAsCardImage}
-                             onChange={e => setUseAsCardImage(e.target.checked)}
-                             className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                          />
-                          <span className="text-sm text-slate-600">Use this image on this individual's card</span>
-                       </label>
-                    )}
-                 </div>
+                     <label className="text-[10px] font-bold text-slate-400 uppercase">Attach Photo</label>
+                     {pendingLogImage ? (
+                       <div className="flex items-center gap-3">
+                         <div className="flex-1 flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                           <img src={pendingLogImage} className="h-20 w-20 object-cover rounded shadow-sm shrink-0" />
+                           <div className="flex gap-2">
+                             <button type="button" onClick={() => { setPendingLogImage(''); setUseAsCardImage(true); }} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
+                           </div>
+                         </div>
+                       </div>
+                     ) : (
+                       <div className="grid grid-cols-2 gap-3">
+                         <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
+                           <Camera size={24} className="text-slate-300 mb-1" />
+                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Take Photo</span>
+                           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleLogPhotoUpload} />
+                         </label>
+                         <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer transition-all">
+                           <ImageIcon size={24} className="text-slate-300 mb-1" />
+                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload</span>
+                           <input type="file" accept="image/*" className="hidden" onChange={handleLogPhotoUpload} />
+                         </label>
+                       </div>
+                     )}
+                     {pendingLogImage && (
+                        <label className="flex items-center gap-2.5 cursor-pointer mt-1 select-none">
+                           <input
+                              type="checkbox"
+                              checked={useAsCardImage}
+                              onChange={e => setUseAsCardImage(e.target.checked)}
+                              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                           />
+                           <span className="text-sm text-slate-600">{t('useAsCardImage')}</span>
+                        </label>
+                     )}
+                  </div>
 
                  <div className="pt-4 flex gap-2">
                     <button type="button" onClick={() => { setShowHealthModal(false); setPendingLogImage(''); setUseAsCardImage(true); }} className="flex-1 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold">Cancel</button>
-                    <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">Save Record</button>
+                    <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-md hover:bg-emerald-700">{editingHealthId ? 'Update Record' : 'Save Record'}</button>
                  </div>
               </form>
            </div>
         </div>
-      )}
+        );
+      })()}
       {/* Image Gallery Lightbox */}
       {galleryIndex >= 0 && (() => {
         if (galleryImages.length === 0) return null;
         const current = galleryImages[galleryIndex] || galleryImages[0];
         const isObs = galleryIndex < (allObsImages.length);
         return (
-          <div className="fixed inset-0 z-[99999] bg-black/95 flex flex-col items-center justify-center" onClick={() => setGalleryIndex(-1)}>
+          <div className="fixed inset-0 z-[99999] bg-black/95 flex flex-col items-center justify-center my-0" onClick={() => setGalleryIndex(-1)}>
             {/* Close */}
             <button className="absolute top-4 right-4 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors z-10" onClick={() => setGalleryIndex(-1)}>
               <X size={28} />
@@ -1044,6 +1210,16 @@ const IndividualDetail: React.FC = () => {
           </div>
         );
       })()}
+
+      <ConfirmModal
+        isOpen={!!deleteRecordTarget}
+        title="Delete Record"
+        message="Permanently delete this record? This cannot be undone."
+        confirmLabel="Delete"
+        onConfirm={handleDeleteRecord}
+        onCancel={() => setDeleteRecordTarget(null)}
+        variant="danger"
+      />
 
       <ConfirmModal
         isOpen={showDnaDeleteConfirm}

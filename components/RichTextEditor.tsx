@@ -14,6 +14,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   const wrapperRef = useRef<HTMLDivElement>(null);
   const quillRef = useRef<any>(null);
   const quillInitialisedRef = useRef(false);
+  const pendingHtmlRef = useRef<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showHtml, setShowHtml] = useState(false);
   const [rawHtml, setRawHtml] = useState(value || '');
@@ -21,20 +22,17 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   // Initialize Quill
   useEffect(() => {
     if (!containerRef.current || !wrapperRef.current) return;
-    // Guard against React StrictMode double-invocation (which would wipe editor content)
     if (quillInitialisedRef.current) return;
     quillInitialisedRef.current = true;
-    if (quillRef.current) return; // Prevent double init
+    if (quillRef.current) return;
 
     // @ts-ignore
     const Quill = (window as any).Quill;
     if (!Quill) return;
 
-    // Explicitly clear ANY existing toolbars in the wrapper to fix double icon issue
     const existingToolbars = wrapperRef.current.querySelectorAll('.ql-toolbar');
     existingToolbars.forEach(tb => tb.remove());
 
-    // Clear content container as well
     containerRef.current.innerHTML = '';
 
     const quill = new Quill(containerRef.current, {
@@ -51,16 +49,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
       }
     });
 
-    // Set initial content
     if (value) {
       quill.clipboard.dangerouslyPasteHTML(value);
     }
 
-    // Capture user changes
     quill.on('text-change', (delta: any, oldDelta: any, source: string) => {
       if (source === 'user') {
         const html = quill.root.innerHTML;
-        // Normalize empty paragraphs
         const normalizedHtml = html === '<p><br></p>' ? '' : html;
         onChange(normalizedHtml);
       }
@@ -68,35 +63,30 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
 
     quillRef.current = quill;
 
-    // Proper Cleanup
     return () => {
        if (quillRef.current) {
-          // No official destroy() in Quill 1.x, we clear the ref
           quillRef.current = null;
        }
     };
   }, []);
 
-  // Keep rawHtml in sync when value changes externally (and not in HTML edit mode)
+  // After showHtml flips to false, apply any pending HTML content
   useEffect(() => {
-    if (!showHtml) {
-      setRawHtml(value || '');
+    if (!showHtml && quillRef.current && pendingHtmlRef.current !== null) {
+      quillRef.current.clipboard.dangerouslyPasteHTML(pendingHtmlRef.current);
+      pendingHtmlRef.current = null;
     }
-  }, [value, showHtml]);
+  }, [showHtml]);
 
   const handleToggleHtml = () => {
     if (!showHtml) {
-      // Switching TO html mode: snapshot current Quill content
       const currentHtml = quillRef.current ? quillRef.current.root.innerHTML : value || '';
       const normalized = currentHtml === '<p><br></p>' ? '' : currentHtml;
       setRawHtml(normalized);
       setShowHtml(true);
     } else {
-      // Switching BACK to Quill: apply textarea content into editor
+      pendingHtmlRef.current = rawHtml;
       setShowHtml(false);
-      if (quillRef.current) {
-        quillRef.current.clipboard.dangerouslyPasteHTML(rawHtml);
-      }
       onChange(rawHtml);
     }
   };
@@ -106,19 +96,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     onChange(e.target.value);
   };
 
-  // Sync value from props when it changes externally (e.g. on reset or remote load)
+  // Sync value from props when it changes externally (e.g. on reset or remote load), but only if NOT switching back from HTML mode
   useEffect(() => {
-    if (quillRef.current) {
+    if (quillRef.current && pendingHtmlRef.current === null && !showHtml) {
       const currentHtml = quillRef.current.root.innerHTML;
       const normalize = (h: string) => h.replace(/\s/g, '').replace(/&nbsp;/g, ' ').replace(/<p><br><\/p>/g, '');
       const incomingValue = value || '';
-      
+
       if (normalize(incomingValue) !== normalize(currentHtml)) {
-        const selection = quillRef.current.getSelection();
-        quillRef.current.clipboard.dangerouslyPasteHTML(incomingValue);
-        if (selection) {
-          quillRef.current.setSelection(selection);
-        }
+        quillRef.current.clipboard.dangerouslyPasteHTML(incomingValue || '');
       }
     }
   }, [value]);
@@ -143,8 +129,8 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
               />
             </div>
 
-            {/* Raw HTML textarea */}
-            {showHtml && (
+            {/* Raw HTML textarea — hidden (not unmounted) to preserve scroll/cursor */}
+            <div style={{ display: showHtml ? 'block' : 'none' }}>
               <textarea
                 value={rawHtml}
                 onChange={handleRawHtmlChange}
@@ -153,7 +139,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
                 style={{ height: isExpanded ? 'calc(100% - 42px)' : height }}
                 placeholder="Paste or type raw HTML here…"
               />
-            )}
+            </div>
 
             {/* Toolbar buttons (bottom-right) */}
             <div className="absolute bottom-2 right-2 flex items-center gap-1 z-10">

@@ -55,7 +55,7 @@ import EnclosureManager from './pages/EnclosureManager';
 import Installer from './components/Installer';
 import SetupWizard from './components/SetupWizard';
 import { getSession, logout, isImpersonating, restoreMainOrg, getOrg, getSpecies, getNotifications, getSystemSettings, getProjects, getCurrentProjectId, saveProjects, saveCurrentProjectId, getIndividuals, saveOrg, saveUsers, saveSpecies, saveIndividuals, saveBreedingEvents, saveBreedingLoans, savePartnerships, saveSystemSettings, saveNetworkPartners, getUsers, getLanguages, saveLanguages, saveSession, sendMfaCode, syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushLanguages, syncPushSettings, syncPushEnclosures, getBreedingEvents, getBreedingLoans, getPartnerships, getNetworkPartners, initHighCapacityStorage, saveEnclosures, getEnclosures } from './services/storage';
-import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fetchSpeciesImage, fetchIndividualImage } from './services/syncService';
+import { fetchRemoteData, fetchPublicConfig, getInstallStatus, fetchSpeciesImage, fetchIndividualImage, fromDbSpecies, fromDbInd } from './services/syncService';
 import { User, UserRole, Organization, SystemSettings, Project, LanguageConfig, Species, Individual } from './types';
 import { TranslationKey, BASE_TRANSLATIONS } from './services/i18n';
 
@@ -154,7 +154,7 @@ const Sidebar = ({ isOpen, onClose, user, onLogout, showBreeding, showPlantMap, 
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} />}
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-200 z-30 transform transition-transform duration-300 lg:translate-x-0 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-200 z-[100] transform transition-transform duration-300 lg:translate-x-0 flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex flex-col gap-4 flex-shrink-0">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-2 text-emerald-700">{logoUrl ? <img src={logoUrl} alt="Logo" className="h-8 w-auto object-contain" /> : (org.focus === 'Flora' ? <Leaf size={32} /> : <PawPrint size={32} />)}<h1 className="text-xl font-bold tracking-tight">OpenStudbook</h1></div>
@@ -431,17 +431,17 @@ const App: React.FC = () => {
            if (data.users) saveUsers(data.users, true);
            console.log(`[Sync] Fetched ${data.species?.length ?? 0} species, ${data.individuals?.length ?? 0} individuals from server.`);
            try {
-             if (data.species) {
-               const localSpecies = getSpecies();
-               const localSpeciesMap = new Map(localSpecies.map(s => [s.id, s]));
-               const serverSpeciesIds = new Set(data.species.map((s: any) => s.id as string));
-               const localOnlySpecies = localSpecies.filter(s => !serverSpeciesIds.has(s.id));
-               // Server is authoritative — only merge server records (plus cached imageUrls).
-               // Local-only items are pushed at creation/edit time; this is a safety fallback.
-               const mergedSpecies = data.species.map((s: any) => ({
-                 ...s,
-                 imageUrl: s.imageUrl || localSpeciesMap.get(s.id)?.imageUrl || undefined,
-               }));
+              if (data.species) {
+                const localSpecies = getSpecies();
+                const localSpeciesMap = new Map(localSpecies.map(s => [s.id, s]));
+                const serverSpeciesIds = new Set(data.species.map((s: any) => s.id as string));
+                const localOnlySpecies = localSpecies.filter(s => !serverSpeciesIds.has(s.id));
+                // Server is authoritative — only merge server records (plus cached imageUrls).
+                // Local-only items are pushed at creation/edit time; this is a safety fallback.
+                const mergedSpecies = data.species.map((s: any) => ({
+                  ...s,
+                  imageUrl: s.imageUrl || localSpeciesMap.get(s.id)?.imageUrl || undefined,
+                }));
                console.log(`[Sync] Saving ${mergedSpecies.length} species to cache...`);
                await saveSpecies(mergedSpecies, true);
                console.log(`[Sync] Species saved. Cache now: ${getSpecies().length}`);
@@ -463,16 +463,16 @@ const App: React.FC = () => {
                  }).catch(() => {});
                }
              }
-             if (data.individuals) {
-               const localInds = getIndividuals();
-               const localIndMap = new Map(localInds.map(i => [i.id, i]));
-               const serverIndIds = new Set(data.individuals.map((i: any) => i.id as string));
-               const localOnlyInds = localInds.filter(i => !serverIndIds.has(i.id));
-               // Server is authoritative — only merge server records (plus cached imageUrls).
-               const mergedInds = data.individuals.map((i: any) => ({
-                 ...i,
-                 imageUrl: i.imageUrl || localIndMap.get(i.id)?.imageUrl || undefined,
-               }));
+              if (data.individuals) {
+                const localInds = getIndividuals();
+                const localIndMap = new Map(localInds.map(i => [i.id, i]));
+                const serverIndIds = new Set(data.individuals.map((i: any) => i.id as string));
+                const localOnlyInds = localInds.filter(i => !serverIndIds.has(i.id));
+                // Server is authoritative — only merge server records (plus cached imageUrls).
+                const mergedInds = data.individuals.map((i: any) => ({
+                  ...i,
+                  imageUrl: i.imageUrl || localIndMap.get(i.id)?.imageUrl || undefined,
+                }));
                console.log(`[Sync] Saving ${mergedInds.length} individuals to cache...`);
                await saveIndividuals(mergedInds, true);
                console.log(`[Sync] Individuals saved. Cache now: ${getIndividuals().length}`);
@@ -656,7 +656,10 @@ const App: React.FC = () => {
           <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} onLogout={handleLogout} showBreeding={showBreeding} showPlantMap={showPlantMap} showEnclosures={showEnclosures} logoUrl={systemSettings.appLogoUrl} projects={projects} currentProjectId={currentProjectId} onChangeProject={handleProjectChange} onAddProject={() => setShowAddProjectModal(true)} onEditProfile={openProfileModal} />
           <main className="flex-1 lg:ml-64 flex flex-col min-h-screen relative">
             <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-10">
-              <div className="lg:hidden flex items-center space-x-2 text-emerald-700 font-bold">
+              <div className="lg:hidden flex items-center gap-2">
+                  <button onClick={() => setSidebarOpen(true)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors" aria-label="Open menu">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                  </button>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="h-8 w-8">
                     <rect width="512" height="512" rx="112" fill="#059669"/>
                     <ellipse cx="256" cy="300" rx="90" ry="75" fill="white" opacity="0.95"/>
@@ -665,7 +668,7 @@ const App: React.FC = () => {
                     <ellipse cx="312" cy="185" rx="38" ry="45" fill="white" opacity="0.95"/>
                     <ellipse cx="382" cy="210" rx="38" ry="45" fill="white" opacity="0.95"/>
                   </svg>
-                  <span>OpenStudbook</span>
+                  <span className="font-bold text-emerald-700">OpenStudbook</span>
                 </div>
               <div className="hidden lg:block"></div>
               <div className="flex items-center gap-4">
@@ -681,7 +684,7 @@ const App: React.FC = () => {
                  <Link to="/notifications" className="relative text-slate-500 hover:text-emerald-600 transition-colors p-2 hover:bg-slate-50 rounded-full"><Bell size={20} />{unreadCount > 0 && <span className="absolute top-1.5 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</Link>
                </div>
             </header>
-            <div className="flex-1 p-4 lg:p-8 overflow-y-auto pb-20 lg:pb-8">
+            <div className="flex-1 p-4 lg:p-8 overflow-x-hidden overflow-y-auto pb-20 lg:pb-8">
               <ErrorBoundary>
                 <Routes>
                   <Route path="/" element={<Dashboard currentProjectId={currentProjectId} syncVersion={syncVersion} />} />

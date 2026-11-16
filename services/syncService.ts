@@ -86,7 +86,7 @@ const fromDbUser = (u: any): User => ({
   preferredLanguage: u.preferred_language 
 });
 
-const fromDbSpecies = (s: any): Species => ({ 
+export const fromDbSpecies = (s: any): Species => ({ 
   id: s.id, 
   projectId: s.project_id, 
   commonName: s.common_name, 
@@ -103,9 +103,13 @@ const fromDbSpecies = (s: any): Species => ({
   nativeStatusCountry: s.native_status_country,
   nativeStatusLocal: s.native_status_local,
   description: s.description || undefined,
+  category: s.category || undefined,
+  localName: s.local_name || undefined,
+  isGenerallyPresent: !!s.is_generally_present || undefined,
+  lastModified: s.last_modified || undefined,
 });
 
-const fromDbInd = (i: any): Individual => ({ 
+export const fromDbInd = (i: any): Individual => ({ 
   id: i.id, 
   projectId: i.project_id, 
   speciesId: i.species_id, 
@@ -134,7 +138,8 @@ const fromDbInd = (i: any): Individual => ({
   transferNote: i.transfer_note, 
   weightHistory: safeParse(i.weight_history, []), 
   growthHistory: safeParse(i.growth_history, []), 
-  healthHistory: safeParse(i.health_history, []) 
+healthHistory: safeParse(i.health_history, []),
+  lastModified: i.last_modified || undefined,
 });
 
 const fromDbEnclosure = (e: any): Enclosure => ({
@@ -259,6 +264,10 @@ export const mapSpeciesToDb = (s: Species) => ({
   native_status_country: s.nativeStatusCountry || null,
   native_status_local: s.nativeStatusLocal || null,
   description: s.description || null,
+  category: s.category || null,
+  local_name: s.localName || null,
+  is_generally_present: s.isGenerallyPresent ? 1 : null,
+  last_modified: s.lastModified || null,
 });
 
 export const mapIndToDb = (i: Individual) => ({ 
@@ -293,7 +302,8 @@ loan_status: i.loanStatus || null,
   transfer_note: i.transferNote, 
   weight_history: i.weightHistory || [], 
   growth_history: i.growthHistory || [], 
-  health_history: i.healthHistory || [] 
+health_history: i.healthHistory || [],
+  last_modified: i.lastModified || null,
 });
 
 export const mapEnclosureToDb = (e: Enclosure) => ({ 

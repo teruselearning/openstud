@@ -1,6 +1,6 @@
 import { Organization, User, Species, Individual, UserRole, Sex, BreedingEvent, ExternalPartner, UserStatus, OrganizationFocus, Partnership, SystemSettings, Project, BreedingLoan, Notification, LanguageConfig, EmailTemplate, Enclosure } from '../types';
 import { BASE_TRANSLATIONS, SEED_LANGUAGES } from './i18n';
-import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord, uploadImageToServer, upgradeTranslations } from './syncService';
+import { syncPushOrg, syncPushUsers, syncPushProjects, syncPushSpecies, syncPushIndividuals, syncPushBreedingEvents, syncPushBreedingLoans, syncPushPartnerships, syncPushSettings, syncDeleteOrganization, syncPushLanguages, syncDeleteLanguage, syncPermanentDeleteOrganization, syncPushEnclosures, syncDeleteRecord, uploadImageToServer, upgradeTranslations, fromDbSpecies } from './syncService';
 import { hashPassword } from './crypto';
 import { sendSystemEmail } from './emailService';
 import { localDb } from './localDb';
@@ -52,7 +52,12 @@ export const initHighCapacityStorage = async () => {
     ]);
     
     individualsCache = inds || [];
-    speciesCache = specs || [];
+    speciesCache = (specs || []).map(s => {
+      if (!(s as any).commonName && (s as any).common_name) {
+        return fromDbSpecies(s);
+      }
+      return s;
+    });
     enclosuresCache = encls || [];
     
     if (!langs || langs.length === 0) {
@@ -314,10 +319,35 @@ export const getIndividuals = (): Individual[] => individualsCache;
 export const saveIndividuals = async (i: Individual[], skipSync = false) => {
   let resolved = i || [];
   if (!skipSync) {
+    // The same photo is often referenced more than once (profile image + health entry +
+    // weight record). Upload each distinct data URL once and share the resulting URL, so
+    // one photo does not become several separate server files.
+    const uploadCache = new Map<string, Promise<string>>();
+    const upload = (dataUrl: string): Promise<string> => {
+      let p = uploadCache.get(dataUrl);
+      if (!p) { p = uploadBase64Image(dataUrl); uploadCache.set(dataUrl, p); }
+      return p;
+    };
     resolved = await Promise.all(resolved.map(async ind => {
       const updates: Partial<Individual> = {};
-      if (isBase64DataUrl(ind.imageUrl || '')) updates.imageUrl = await uploadBase64Image(ind.imageUrl!);
-      if (isBase64DataUrl(ind.thumbnailUrl || '')) updates.thumbnailUrl = await uploadBase64Image(ind.thumbnailUrl!);
+      if (isBase64DataUrl(ind.imageUrl || '')) updates.imageUrl = await upload(ind.imageUrl!);
+      if (isBase64DataUrl(ind.thumbnailUrl || '')) updates.thumbnailUrl = await upload(ind.thumbnailUrl!);
+      if (ind.healthHistory) {
+        updates.healthHistory = await Promise.all(ind.healthHistory.map(async h => {
+          if (h.imageUrl && isBase64DataUrl(h.imageUrl)) {
+            return { ...h, imageUrl: await upload(h.imageUrl) };
+          }
+          return h;
+        }));
+      }
+      if (ind.weightHistory) {
+        updates.weightHistory = await Promise.all(ind.weightHistory.map(async w => {
+          if (w.imageUrl && isBase64DataUrl(w.imageUrl)) {
+            return { ...w, imageUrl: await upload(w.imageUrl) };
+          }
+          return w;
+        }));
+      }
       return Object.keys(updates).length ? { ...ind, ...updates } : ind;
     }));
   }

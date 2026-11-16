@@ -98,7 +98,10 @@ export const fetchSpeciesData = async (commonName: string, type: SpeciesType = '
       headers: getAuthHeaders(),
       body: JSON.stringify({ commonName, type, locationContext })
     });
-    if (!response.ok) throw new Error("AI Proxy Request Failed");
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      throw new Error(errBody?.error || `AI proxy request failed (HTTP ${response.status})`);
+    }
     return await response.json();
   } catch (error: any) {
     return handleAiError(error);

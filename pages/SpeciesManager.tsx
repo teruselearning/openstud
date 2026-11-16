@@ -3,8 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { getSpecies, saveSpecies, generatePattern, getOrg, getProjects, getIndividuals, getAiUsageInfo, deleteSpecies, saveIndividuals } from '../services/storage';
 import { Individual } from '../types';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage, urlToBase64, ensureApiKeySelection } from '../services/geminiService';
-import { Species, SpeciesType, PlantClassification, Organization, Project, Sex } from '../types';
-import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare, MapPin, Info } from 'lucide-react';
+import { Species, SpeciesType, SpeciesCategory, PlantClassification, Organization, Project, Sex } from '../types';
+import { Plus, Sparkles, Loader2, Camera, Download, Pencil, LayoutGrid, List, Search, X as XIcon, ImageIcon, Dna, PawPrint, FileSpreadsheet, FileUp, Activity, Weight, FolderOpen, PartyPopper, ArrowRight, Users, Trash2, Square, CheckSquare, MapPin, Info, ChevronDown } from 'lucide-react';
 import { LanguageContext } from '../App';
 import ConfirmModal from '../components/ConfirmModal';
 import LazyImage from '../components/LazyImage';
@@ -30,6 +30,9 @@ const nativeStatusStyle = (status: string) => {
 const nativeStatusLabel = (status: string) =>
   status === 'Introduced' ? 'Non-Native' : status;
 
+const ANIMAL_CATEGORIES: SpeciesCategory[] = ['Snake', 'Lizard', 'Turtle/Tortoise', 'Crocodilian', 'Amphibian', 'Bird', 'Mammal', 'Fish', 'Invertebrate'];
+const PLANT_CATEGORIES: SpeciesCategory[] = ['Tree', 'Shrub', 'Herbaceous', 'Succulent/Cactus', 'Vine', 'Fern', 'Aquatic', 'Grass/Sedge'];
+
 const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncVersion = 0 }) => {
   const { t } = useContext(LanguageContext);
   const location = useLocation();
@@ -45,8 +48,9 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
   const [imageStatus, setImageStatus] = useState<string>(''); 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'commonName' | 'scientificName'>('commonName');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [filterCategory, setFilterCategory] = useState<SpeciesCategory | ''>('');
+  const [sortBy, setSortBy] = useState<'commonName' | 'scientificName' | 'lastModified'>('lastModified');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkTotal, setBulkTotal] = useState(0);
@@ -61,7 +65,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
   const editIdConsumed = useRef(false);
 
   // Delete confirmation modal state
-  type DeleteTarget = { ids: string[]; label: string } | null;
+  type DeleteTarget = { ids: string[]; label: string; individualCount: number } | null;
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -69,6 +73,8 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     commonName: '',
     scientificName: '',
     type: 'Animal',
+    category: undefined,
+    localName: '',
     projectId: currentProjectId === 'ALL_PROJECTS' ? '' : currentProjectId,
     plantClassification: undefined,
     conservationStatus: '',
@@ -192,7 +198,7 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     setShowForm(false);
     setEditingId(null);
     setFormData({ 
-      commonName: '', scientificName: '', type: 'Animal', conservationStatus: '', sexualMaturityAgeYears: 0, 
+      commonName: '', scientificName: '', type: 'Animal', category: undefined, localName: '', conservationStatus: '', sexualMaturityAgeYears: 0, 
       averageAdultWeightKg: 0, lifeExpectancyYears: 0, breedingSeasonStart: 1, breedingSeasonEnd: 12, 
       imageUrl: '', nativeStatusCountry: 'Unknown', nativeStatusLocal: 'Unknown',
       isGenerallyPresent: false,
@@ -219,17 +225,33 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
     try {
       const primaryName = formData.commonName || formData.scientificName || 'Unknown';
       const speciesId = editingId || `sp-${Date.now()}`;
-      const finalSpecies: Species = {
-         ...formData as Species,
-         id: speciesId,
-         projectId: targetProjectId,
-         commonName: primaryName,
-         scientificName: formData.scientificName || primaryName,
-         imageUrl: formData.imageUrl || generatePattern(primaryName),
-         sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
-         averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
-         lifeExpectancyYears: Number(formData.lifeExpectancyYears || 0)
-      };
+      // Duplicate protection — check for same commonName or scientificName in the same project
+      if (!editingId) {
+        const duplicate = allSpecies.find(sp =>
+          sp.projectId === targetProjectId && sp.id !== speciesId && (
+            (formData.commonName && sp.commonName.toLowerCase() === formData.commonName.toLowerCase()) ||
+            (formData.scientificName && sp.scientificName.toLowerCase() === formData.scientificName.toLowerCase())
+          )
+        );
+        if (duplicate) {
+          alert(`A species named "${duplicate.commonName}" already exists in this project.`);
+          setIsSaving(false);
+          return;
+        }
+      }
+
+const finalSpecies: Species = {
+       ...formData as Species,
+       id: editingId || `sp-${Date.now()}`,
+       projectId: targetProjectId,
+       commonName: primaryName,
+       scientificName: formData.scientificName || primaryName,
+       imageUrl: formData.imageUrl || generatePattern(primaryName),
+       sexualMaturityAgeYears: Number(formData.sexualMaturityAgeYears || 0),
+       averageAdultWeightKg: Number(formData.averageAdultWeightKg || 0),
+       lifeExpectancyYears: Number(formData.lifeExpectancyYears || 0),
+       lastModified: new Date().toISOString()
+    };
       const updated = editingId ? allSpecies.map(sp => sp.id === editingId ? finalSpecies : sp) : [...allSpecies, finalSpecies];
       setAllSpecies(updated);
       handleCloseForm();
@@ -278,17 +300,26 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
   const handleDeleteSpecies = (id: string) => {
     const sp = allSpecies.find(s => s.id === id);
     const label = sp ? (sp.commonName || sp.scientificName || 'this species') : 'this species';
-    setDeleteTarget({ ids: [id], label });
+    const indCount = allIndividuals.filter(i => i.speciesId === id).length;
+    setDeleteTarget({ ids: [id], label, individualCount: indCount });
   };
 
   const handleBulkDeleteSpecies = () => {
-    setDeleteTarget({ ids: [...selectedIds], label: `${selectedIds.size} species` });
+    const indCount = allIndividuals.filter(i => selectedIds.has(i.speciesId)).length;
+    setDeleteTarget({ ids: [...selectedIds], label: `${selectedIds.size} species`, individualCount: indCount });
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
+      // Delete associated individuals first
+      const indsToDelete = allIndividuals.filter(i => deleteTarget.ids.includes(i.speciesId));
+      const remainingInds = allIndividuals.filter(i => !deleteTarget.ids.includes(i.speciesId));
+      setAllIndividuals(remainingInds);
+      await saveIndividuals(remainingInds);
+
+      // Then delete species
       for (const id of deleteTarget.ids) {
         await deleteSpecies(id);
       }
@@ -311,10 +342,16 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
   const isAll = currentProjectId === 'ALL_PROJECTS';
   const filteredSpecies = allSpecies.filter(sp => 
     (isAll || sp.projectId === currentProjectId) && 
-    (sp.commonName.toLowerCase().includes(searchQuery.toLowerCase()) || sp.scientificName.toLowerCase().includes(searchQuery.toLowerCase()))
+    ((sp.commonName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (sp.scientificName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (sp.localName || '').toLowerCase().includes(searchQuery.toLowerCase())) &&
+    (!filterCategory || sp.category === filterCategory)
   );
 
   const sortedSpecies = [...filteredSpecies].sort((a, b) => {
+    if (sortBy === 'lastModified') {
+      const aMod = a.lastModified || '';
+      const bMod = b.lastModified || '';
+      return bMod.localeCompare(aMod);
+    }
     const valA = (a[sortBy] || '').toString().toLowerCase();
     const valB = (b[sortBy] || '').toString().toLowerCase();
     return sortOrder === 'asc' ? (valA < valB ? -1 : 1) : (valA > valB ? -1 : 1);
@@ -351,9 +388,36 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
           <p className="text-slate-500">{t('speciesSubtitle')}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:flex-none">
-            <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-            <input type="text" placeholder={t('searchSpecies')} className="w-full md:w-64 pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm outline-none focus:ring-2 focus:ring-emerald-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-none">
+              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+              <input type="text" placeholder={t('searchSpecies')} className="w-full sm:w-64 pl-9 pr-4 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm outline-none focus:ring-2 focus:ring-emerald-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            </div>
+            <div className="relative">
+              <select
+                className="appearance-none pl-3 pr-7 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer w-full sm:w-auto"
+                value={filterCategory}
+                onChange={e => setFilterCategory(e.target.value as SpeciesCategory | '')}
+              >
+                <option value="">{t('allCategories')}</option>
+                {[...ANIMAL_CATEGORIES, ...PLANT_CATEGORIES].map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="relative">
+              <select
+                className="appearance-none pl-3 pr-7 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer w-full sm:w-auto"
+                value={sortBy}
+                onChange={e => { setSortBy(e.target.value as any); }}
+              >
+                <option value="lastModified">Recently updated</option>
+                <option value="commonName">Common name</option>
+                <option value="scientificName">Scientific name</option>
+              </select>
+              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
           </div>
           {selectedIds.size > 0 && (
             <button
@@ -384,18 +448,28 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                  <div className="space-y-6">
                     <div className="space-y-4">
                        <h4 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2"><Dna size={18} className="text-emerald-500"/> Scientific Taxonomy</h4>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label>
-                            <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} />
-                            {/* Autofill button now under common name */}
-                            <button type="button" onClick={handleAutoFill} disabled={loadingAI || (!formData.commonName && !formData.scientificName)} className="w-full justify-center text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">
-                                {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile
-                            </button>
-                          </div>
-                          <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} /></div>
-                          <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as SpeciesType, plantClassification: e.target.value === 'Plant' ? 'Monoecious' : undefined})}><option value="Animal">{t('animal')}</option><option value="Plant">{t('plant')}</option></select></div>
-                          <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('conservationStatus')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.conservationStatus} onChange={e => setFormData({...formData, conservationStatus: e.target.value})} placeholder="e.g. Critically Endangered" /></div>
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                           <div className="space-y-2 lg:col-span-2">
+                             <label className="text-xs font-bold text-slate-500 uppercase">{t('commonName')}</label>
+                             <input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.commonName} onChange={e => setFormData({...formData, commonName: e.target.value})} placeholder={t('commonNamePlaceholder')} />
+                             {/* Autofill button now under common name */}
+                             <button type="button" onClick={handleAutoFill} disabled={loadingAI || (!formData.commonName && !formData.scientificName)} className="w-full justify-center text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50">
+                                 {loadingAI ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} {t('autofill')} Species Profile
+                             </button>
+                           </div>
+                           <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('scientificName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none italic" value={formData.scientificName} onChange={e => setFormData({...formData, scientificName: e.target.value})} placeholder={t('scientificNamePlaceholder')} /></div>
+                           <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('type')}</label><select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as SpeciesType, plantClassification: e.target.value === 'Plant' ? 'Monoecious' : undefined, category: undefined})}><option value="Animal">{t('animal')}</option><option value="Plant">{t('plant')}</option></select></div>
+                           <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('conservationStatus')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.conservationStatus} onChange={e => setFormData({...formData, conservationStatus: e.target.value})} placeholder="e.g. Critically Endangered" /></div>
+                           <div className="space-y-2"><label className="text-xs font-bold text-slate-500 uppercase">{t('localName')}</label><input className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.localName || ''} onChange={e => setFormData({...formData, localName: e.target.value})} placeholder="e.g.当地名称" /></div>
+<div className="space-y-2">
+                             <label className="text-xs font-bold text-slate-500 uppercase">{t('category')}</label>
+                             <select className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.category || ''} onChange={e => setFormData({...formData, category: (e.target.value || undefined) as SpeciesCategory | undefined})}>
+                               <option value="">{t('autoDetect')}</option>
+                               {(formData.type === 'Plant' ? PLANT_CATEGORIES : ANIMAL_CATEGORIES).map(cat => (
+                                 <option key={cat} value={cat}>{cat}</option>
+                               ))}
+                             </select>
+                           </div>
                        </div>
                     </div>
                     <div className="space-y-4 pt-4 border-t border-slate-100">
@@ -522,9 +596,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedSpecies.map(species => {
-          const indCount = allIndividuals.filter(i => i.speciesId === species.id).length;
+          const hasPresenceOnly = allIndividuals.some(i => i.speciesId === species.id && i.isPresenceOnly);
+          const trackedCount = allIndividuals.filter(i => i.speciesId === species.id && !i.isPresenceOnly).length;
           const isSelected = selectedIds.has(species.id);
-          const canDelete = indCount === 0;
+          const canDelete = true; // Cascade delete handles individuals
           return (
             <div key={species.id} onClick={() => navigate(`/species/${species.id}`)} className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-xl transition-all group relative flex flex-col h-full cursor-pointer ${isSelected ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200'}`}>
               {/* Checkbox (top-left) */}
@@ -554,11 +629,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                     imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                   />
                  <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-white/20 uppercase tracking-widest">{species.conservationStatus || 'Unknown'}</div>
+                  {species.category && <div className="absolute top-3 right-3 bg-purple-600/80 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-purple-400/40 uppercase tracking-wider">{species.category}</div>}
                  <div className={`absolute bottom-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border ${species.type === 'Plant' ? 'bg-green-600 text-white border-green-400' : 'bg-blue-600 text-white border-blue-400'}`}>{species.type === 'Plant' ? 'Flora' : 'Fauna'}</div>
               </div>
               <div className="p-5 flex-1 flex flex-col">
                 <h3 className="text-xl font-bold text-slate-900 leading-tight mb-1">{species.commonName}</h3>
                 <p className="text-sm text-slate-500 italic mb-2 font-serif">{species.scientificName}</p>
+                {species.localName && <p className="text-xs text-slate-400 mb-2">{species.localName}</p>}
                 {species.description && (
                   <p className="text-xs text-slate-500 leading-relaxed mb-3 line-clamp-2">{species.description}</p>
                 )}
@@ -584,13 +661,13 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
                     </div>
                   );
                 })()}
-                {indCount > 0 ? (
+                {trackedCount > 0 ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); navigate('/individuals', { state: { filterSpeciesId: species.id } }); }}
                     className="mt-4 w-full flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-sm px-4 py-2.5 rounded-xl border border-emerald-100 transition-colors"
                   >
                     <Users size={15} />
-                    {`View ${indCount} individual${indCount === 1 ? '' : 's'}`}
+                    {`View ${trackedCount} individual${trackedCount === 1 ? '' : 's'}`}
                   </button>
                 ) : species.isGenerallyPresent ? (
                   <div className="mt-4 w-full flex items-center justify-center gap-2 bg-teal-50 text-teal-700 font-bold text-sm px-4 py-2.5 rounded-xl border border-teal-100">
@@ -615,7 +692,10 @@ const SpeciesManager: React.FC<SpeciesManagerProps> = ({ currentProjectId, syncV
         title={deleteTarget?.ids.length === 1 ? 'Delete Species' : `Delete ${deleteTarget?.ids.length} Species`}
         message={
           <>
-            Permanently delete <strong>{deleteTarget?.label}</strong>? This cannot be undone and will remove all associated records.
+            Permanently delete <strong>{deleteTarget?.label}</strong>? This cannot be undone.
+            {deleteTarget && deleteTarget.individualCount > 0 && (
+              <><br /><br />This will also delete <strong>{deleteTarget.individualCount}</strong> associated individual{deleteTarget.individualCount === 1 ? '' : 's'}.</>
+            )}
           </>
         }
         confirmLabel="Delete"

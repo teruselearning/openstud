@@ -110,11 +110,13 @@ const speciesSchema = {
     breedingSeasonStart: { type: Type.INTEGER },
     breedingSeasonEnd: { type: Type.INTEGER },
     plantClassification: { type: Type.STRING },
-    nativeStatusCountry: { type: Type.STRING },
-    nativeStatusLocal: { type: Type.STRING },
-    description: { type: Type.STRING }
+nativeStatusCountry: { type: Type.STRING },
+  nativeStatusLocal: { type: Type.STRING },
+category: { type: Type.STRING },
+  description: { type: Type.STRING },
+  localName: { type: Type.STRING }
   },
-  required: ["scientificName", "conservationStatus", "type"],
+  required: ["scientificName", "conservationStatus", "type", "category", "description"],
 };
 
 const translationSchema = {
@@ -156,7 +158,7 @@ const runMigrations = async (db: mysql.Pool) => {
   await db.execute(`CREATE TABLE IF NOT EXISTS organizations (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), location VARCHAR(255), latitude DOUBLE, longitude DOUBLE, founded_year INT, description LONGTEXT, focus VARCHAR(255), is_org_public TINYINT(1) DEFAULT 0, is_species_public TINYINT(1) DEFAULT 0, obscure_location TINYINT(1) DEFAULT 1, hide_name TINYINT(1) DEFAULT 0, allow_breeding_requests TINYINT(1) DEFAULT 0, breeding_request_contact_id VARCHAR(255), show_native_status TINYINT(1) DEFAULT 1, dashboard_block JSON, enable_mfa TINYINT(1) DEFAULT 0, enable_enclosures TINYINT(1) DEFAULT 0, ai_usage_limit INT DEFAULT 100, ai_usage_count INT DEFAULT 0, ai_usage_last_reset VARCHAR(50), is_deleted TINYINT(1) DEFAULT 0)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255), email VARCHAR(255) UNIQUE, role VARCHAR(50), status VARCHAR(50), password VARCHAR(255), avatar_url LONGTEXT, allowed_project_ids JSON, preferred_language VARCHAR(10) DEFAULT 'en-GB', reset_code VARCHAR(10), reset_expires BIGINT)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS projects (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT)`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country TEXT, native_status_local TEXT, description LONGTEXT)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS species (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), common_name VARCHAR(255) NOT NULL, scientific_name VARCHAR(255) NOT NULL, type VARCHAR(50) NOT NULL, plant_classification VARCHAR(50), conservation_status VARCHAR(255), sexual_maturity_age_years DOUBLE, average_adult_weight_kg DOUBLE, life_expectancy_years DOUBLE, breeding_season_start INT, breeding_season_end INT, image_url LONGTEXT, native_status_country TEXT, native_status_local TEXT, description LONGTEXT, is_generally_present TINYINT(1) DEFAULT NULL, category VARCHAR(50) NULL, local_name VARCHAR(255) NULL, last_modified VARCHAR(50) NULL)`);
   await db.execute(`CREATE TABLE IF NOT EXISTS individuals (id VARCHAR(255) PRIMARY KEY, project_id VARCHAR(255), species_id VARCHAR(255), enclosure_id VARCHAR(255), studbook_id VARCHAR(255), name VARCHAR(255) NOT NULL, sex VARCHAR(20) NOT NULL, birth_date VARCHAR(50), weight_kg DOUBLE, sire_id VARCHAR(255), dam_id VARCHAR(255), image_url LONGTEXT, thumbnail_url LONGTEXT, dna_sequence LONGTEXT, notes VARCHAR(2000), source VARCHAR(255), source_details VARCHAR(255), latitude DOUBLE, longitude DOUBLE, is_deceased TINYINT(1) DEFAULT 0, death_date VARCHAR(50), loan_status VARCHAR(50), microchip_number VARCHAR(15) UNIQUE, transferred_to_org_id VARCHAR(255), transfer_date VARCHAR(50), transfer_note LONGTEXT, weight_history JSON, growth_history JSON, health_history JSON)`);
   // Migration: add thumbnail_url to existing installs
   try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS thumbnail_url LONGTEXT`); } catch (_) {}
@@ -182,6 +184,13 @@ const runMigrations = async (db: mysql.Pool) => {
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_image VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_research_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_image_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
+  // Migration: add last_modified to species and individuals
+  try { await db.execute(`ALTER TABLE species ADD COLUMN IF NOT EXISTS last_modified VARCHAR(50) NULL`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS last_modified VARCHAR(50) NULL`); } catch (_) {}
+  // Migration: add category to species
+  try { await db.execute(`ALTER TABLE species ADD COLUMN IF NOT EXISTS category VARCHAR(50) NULL`); } catch (_) {}
+  // Migration: add local_name to species
+  try { await db.execute(`ALTER TABLE species ADD COLUMN local_name VARCHAR(255) NULL`); } catch (_) {}
   await db.execute(`CREATE TABLE IF NOT EXISTS enclosures (id VARCHAR(255) PRIMARY KEY, org_id VARCHAR(255), project_id VARCHAR(255), name VARCHAR(255) NOT NULL, description LONGTEXT, boundary JSON, individual_ids JSON, feed_schedules JSON)`);
   try { await db.execute(`ALTER TABLE enclosures ADD COLUMN feed_schedules JSON`); } catch (e: any) { if (!e.message?.includes('Duplicate column')) throw e; }
   await db.execute(`CREATE TABLE IF NOT EXISTS breeding_events (id VARCHAR(255) PRIMARY KEY, species_id VARCHAR(255), sire_id VARCHAR(255), dam_id VARCHAR(255), date VARCHAR(50), offspring_count INT, successful_births INT, losses INT, notes LONGTEXT, offspring_ids JSON)`);
@@ -477,7 +486,7 @@ app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
   try {
     const config = await getAiConfig(req.user.orgId);
     if (reqModel) config.researchModel = reqModel;
-    const prompt = `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Non-Native, Invasive, or Endemic specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. Return ONLY JSON.`;
+    const prompt = `Provide comprehensive biological data for "${commonName}" (Kingdom: ${type === 'Animal' ? 'Fauna' : 'Flora'}).${locationContext ? ` The organisation managing this species is located in: ${locationContext}. For nativeStatusLocal set whether this species is Native, Non-Native, Invasive, or Endemic specifically in that locality. For nativeStatusCountry set the status at the broader national or regional level.` : ''} For the "category" field, pick the most specific taxonomic category from this list based on the species: for fauna choose from: Snake, Lizard, Turtle/Tortoise, Crocodilian, Amphibian, Bird, Mammal, Fish, Invertebrate; for flora choose from: Tree, Shrub, Herbaceous, Succulent/Cactus, Vine, Fern, Aquatic, Grass/Sedge. For the description field write 2-3 informative sentences covering: general appearance/characteristics, reproductive behaviour, and native geographic distribution. For the "localName" field, provide the common name in the local/regional language if different from the English common name, otherwise set it to null. Return ONLY JSON.`;
     const text = await callAiProvider(config, 'text', prompt, true);
     if (text) {
       const sanitized = sanitizeJsonResponse(text);
@@ -486,6 +495,7 @@ app.post('/api/ai/species-data', authenticate, async (req: any, res: any) => {
       res.status(500).json({ error: "AI returned empty response" });
     }
   } catch (e: any) {
+    console.error('[AI species-data] failed:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

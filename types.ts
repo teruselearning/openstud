@@ -224,6 +224,10 @@ export interface LanguageConfig {
 export type SpeciesType = 'Animal' | 'Plant';
 export type PlantClassification = 'Dioecious' | 'Monoecious';
 export type NativeStatus = 'Native' | 'Non-Native' | 'Invasive' | 'Endemic' | 'Unknown';
+export type SpeciesCategory =
+  | 'Snake' | 'Lizard' | 'Turtle/Tortoise' | 'Crocodilian' | 'Amphibian'
+  | 'Bird' | 'Mammal' | 'Fish' | 'Invertebrate'
+  | 'Tree' | 'Shrub' | 'Herbaceous' | 'Succulent/Cactus' | 'Vine' | 'Fern' | 'Aquatic' | 'Grass/Sedge';
 
 export interface Species {
   id: string;
@@ -242,12 +246,18 @@ export interface Species {
   imageUrl?: string;
   nativeStatusCountry?: NativeStatus;
   nativeStatusLocal?: NativeStatus;
+  /** Taxonomic sub-category within Animal or Plant (e.g. Snake, Mammal, Tree). AI-populated on autofill. */
+  category?: SpeciesCategory;
   /** Free-text description: appearance, reproduction, and native distribution. AI-populated on autofill. */
   description?: string;
+  /** Local/common name in the regional language (e.g. "Bambu petung" for Dendrocalamus asper). */
+  localName?: string;
   /** True for unidentified-species placeholders created from the individual registration form */
   isUnknown?: boolean;
   /** Species-level presence flag: when true, the species card shows "Generally present" */
   isGenerallyPresent?: boolean;
+  /** ISO date string of last modification. Nullable — will be populated as records are edited. */
+  lastModified?: string;
 }
 
 export enum Sex {
@@ -318,6 +328,8 @@ export interface Individual {
   weightHistory?: WeightRecord[];
   growthHistory?: GrowthRecord[];
   healthHistory?: HealthRecord[];
+  /** ISO date string of last modification. Nullable — will be populated as records are edited. */
+  lastModified?: string;
 }
 
 export interface BreedingEvent {

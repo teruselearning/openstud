@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
 import { getSpecies, getIndividuals, saveIndividuals, generatePattern, saveSpecies, getOrg, getEnclosures, getProjects, deleteIndividual, getAiUsageInfo } from '../services/storage';
 import { fetchSpeciesData, generateSpeciesImage, fetchWikimediaImage } from '../services/geminiService';
+import { fetchIndividualImage } from '../services/syncService';
 import { compressImageFileDual, compressDataUrlDual } from '../services/imageUtils';
 import { Species, Individual, Sex, SpeciesType, Organization, Enclosure, Project, PlantClassification } from '../types';
 import { Plus, Search, Dna, PawPrint, Pencil, X as XIcon, MapPin, LayoutGrid, List, Box, ChevronDown, Save, Camera, ImageIcon, Info, Crosshair, Map as MapIcon2, Sparkles, Loader2, Upload, CheckCircle2, AlertTriangle, AlertCircle, FileSpreadsheet, Check, Trash2, Maximize2, Minimize2, Tag, HelpCircle, Sprout, ScanLine } from 'lucide-react';
@@ -46,9 +47,26 @@ const IndividualManager: React.FC<IndividualManagerProps> = ({ currentProjectId,
   const [showForm, setShowForm] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterSpeciesId, setFilterSpeciesId] = useState<string>('');
-  const [deceasedFilter, setDeceasedFilter] = useState<'living' | 'deceased' | 'all'>('living');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchTerm = searchParams.get('q') || '';
+  const filterSpeciesId = searchParams.get('species') || '';
+  const deceasedFilter = (searchParams.get('status') as 'living' | 'deceased' | 'all') || 'living';
+
+  const setSearchTerm = (val: string) => {
+    const p = new URLSearchParams(searchParams);
+    if (val) p.set('q', val); else p.delete('q');
+    setSearchParams(p, { replace: true });
+  };
+  const setFilterSpeciesId = (val: string) => {
+    const p = new URLSearchParams(searchParams);
+    if (val) p.set('species', val); else p.delete('species');
+    setSearchParams(p, { replace: true });
+  };
+  const setDeceasedFilter = (val: 'living' | 'deceased' | 'all') => {
+    const p = new URLSearchParams(searchParams);
+    if (val !== 'living') p.set('status', val); else p.delete('status');
+    setSearchParams(p, { replace: true });
+  };
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -441,28 +459,65 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     if (!editingId && projs.length === 1 && !formData.projectId) {
        setFormData(prev => ({ ...prev, projectId: projs[0].id }));
     }
+
+// Fetch profile images for individuals that don't have one cached yet
+    const needImage = individuals.filter(i => !i.imageUrl && !i.thumbnailUrl);
+    if (needImage.length > 0) {
+      let cancelled = false;
+      (async () => {
+        for (const ind of needImage) {
+          if (cancelled) break;
+          const imgUrl = await fetchIndividualImage(ind.id);
+          if (cancelled || !imgUrl) continue;
+          const updated = { ...ind, imageUrl: imgUrl };
+          setAllIndividuals(prev => prev.map(i => i.id === ind.id ? updated : i));
+          const all = getIndividuals().map(i => i.id === ind.id ? updated : i);
+          saveIndividuals(all);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
   }, [currentProjectId, editingId, syncVersion]);
 
-  // Reload data whenever a background sync completes. This handles the case where the
-  // component was already mounted when sync started (e.g. session restored while IndexedDB
-  // was empty), meaning the dep-based useEffect above won't fire again.
+  // Reload data whenever a background sync completes.
   useEffect(() => {
     const onDataRefreshed = () => {
-      setAllIndividuals(getIndividuals());
+      const individuals = getIndividuals();
+      setAllIndividuals(individuals);
       setAllSpecies(getSpecies());
       setAllProjects(getProjects());
       setAllEnclosures(getEnclosures());
       setOrg(getOrg());
       setAiLimitInfo(getAiUsageInfo());
+
+      const needImage = individuals.filter(i => !i.imageUrl && !i.thumbnailUrl);
+      if (needImage.length > 0) {
+        let cancelled = false;
+        (async () => {
+          for (const ind of needImage) {
+            if (cancelled) break;
+            const imageUrl = await fetchIndividualImage(ind.id);
+            if (cancelled || !imageUrl) continue;
+            const updated = { ...ind, imageUrl };
+            setAllIndividuals(prev => prev.map(i => i.id === ind.id ? updated : i));
+            const all = getIndividuals().map(i => i.id === ind.id ? updated : i);
+            saveIndividuals(all);
+          }
+        })();
+        return () => { cancelled = true; };
+      }
     };
     window.addEventListener('os-data-refreshed', onDataRefreshed);
     return () => window.removeEventListener('os-data-refreshed', onDataRefreshed);
   }, []);
 
   useEffect(() => {
-    if (locState?.filterSpeciesId) {
-      setFilterSpeciesId(locState.filterSpeciesId);
+    if (locState?.filterSpeciesId && !filterSpeciesId) {
+      const p = new URLSearchParams(searchParams);
+      p.set('species', locState.filterSpeciesId);
+      setSearchParams(p, { replace: true });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locState?.filterSpeciesId]);
 
   useEffect(() => {
@@ -516,6 +571,10 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
     const matchesSpecies = !filterSpeciesId || ind.speciesId === filterSpeciesId;
     const matchesDeceased = deceasedFilter === 'all' ? true : deceasedFilter === 'deceased' ? !!ind.isDeceased : !ind.isDeceased;
     return matchesSearch && matchesSpecies && matchesDeceased;
+  }).sort((a, b) => {
+    const aTs = parseInt(a.id.split('-')[1] || '0', 10);
+    const bTs = parseInt(b.id.split('-')[1] || '0', 10);
+    return bTs - aTs;
   });
 
   // Build the SVG html for the "you are here" marker at a given heading
@@ -914,7 +973,16 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">{t('individuals')}</h2>
-          <p className="text-slate-500">{t('indivSubtitleAnimal')}</p>
+          <p className="text-slate-500">{t('indivSubtitleAnimal')}{(() => {
+            const sorted = [...allIndividuals].sort((a, b) => {
+              const aTs = parseInt(a.id.split('-')[1] || '0', 10);
+              const bTs = parseInt(b.id.split('-')[1] || '0', 10);
+              return bTs - aTs;
+            });
+            const latest = sorted[0];
+            if (!latest) return null;
+            return <span className="ml-1 text-emerald-600 font-semibold">{t('latestStudbookId').replace('{{studbookId}}', latest.studbookId)}</span>;
+          })()}</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex bg-white border border-slate-300 rounded-lg p-1 shadow-sm">
@@ -1012,8 +1080,7 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
             const sp = allSpecies.find(s => s.id === ind.speciesId);
             const isPlantInd = sp?.type === 'Plant';
             const displayName = isPlantInd ? ind.studbookId : ind.name;
-            const latestObsImg = ind.weightHistory?.find(w => w.imageUrl)?.imageUrl || ind.healthHistory?.find(h => h.imageUrl)?.imageUrl;
-            const displayImg = latestObsImg || ind.thumbnailUrl || ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
+            const displayImg = ind.thumbnailUrl || ind.imageUrl || sp?.imageUrl || generatePattern(ind.name);
             return (
               <div key={ind.id} className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all group flex flex-col ${selectedIds.has(ind.id) ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-slate-200'}`}>
                 <div className="h-48 bg-slate-100 relative overflow-hidden">
@@ -1023,16 +1090,15 @@ SB-2024-002,African Elephant,Loxodonta africana,Babar,Male,2015-07-04,3200,,,,,,
                     {selectedIds.has(ind.id) && <Check size={13} className="text-white" strokeWidth={3}/>}
                   </button>
                   <Link to={`/individuals/${ind.id}`} className="block w-full h-full">
-                    <LazyImage
+                    <img
                       src={displayImg}
                       alt={displayName}
-                      placeholder={generatePattern(ind.name)}
-                      className="w-full h-full"
-                      imgClassName={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${ind.isDeceased ? 'grayscale opacity-60' : ''}`}
+                      loading="lazy"
+                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${ind.isDeceased ? 'grayscale opacity-60' : ''}`}
                     />
                   </Link>
                   {ind.isPresenceOnly
-                    ? <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase bg-teal-600">Generally present</div>
+                    ? <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase bg-teal-600">{t('generallyPresent')}</div>
                     : (!isPlantInd && <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${ind.sex === Sex.MALE ? 'bg-blue-600' : ind.sex === Sex.FEMALE ? 'bg-pink-600' : 'bg-slate-600'}`}>{ind.sex}</div>)
                   }
                   {ind.isDeceased && <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide">Deceased</div>}

@@ -101,6 +101,12 @@ const SpeciesDetail: React.FC = () => {
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Type</span>
                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${species.type === 'Plant' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{species.type}</span>
               </div>
+              {species.category && (
+                <div className="flex items-center justify-between py-2 border-b border-slate-50">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">{t('category')}</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{species.category}</span>
+                </div>
+              )}
               {project && (
                 <div className="flex items-center justify-between py-2 border-b border-slate-50">
                   <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Project</span>
