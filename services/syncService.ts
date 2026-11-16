@@ -69,6 +69,12 @@ const fromDbOrg = (o: any): Organization => ({
   aiUsageCount: o.ai_usage_count,
   aiUsageLastReset: o.ai_usage_last_reset,
   hasOwnGeminiKey: !!o.has_gemini_api_key,
+  hasOpenrouterKey: !!o.has_openrouter_key,
+  // Per-org AI overrides; undefined/blank means "use the system default".
+  aiProviderText: o.ai_provider_text || undefined,
+  aiProviderImage: o.ai_provider_image || undefined,
+  aiResearchModel: o.ai_research_model || undefined,
+  aiImageModel: o.ai_image_model || undefined,
   deleted: !!o.is_deleted
 });
 

@@ -180,8 +180,26 @@ const runMigrations = async (db: mysql.Pool) => {
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS openrouter_api_key TEXT NULL`); } catch (_) {}
   // Migration: add microchip_number to existing individuals tables
   try { await db.execute(`ALTER TABLE individuals ADD COLUMN IF NOT EXISTS microchip_number VARCHAR(15) UNIQUE`); } catch (_) {}
-  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_text VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
-  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_image VARCHAR(50) DEFAULT 'google'`); } catch (_) {}
+  // NULL = inherit the Super Admin global provider. (These used to default to 'google', which
+  // silently overrode the global setting for every org — see migration below.)
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_text VARCHAR(50) DEFAULT NULL`); } catch (_) {}
+  try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_provider_image VARCHAR(50) DEFAULT NULL`); } catch (_) {}
+  // One-time migration: where the column still has the old DEFAULT 'google', switch the default
+  // to NULL and clear 'google' on orgs that haven't set their own Gemini key (so they inherit
+  // the global provider). Self-limiting: once the default is NULL this never runs again.
+  try {
+    const [aiCols]: any = await db.execute(
+      `SELECT COLUMN_NAME AS col, COLUMN_DEFAULT AS def FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'organizations' AND COLUMN_NAME IN ('ai_provider_text', 'ai_provider_image')`
+    );
+    for (const c of aiCols) {
+      if (c.def !== null && String(c.def).replace(/'/g, '').toLowerCase() === 'google') {
+        // c.col is one of the two fixed names selected above, so interpolation is safe.
+        await db.execute(`ALTER TABLE organizations MODIFY COLUMN ${c.col} VARCHAR(50) DEFAULT NULL`);
+        const [r]: any = await db.execute(`UPDATE organizations SET ${c.col} = NULL WHERE ${c.col} = 'google' AND (gemini_api_key IS NULL OR gemini_api_key = '')`);
+        console.log(`[Migration] organizations.${c.col}: default -> NULL, reset ${r?.affectedRows ?? 0} org(s) to inherit the global provider`);
+      }
+    }
+  } catch (e: any) { console.warn('[Migration] AI provider default migration skipped:', e.message); }
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_research_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
   try { await db.execute(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_image_model VARCHAR(255) DEFAULT NULL`); } catch (_) {}
   // Migration: add last_modified to species and individuals
